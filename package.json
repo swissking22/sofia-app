@@ -1,0 +1,40 @@
+{
+  "private": true,
+  "name": "sofia",
+  "description": "Offline-first school management desktop application",
+  "version": "1.0.0",
+  "author": "SOFIA",
+  "type": "module",
+  "main": "app/main.js",
+  "scripts": {
+    "dev": "nextron",
+    "build": "nextron build",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@hugeicons/core-free-icons": "^4.2.3",
+    "@hugeicons/react": "^1.1.9",
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^13.0.2",
+    "electron-serve": "^3.0.0",
+    "electron-store": "^11.0.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.11",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.11.16",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.4.21",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.1",
+    "next": "^16.2.1",
+    "nextron": "^10.0.0",
+    "postcss": "^8.5.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.9.3"
+  }
+}

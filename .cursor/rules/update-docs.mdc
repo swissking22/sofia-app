@@ -1,0 +1,24 @@
+---
+description: Keep DOCS.md updated whenever modules or user-facing features are added or changed
+alwaysApply: true
+---
+
+# Update product documentation
+
+When you add, remove, or meaningfully change a **module, route, or user-facing workflow**, update [`DOCS.md`](../../DOCS.md) in the **same change**.
+
+## Required updates
+
+1. Add or revise the module section (paths, how to use, workflows).
+2. Remove the item from **Coming soon** / **Other modules** when it becomes usable.
+3. Add a row to the **Changelog** with today’s date and a one-line summary.
+4. If you unlock a nav item in `renderer/lib/navigation.ts`, document that screen in `DOCS.md`.
+
+## Do not
+
+- Leave new sidebar routes undocumented.
+- Put only developer notes in chat — the doc is for people using and extending SOFIA.
+
+## Scope
+
+User-facing behaviour and workflows first; keep architecture notes brief and point to code paths when useful.

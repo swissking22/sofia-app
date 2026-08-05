@@ -1,0 +1,1612 @@
+import type Database from 'better-sqlite3'
+
+/**
+ * Creates all SOFIA tables.
+ * Every domain table includes sync metadata fields.
+ */
+export function createSchema(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schools (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT,
+      country TEXT,
+      address TEXT,
+      logo_path TEXT,
+      school_code TEXT NOT NULL DEFAULT '',
+      short_code TEXT NOT NULL DEFAULT '',
+      school_type TEXT,
+      education_system TEXT,
+      school_category TEXT,
+      region TEXT,
+      division TEXT,
+      subdivision TEXT,
+      website TEXT,
+      stamp_path TEXT,
+      principal_signature_path TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS roles (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS permissions (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      module_key TEXT NOT NULL,
+      module_label TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL,
+      role_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (role_id) REFERENCES roles(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS classes (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      school_id TEXT,
+      level TEXT,
+      form_key TEXT,
+      stream TEXT,
+      academic_level_id TEXT,
+      section_id TEXT,
+      specialization_id TEXT,
+      capacity INTEGER,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS students (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      school_id TEXT,
+      student_code TEXT,
+      admission_year INTEGER,
+      academic_level_id TEXT,
+      sequence_number INTEGER,
+      gender TEXT,
+      date_of_birth TEXT,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      admission_type TEXT,
+      guardian_name TEXT,
+      guardian_phone TEXT,
+      guardian_email TEXT,
+      guardian_relationship TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (class_id) REFERENCES classes(id),
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (academic_level_id) REFERENCES academic_levels(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_id_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      pattern TEXT NOT NULL DEFAULT '{SCHOOL}-{YEAR}-{SEQ}',
+      sequence_scope TEXT NOT NULL DEFAULT 'year',
+      next_sequence_number INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id_format TEXT NOT NULL DEFAULT 'SOF-{YEAR}-{SEQ}',
+      field_full_name INTEGER NOT NULL DEFAULT 1,
+      field_gender INTEGER NOT NULL DEFAULT 1,
+      field_date_of_birth INTEGER NOT NULL DEFAULT 1,
+      field_place_of_birth INTEGER NOT NULL DEFAULT 1,
+      field_parent_information INTEGER NOT NULL DEFAULT 1,
+      field_emergency_contact INTEGER NOT NULL DEFAULT 1,
+      admit_new INTEGER NOT NULL DEFAULT 1,
+      admit_returning INTEGER NOT NULL DEFAULT 1,
+      admit_transfer INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS academic_levels (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      short_name TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sections (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS specializations (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      section_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      abbreviation TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (section_id) REFERENCES sections(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS departments (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS subjects (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      school_id TEXT,
+      department_id TEXT,
+      coefficient REAL NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (class_id) REFERENCES classes(id),
+      FOREIGN KEY (department_id) REFERENCES departments(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS subject_classes (
+      id TEXT PRIMARY KEY NOT NULL,
+      subject_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (subject_id) REFERENCES subjects(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS staff (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      gender TEXT,
+      phone TEXT,
+      email TEXT,
+      staff_type TEXT NOT NULL,
+      admin_role TEXT,
+      department_id TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      user_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (department_id) REFERENCES departments(id),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS staff_subjects (
+      id TEXT PRIMARY KEY NOT NULL,
+      staff_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (staff_id) REFERENCES staff(id),
+      FOREIGN KEY (subject_id) REFERENCES subjects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS staff_classes (
+      id TEXT PRIMARY KEY NOT NULL,
+      staff_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (staff_id) REFERENCES staff(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      id TEXT PRIMARY KEY NOT NULL,
+      role_id TEXT NOT NULL,
+      permission_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (role_id) REFERENCES roles(id),
+      FOREIGN KEY (permission_id) REFERENCES permissions(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS fee_categories (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      category_key TEXT NOT NULL,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS fee_amounts (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      academic_level_id TEXT NOT NULL,
+      fee_category_id TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (academic_level_id) REFERENCES academic_levels(id),
+      FOREIGN KEY (fee_category_id) REFERENCES fee_categories(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS finance_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      currency TEXT NOT NULL DEFAULT 'XAF',
+      payment_methods TEXT NOT NULL DEFAULT '["cash","mobile_money","bank_transfer"]',
+      receipt_prefix TEXT NOT NULL DEFAULT 'RCP',
+      receipt_next_number INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS document_templates (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      template_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      header_text TEXT NOT NULL DEFAULT '',
+      footer_text TEXT NOT NULL DEFAULT '',
+      logo_path TEXT,
+      show_logo INTEGER NOT NULL DEFAULT 1,
+      show_stamp INTEGER NOT NULL DEFAULT 1,
+      show_signature INTEGER NOT NULL DEFAULT 1,
+      signature_label TEXT NOT NULL DEFAULT 'Principal',
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS communication_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      sms_provider TEXT NOT NULL DEFAULT '',
+      sms_api_key TEXT NOT NULL DEFAULT '',
+      sms_sender_name TEXT NOT NULL DEFAULT '',
+      channel_sms INTEGER NOT NULL DEFAULT 0,
+      channel_email INTEGER NOT NULL DEFAULT 1,
+      channel_internal INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_templates (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      template_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS backup_sync_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      last_sync_at TEXT,
+      last_sync_status TEXT NOT NULL DEFAULT 'never',
+      cloud_connected INTEGER NOT NULL DEFAULT 0,
+      last_connection_test_at TEXT,
+      automatic_backup INTEGER NOT NULL DEFAULT 1,
+      backup_frequency TEXT NOT NULL DEFAULT 'daily',
+      backup_location TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS scores (
+      id TEXT PRIMARY KEY NOT NULL,
+      student_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      test_score REAL NOT NULL DEFAULT 0,
+      exam_score REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (student_id) REFERENCES students(id),
+      FOREIGN KEY (subject_id) REFERENCES subjects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS setup_steps (
+      id TEXT PRIMARY KEY NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      draft_data TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS academic_years (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      is_current INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS academic_terms (
+      id TEXT PRIMARY KEY NOT NULL,
+      academic_year_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      term_number INTEGER NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (academic_year_id) REFERENCES academic_years(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      academic_year_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (academic_year_id) REFERENCES academic_years(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS grading_systems (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      enable_ranking INTEGER NOT NULL DEFAULT 1,
+      show_class_average INTEGER NOT NULL DEFAULT 1,
+      show_teacher_remarks INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS assessment_types (
+      id TEXT PRIMARY KEY NOT NULL,
+      grading_system_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      weight_percent REAL NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (grading_system_id) REFERENCES grading_systems(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS grade_bands (
+      id TEXT PRIMARY KEY NOT NULL,
+      grading_system_id TEXT NOT NULL,
+      grade TEXT NOT NULL,
+      min_score REAL NOT NULL,
+      max_score REAL NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (grading_system_id) REFERENCES grading_systems(id)
+    );
+
+    -- Critical: tracks every change for future cloud sync
+    CREATE TABLE IF NOT EXISTS sync_queue (
+      id TEXT PRIMARY KEY NOT NULL,
+      table_name TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      retry_count INTEGER NOT NULL DEFAULT 0,
+      last_attempt_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+    CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id);
+    CREATE INDEX IF NOT EXISTS idx_student_settings_school ON student_settings(school_id);
+    CREATE INDEX IF NOT EXISTS idx_subjects_class ON subjects(class_id);
+    CREATE INDEX IF NOT EXISTS idx_scores_student ON scores(student_id);
+    CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status);
+    CREATE INDEX IF NOT EXISTS idx_academic_years_school ON academic_years(school_id);
+    CREATE INDEX IF NOT EXISTS idx_academic_terms_year ON academic_terms(academic_year_id);
+    CREATE INDEX IF NOT EXISTS idx_calendar_events_year ON calendar_events(academic_year_id);
+    CREATE INDEX IF NOT EXISTS idx_grading_systems_school ON grading_systems(school_id);
+    CREATE INDEX IF NOT EXISTS idx_assessment_types_system ON assessment_types(grading_system_id);
+    CREATE INDEX IF NOT EXISTS idx_grade_bands_system ON grade_bands(grading_system_id);
+    CREATE INDEX IF NOT EXISTS idx_staff_school ON staff(school_id);
+    CREATE INDEX IF NOT EXISTS idx_staff_subjects_staff ON staff_subjects(staff_id);
+    CREATE INDEX IF NOT EXISTS idx_staff_classes_staff ON staff_classes(staff_id);
+    CREATE INDEX IF NOT EXISTS idx_roles_school ON roles(school_id);
+    CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module_key);
+    CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_id);
+  `)
+
+  // Migrate existing DBs that were created before extra school columns
+  migrateSchoolsColumns(db)
+  migrateAcademicStructureColumns(db)
+  migrateGradingSystemTables(db)
+  migrateStaffTables(db)
+  migrateRbacTables(db)
+  migrateStudentSettingsTable(db)
+  migrateStudentIdSystem(db)
+  migrateFinanceTables(db)
+  migrateDocumentTemplates(db)
+  migrateCommunicationTables(db)
+  migrateBackupSyncSettings(db)
+  migrateStudentManagementTables(db)
+  migrateAcademicManagementTables(db)
+}
+
+/** Add missing columns to schools without wiping existing data. */
+function migrateSchoolsColumns(db: Database.Database): void {
+  const columns = (
+    db.prepare(`PRAGMA table_info(schools)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+
+  const additions: Array<{ name: string; sql: string }> = [
+    { name: 'phone', sql: `ALTER TABLE schools ADD COLUMN phone TEXT` },
+    { name: 'country', sql: `ALTER TABLE schools ADD COLUMN country TEXT` },
+    { name: 'address', sql: `ALTER TABLE schools ADD COLUMN address TEXT` },
+    { name: 'logo_path', sql: `ALTER TABLE schools ADD COLUMN logo_path TEXT` },
+    {
+      name: 'school_code',
+      sql: `ALTER TABLE schools ADD COLUMN school_code TEXT NOT NULL DEFAULT ''`,
+    },
+    {
+      name: 'short_code',
+      sql: `ALTER TABLE schools ADD COLUMN short_code TEXT NOT NULL DEFAULT ''`,
+    },
+    {
+      name: 'school_type',
+      sql: `ALTER TABLE schools ADD COLUMN school_type TEXT`,
+    },
+    {
+      name: 'education_system',
+      sql: `ALTER TABLE schools ADD COLUMN education_system TEXT`,
+    },
+    {
+      name: 'school_category',
+      sql: `ALTER TABLE schools ADD COLUMN school_category TEXT`,
+    },
+    { name: 'region', sql: `ALTER TABLE schools ADD COLUMN region TEXT` },
+    { name: 'division', sql: `ALTER TABLE schools ADD COLUMN division TEXT` },
+    {
+      name: 'subdivision',
+      sql: `ALTER TABLE schools ADD COLUMN subdivision TEXT`,
+    },
+    { name: 'website', sql: `ALTER TABLE schools ADD COLUMN website TEXT` },
+    { name: 'stamp_path', sql: `ALTER TABLE schools ADD COLUMN stamp_path TEXT` },
+    {
+      name: 'principal_signature_path',
+      sql: `ALTER TABLE schools ADD COLUMN principal_signature_path TEXT`,
+    },
+  ]
+
+  for (const col of additions) {
+    if (!columns.includes(col.name)) {
+      db.exec(col.sql)
+    }
+  }
+}
+
+/** Migrate classes + ensure structure hierarchy tables. */
+function migrateAcademicStructureColumns(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS academic_levels (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      short_name TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sections (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS specializations (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      section_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      abbreviation TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (section_id) REFERENCES sections(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS departments (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS subject_classes (
+      id TEXT PRIMARY KEY NOT NULL,
+      subject_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (subject_id) REFERENCES subjects(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
+    );
+  `)
+
+  const classCols = (
+    db.prepare(`PRAGMA table_info(classes)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  const classAdditions = [
+    { name: 'school_id', sql: `ALTER TABLE classes ADD COLUMN school_id TEXT` },
+    { name: 'level', sql: `ALTER TABLE classes ADD COLUMN level TEXT` },
+    { name: 'form_key', sql: `ALTER TABLE classes ADD COLUMN form_key TEXT` },
+    { name: 'stream', sql: `ALTER TABLE classes ADD COLUMN stream TEXT` },
+    {
+      name: 'academic_level_id',
+      sql: `ALTER TABLE classes ADD COLUMN academic_level_id TEXT`,
+    },
+    {
+      name: 'section_id',
+      sql: `ALTER TABLE classes ADD COLUMN section_id TEXT`,
+    },
+    {
+      name: 'specialization_id',
+      sql: `ALTER TABLE classes ADD COLUMN specialization_id TEXT`,
+    },
+    {
+      name: 'capacity',
+      sql: `ALTER TABLE classes ADD COLUMN capacity INTEGER`,
+    },
+    {
+      name: 'is_active',
+      sql: `ALTER TABLE classes ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`,
+    },
+  ]
+  for (const col of classAdditions) {
+    if (!classCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  const specializationCols = (
+    db
+      .prepare(`PRAGMA table_info(specializations)`)
+      .all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (!specializationCols.includes('abbreviation')) {
+    db.exec(
+      `ALTER TABLE specializations ADD COLUMN abbreviation TEXT NOT NULL DEFAULT ''`
+    )
+  }
+
+  const levelCols = (
+    db
+      .prepare(`PRAGMA table_info(academic_levels)`)
+      .all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (!levelCols.includes('short_name')) {
+    db.exec(
+      `ALTER TABLE academic_levels ADD COLUMN short_name TEXT NOT NULL DEFAULT ''`
+    )
+  }
+
+  const subjectCols = (
+    db.prepare(`PRAGMA table_info(subjects)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  const subjectAdditions = [
+    { name: 'school_id', sql: `ALTER TABLE subjects ADD COLUMN school_id TEXT` },
+    {
+      name: 'department_id',
+      sql: `ALTER TABLE subjects ADD COLUMN department_id TEXT`,
+    },
+    {
+      name: 'coefficient',
+      sql: `ALTER TABLE subjects ADD COLUMN coefficient REAL NOT NULL DEFAULT 1`,
+    },
+  ]
+  for (const col of subjectAdditions) {
+    if (!subjectCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_classes_school ON classes(school_id);
+    CREATE INDEX IF NOT EXISTS idx_classes_level ON classes(academic_level_id);
+    CREATE INDEX IF NOT EXISTS idx_classes_section ON classes(section_id);
+    CREATE INDEX IF NOT EXISTS idx_departments_school ON departments(school_id);
+    CREATE INDEX IF NOT EXISTS idx_subjects_department ON subjects(department_id);
+    CREATE INDEX IF NOT EXISTS idx_subject_classes_subject ON subject_classes(subject_id);
+    CREATE INDEX IF NOT EXISTS idx_academic_levels_school ON academic_levels(school_id);
+    CREATE INDEX IF NOT EXISTS idx_sections_school ON sections(school_id);
+    CREATE INDEX IF NOT EXISTS idx_specializations_section ON specializations(section_id);
+  `)
+}
+
+/** Ensure grading system tables exist on older databases. */
+function migrateGradingSystemTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS grading_systems (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      enable_ranking INTEGER NOT NULL DEFAULT 1,
+      show_class_average INTEGER NOT NULL DEFAULT 1,
+      show_teacher_remarks INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS assessment_types (
+      id TEXT PRIMARY KEY NOT NULL,
+      grading_system_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      weight_percent REAL NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (grading_system_id) REFERENCES grading_systems(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS grade_bands (
+      id TEXT PRIMARY KEY NOT NULL,
+      grading_system_id TEXT NOT NULL,
+      grade TEXT NOT NULL,
+      min_score REAL NOT NULL,
+      max_score REAL NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (grading_system_id) REFERENCES grading_systems(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_grading_systems_school ON grading_systems(school_id);
+    CREATE INDEX IF NOT EXISTS idx_assessment_types_system ON assessment_types(grading_system_id);
+    CREATE INDEX IF NOT EXISTS idx_grade_bands_system ON grade_bands(grading_system_id);
+  `)
+}
+
+/** Ensure staff tables exist on older databases. */
+function migrateStaffTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS staff (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      gender TEXT,
+      phone TEXT,
+      email TEXT,
+      staff_type TEXT NOT NULL,
+      admin_role TEXT,
+      department_id TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      user_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (department_id) REFERENCES departments(id),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS staff_subjects (
+      id TEXT PRIMARY KEY NOT NULL,
+      staff_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (staff_id) REFERENCES staff(id),
+      FOREIGN KEY (subject_id) REFERENCES subjects(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS staff_classes (
+      id TEXT PRIMARY KEY NOT NULL,
+      staff_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (staff_id) REFERENCES staff(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_staff_school ON staff(school_id);
+    CREATE INDEX IF NOT EXISTS idx_staff_subjects_staff ON staff_subjects(staff_id);
+    CREATE INDEX IF NOT EXISTS idx_staff_classes_staff ON staff_classes(staff_id);
+  `)
+}
+
+/** Ensure RBAC tables exist; migrate legacy module-matrix role_permissions. */
+function migrateRbacTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS roles (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS permissions (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      module_key TEXT NOT NULL,
+      module_label TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1
+    );
+  `)
+
+  const rolePermExists = (
+    db
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'role_permissions'`
+      )
+      .get() as { name: string } | undefined
+  )
+
+  if (rolePermExists) {
+    const cols = (
+      db.prepare(`PRAGMA table_info(role_permissions)`).all() as Array<{
+        name: string
+      }>
+    ).map((c) => c.name)
+    if (cols.includes('module_key')) {
+      db.exec(
+        `ALTER TABLE role_permissions RENAME TO role_permissions_legacy_module`
+      )
+    }
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      id TEXT PRIMARY KEY NOT NULL,
+      role_id TEXT NOT NULL,
+      permission_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (role_id) REFERENCES roles(id),
+      FOREIGN KEY (permission_id) REFERENCES permissions(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_roles_school ON roles(school_id);
+    CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module_key);
+    CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_id);
+  `)
+
+  const userCols = (
+    db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (!userCols.includes('role_id')) {
+    db.exec(`ALTER TABLE users ADD COLUMN role_id TEXT`)
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role_id)`)
+}
+
+/** Ensure student_settings exists on older databases. */
+function migrateStudentSettingsTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS student_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id_format TEXT NOT NULL DEFAULT 'SOF-{YEAR}-{SEQ}',
+      field_full_name INTEGER NOT NULL DEFAULT 1,
+      field_gender INTEGER NOT NULL DEFAULT 1,
+      field_date_of_birth INTEGER NOT NULL DEFAULT 1,
+      field_place_of_birth INTEGER NOT NULL DEFAULT 1,
+      field_parent_information INTEGER NOT NULL DEFAULT 1,
+      field_emergency_contact INTEGER NOT NULL DEFAULT 1,
+      admit_new INTEGER NOT NULL DEFAULT 1,
+      admit_returning INTEGER NOT NULL DEFAULT 1,
+      admit_transfer INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_student_settings_school ON student_settings(school_id);
+  `)
+}
+
+/** Student ID settings + students identity columns. */
+function migrateStudentIdSystem(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS student_id_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      pattern TEXT NOT NULL DEFAULT '{SCHOOL}-{YEAR}-{SEQ}',
+      sequence_scope TEXT NOT NULL DEFAULT 'year',
+      next_sequence_number INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_student_id_settings_school ON student_id_settings(school_id);
+  `)
+
+  const studentCols = (
+    db.prepare(`PRAGMA table_info(students)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  const additions = [
+    { name: 'school_id', sql: `ALTER TABLE students ADD COLUMN school_id TEXT` },
+    {
+      name: 'student_code',
+      sql: `ALTER TABLE students ADD COLUMN student_code TEXT`,
+    },
+    {
+      name: 'admission_year',
+      sql: `ALTER TABLE students ADD COLUMN admission_year INTEGER`,
+    },
+    {
+      name: 'academic_level_id',
+      sql: `ALTER TABLE students ADD COLUMN academic_level_id TEXT`,
+    },
+    {
+      name: 'sequence_number',
+      sql: `ALTER TABLE students ADD COLUMN sequence_number INTEGER`,
+    },
+  ]
+  for (const col of additions) {
+    if (!studentCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_students_school_code ON students(school_id, student_code);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_students_school_code_unique
+      ON students(school_id, student_code)
+      WHERE deleted_at IS NULL AND student_code IS NOT NULL;
+  `)
+}
+
+/** Fee categories, amounts, and finance settings. */
+function migrateFinanceTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS fee_categories (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      category_key TEXT NOT NULL,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS fee_amounts (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      academic_level_id TEXT NOT NULL,
+      fee_category_id TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (academic_level_id) REFERENCES academic_levels(id),
+      FOREIGN KEY (fee_category_id) REFERENCES fee_categories(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS finance_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      currency TEXT NOT NULL DEFAULT 'XAF',
+      payment_methods TEXT NOT NULL DEFAULT '["cash","mobile_money","bank_transfer"]',
+      receipt_prefix TEXT NOT NULL DEFAULT 'RCP',
+      receipt_next_number INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_fee_categories_school ON fee_categories(school_id);
+    CREATE INDEX IF NOT EXISTS idx_fee_amounts_school ON fee_amounts(school_id);
+    CREATE INDEX IF NOT EXISTS idx_fee_amounts_level ON fee_amounts(academic_level_id);
+    CREATE INDEX IF NOT EXISTS idx_finance_settings_school ON finance_settings(school_id);
+  `)
+}
+
+/** Official document template settings. */
+function migrateDocumentTemplates(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS document_templates (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      template_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      header_text TEXT NOT NULL DEFAULT '',
+      footer_text TEXT NOT NULL DEFAULT '',
+      logo_path TEXT,
+      show_logo INTEGER NOT NULL DEFAULT 1,
+      show_stamp INTEGER NOT NULL DEFAULT 1,
+      show_signature INTEGER NOT NULL DEFAULT 1,
+      signature_label TEXT NOT NULL DEFAULT 'Principal',
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_document_templates_school ON document_templates(school_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_document_templates_school_key
+      ON document_templates(school_id, template_key)
+      WHERE deleted_at IS NULL;
+  `)
+}
+
+/** SMS provider, channels, and notification message templates. */
+function migrateCommunicationTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS communication_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      sms_provider TEXT NOT NULL DEFAULT '',
+      sms_api_key TEXT NOT NULL DEFAULT '',
+      sms_sender_name TEXT NOT NULL DEFAULT '',
+      channel_sms INTEGER NOT NULL DEFAULT 0,
+      channel_email INTEGER NOT NULL DEFAULT 1,
+      channel_internal INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_templates (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      template_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_communication_settings_school
+      ON communication_settings(school_id);
+    CREATE INDEX IF NOT EXISTS idx_notification_templates_school
+      ON notification_templates(school_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_templates_school_key
+      ON notification_templates(school_id, template_key)
+      WHERE deleted_at IS NULL;
+  `)
+}
+
+/** Backup preferences and sync status for a school. */
+function migrateBackupSyncSettings(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS backup_sync_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      last_sync_at TEXT,
+      last_sync_status TEXT NOT NULL DEFAULT 'never',
+      cloud_connected INTEGER NOT NULL DEFAULT 0,
+      last_connection_test_at TEXT,
+      automatic_backup INTEGER NOT NULL DEFAULT 1,
+      backup_frequency TEXT NOT NULL DEFAULT 'daily',
+      backup_location TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_backup_sync_settings_school
+      ON backup_sync_settings(school_id);
+  `)
+}
+
+/** Extended student profile fields + transfers, documents, admissions, promotions. */
+function migrateStudentManagementTables(db: Database.Database): void {
+  const studentCols = (
+    db.prepare(`PRAGMA table_info(students)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+
+  const studentAdditions: Array<{ name: string; sql: string }> = [
+    { name: 'gender', sql: `ALTER TABLE students ADD COLUMN gender TEXT` },
+    {
+      name: 'date_of_birth',
+      sql: `ALTER TABLE students ADD COLUMN date_of_birth TEXT`,
+    },
+    { name: 'phone', sql: `ALTER TABLE students ADD COLUMN phone TEXT` },
+    { name: 'email', sql: `ALTER TABLE students ADD COLUMN email TEXT` },
+    { name: 'address', sql: `ALTER TABLE students ADD COLUMN address TEXT` },
+    {
+      name: 'admission_type',
+      sql: `ALTER TABLE students ADD COLUMN admission_type TEXT`,
+    },
+    {
+      name: 'guardian_name',
+      sql: `ALTER TABLE students ADD COLUMN guardian_name TEXT`,
+    },
+    {
+      name: 'guardian_phone',
+      sql: `ALTER TABLE students ADD COLUMN guardian_phone TEXT`,
+    },
+    {
+      name: 'guardian_email',
+      sql: `ALTER TABLE students ADD COLUMN guardian_email TEXT`,
+    },
+    {
+      name: 'guardian_relationship',
+      sql: `ALTER TABLE students ADD COLUMN guardian_relationship TEXT`,
+    },
+    {
+      name: 'status',
+      sql: `ALTER TABLE students ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
+    },
+  ]
+
+  for (const col of studentAdditions) {
+    if (!studentCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admissions (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      gender TEXT,
+      date_of_birth TEXT,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      academic_level_id TEXT,
+      preferred_class_id TEXT,
+      admission_year INTEGER,
+      guardian_name TEXT,
+      guardian_phone TEXT,
+      guardian_email TEXT,
+      guardian_relationship TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      notes TEXT,
+      student_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_transfers (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      from_class_id TEXT,
+      to_school_name TEXT NOT NULL,
+      transfer_date TEXT NOT NULL,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_documents (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      document_type TEXT NOT NULL DEFAULT 'other',
+      title TEXT NOT NULL,
+      file_path TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS promotion_runs (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      from_year INTEGER NOT NULL,
+      to_year INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS promotion_mappings (
+      id TEXT PRIMARY KEY NOT NULL,
+      promotion_run_id TEXT NOT NULL,
+      from_class_id TEXT NOT NULL,
+      to_class_id TEXT,
+      student_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (promotion_run_id) REFERENCES promotion_runs(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_students_school_status ON students(school_id, status);
+    CREATE INDEX IF NOT EXISTS idx_admissions_school ON admissions(school_id);
+    CREATE INDEX IF NOT EXISTS idx_student_transfers_school ON student_transfers(school_id);
+    CREATE INDEX IF NOT EXISTS idx_student_documents_student ON student_documents(student_id);
+    CREATE INDEX IF NOT EXISTS idx_promotion_runs_school ON promotion_runs(school_id);
+    CREATE INDEX IF NOT EXISTS idx_promotion_mappings_run ON promotion_mappings(promotion_run_id);
+  `)
+}
+
+/** Timetable, attendance, CA, exams, results, and report cards. */
+function migrateAcademicManagementTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS timetable_slots (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      subject_id TEXT,
+      staff_id TEXT,
+      day_of_week INTEGER NOT NULL,
+      period_number INTEGER NOT NULL,
+      room TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS attendance_sessions (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      session_date TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS attendance_records (
+      id TEXT PRIMARY KEY NOT NULL,
+      session_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'present',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (session_id) REFERENCES attendance_sessions(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS ca_assessments (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      term_id TEXT,
+      academic_year_id TEXT,
+      weight_percent REAL NOT NULL DEFAULT 0,
+      max_score REAL NOT NULL DEFAULT 100,
+      assessment_date TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS ca_scores (
+      id TEXT PRIMARY KEY NOT NULL,
+      assessment_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      score REAL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (assessment_id) REFERENCES ca_assessments(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS exam_sessions (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      term_id TEXT,
+      academic_year_id TEXT,
+      start_date TEXT,
+      end_date TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS exam_papers (
+      id TEXT PRIMARY KEY NOT NULL,
+      exam_session_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      max_score REAL NOT NULL DEFAULT 100,
+      exam_date TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (exam_session_id) REFERENCES exam_sessions(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS exam_scores (
+      id TEXT PRIMARY KEY NOT NULL,
+      paper_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      score REAL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (paper_id) REFERENCES exam_papers(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS result_runs (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      term_id TEXT,
+      academic_year_id TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      computed_at TEXT,
+      published_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS result_subject_rows (
+      id TEXT PRIMARY KEY NOT NULL,
+      result_run_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      ca_score REAL NOT NULL DEFAULT 0,
+      exam_score REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      grade TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (result_run_id) REFERENCES result_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS result_student_summaries (
+      id TEXT PRIMARY KEY NOT NULL,
+      result_run_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      average REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL DEFAULT 0,
+      grade TEXT,
+      position INTEGER,
+      remark TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (result_run_id) REFERENCES result_runs(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS report_cards (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      term_id TEXT,
+      academic_year_id TEXT,
+      result_run_id TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      generated_at TEXT,
+      payload TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_timetable_slots_class
+      ON timetable_slots(class_id, day_of_week, period_number);
+    CREATE INDEX IF NOT EXISTS idx_attendance_sessions_class_date
+      ON attendance_sessions(class_id, session_date);
+    CREATE INDEX IF NOT EXISTS idx_attendance_records_session
+      ON attendance_records(session_id);
+    CREATE INDEX IF NOT EXISTS idx_ca_assessments_school
+      ON ca_assessments(school_id);
+    CREATE INDEX IF NOT EXISTS idx_ca_scores_assessment
+      ON ca_scores(assessment_id);
+    CREATE INDEX IF NOT EXISTS idx_exam_sessions_school
+      ON exam_sessions(school_id);
+    CREATE INDEX IF NOT EXISTS idx_exam_papers_session
+      ON exam_papers(exam_session_id);
+    CREATE INDEX IF NOT EXISTS idx_exam_scores_paper
+      ON exam_scores(paper_id);
+    CREATE INDEX IF NOT EXISTS idx_result_runs_class
+      ON result_runs(class_id, term_id);
+    CREATE INDEX IF NOT EXISTS idx_result_subject_rows_run
+      ON result_subject_rows(result_run_id);
+    CREATE INDEX IF NOT EXISTS idx_result_student_summaries_run
+      ON result_student_summaries(result_run_id);
+    CREATE INDEX IF NOT EXISTS idx_report_cards_class
+      ON report_cards(class_id, term_id);
+  `)
+}
+

@@ -1,0 +1,292 @@
+import React from "react";
+import Link from "next/link";
+import { useRouter } from "next/router";
+import { AppShell } from "../../../components/layout/AppShell";
+import {
+  fetchExamPapers,
+  fetchExamScores,
+  saveExamScores,
+  type ExamPaperDto,
+} from "../../../lib/academic-mgmt";
+
+const selectClass =
+  "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
+
+const inputClass =
+  "w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
+
+function paperLabel(p: ExamPaperDto) {
+  const subject = p.subject_name || "Subject";
+  const cls = p.class_name || "Class";
+  const session = p.session_name || "Session";
+  return `${subject} — ${cls} — ${session}`;
+}
+
+export default function ExamScoresPage() {
+  const router = useRouter();
+  const queryPaperId =
+    typeof router.query.paper_id === "string" ? router.query.paper_id : "";
+  const querySessionId =
+    typeof router.query.session_id === "string"
+      ? router.query.session_id
+      : "";
+
+  const [loadingPapers, setLoadingPapers] = React.useState(true);
+  const [loadingScores, setLoadingScores] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [success, setSuccess] = React.useState("");
+  const [papers, setPapers] = React.useState<ExamPaperDto[]>([]);
+  const [paperId, setPaperId] = React.useState("");
+  const [maxScore, setMaxScore] = React.useState(0);
+  const [paperTitle, setPaperTitle] = React.useState("");
+  const [scores, setScores] = React.useState<
+    Array<{
+      id: string;
+      name: string;
+      student_code: string | null;
+      score: number | null;
+    }>
+  >([]);
+
+  React.useEffect(() => {
+    if (!router.isReady) return;
+    void (async () => {
+      setLoadingPapers(true);
+      setError("");
+      const res = await fetchExamPapers(
+        querySessionId ? { session_id: querySessionId } : undefined,
+      );
+      if (res.ok) {
+        setPapers(res.data);
+        if (queryPaperId && res.data.some((p) => p.id === queryPaperId)) {
+          setPaperId(queryPaperId);
+        } else if (res.data.length === 1) {
+          setPaperId(res.data[0].id);
+        }
+      } else {
+        setError(res.error);
+      }
+      setLoadingPapers(false);
+    })();
+  }, [router.isReady, queryPaperId, querySessionId]);
+
+  const loadScores = React.useCallback(async (id: string) => {
+    if (!id) return;
+    setLoadingScores(true);
+    setError("");
+    const res = await fetchExamScores(id);
+    if (res.ok) {
+      setMaxScore(res.data.paper.max_score);
+      const title = [
+        res.data.paper.subject_name,
+        res.data.paper.class_name,
+      ]
+        .filter(Boolean)
+        .join(" — ");
+      setPaperTitle(title || "Exam paper");
+      setScores(
+        res.data.students.map((s) => ({
+          id: s.id,
+          name: s.name,
+          student_code: s.student_code,
+          score: s.score,
+        })),
+      );
+    } else {
+      setError(res.error);
+      setScores([]);
+    }
+    setLoadingScores(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (paperId) void loadScores(paperId);
+    else {
+      setScores([]);
+      setMaxScore(0);
+      setPaperTitle("");
+    }
+  }, [paperId, loadScores]);
+
+  function updateScore(studentId: string, value: string) {
+    setScores((prev) =>
+      prev.map((s) => {
+        if (s.id !== studentId) return s;
+        if (value.trim() === "") return { ...s, score: null };
+        const num = Number(value);
+        return { ...s, score: Number.isNaN(num) ? s.score : num };
+      }),
+    );
+  }
+
+  async function handleSave() {
+    if (!paperId) return;
+    setError("");
+    setSuccess("");
+
+    for (const s of scores) {
+      if (s.score !== null && (s.score < 0 || s.score > maxScore)) {
+        setError(
+          `Score for ${s.name} must be between 0 and ${maxScore}.`,
+        );
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      const res = await saveExamScores({
+        paper_id: paperId,
+        scores: scores.map((s) => ({
+          student_id: s.id,
+          score: s.score,
+        })),
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setSuccess(`Saved scores for ${res.data.saved} student(s).`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const selectedPaper = papers.find((p) => p.id === paperId);
+
+  return (
+    <AppShell
+      title="Enter exam scores"
+      breadcrumb={["Academic Management", "Examinations", "Enter scores"]}
+      heading="Enter exam scores"
+      subtitle={
+        paperId && maxScore > 0
+          ? `${paperTitle} — max score: ${maxScore}`
+          : "Select an exam paper to enter scores."
+      }
+    >
+      {error ? (
+        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {error}
+        </div>
+      ) : null}
+      {success ? (
+        <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {success}
+        </div>
+      ) : null}
+
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <label className="block min-w-72 text-xs font-medium text-slate-500">
+          Exam paper
+          <select
+            className={`mt-1 block w-full ${selectClass}`}
+            value={paperId}
+            onChange={(e) => setPaperId(e.target.value)}
+            disabled={loadingPapers}
+          >
+            <option value="">Select paper…</option>
+            {papers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {paperLabel(p)}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/academic/exams"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+          >
+            Back to sessions
+          </Link>
+          <button
+            type="button"
+            disabled={!paperId || saving || loadingScores}
+            onClick={() => void handleSave()}
+            className="cursor-pointer rounded-xl bg-(--sofia-primary) px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Save scores"}
+          </button>
+        </div>
+      </div>
+
+      {selectedPaper ? (
+        <p className="mb-3 text-sm text-slate-500">
+          Max score for this paper:{" "}
+          <span className="font-semibold text-slate-700">
+            {selectedPaper.max_score}
+          </span>
+          {selectedPaper.exam_date ? (
+            <>
+              {" "}
+              · Exam date:{" "}
+              {new Date(selectedPaper.exam_date).toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })}
+            </>
+          ) : null}
+        </p>
+      ) : null}
+
+      {loadingPapers || loadingScores ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : !paperId ? (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
+          Choose an exam paper from the dropdown to load the student roster.
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Student ID</th>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Score (max {maxScore})</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {scores.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={3}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    No students in this class.
+                  </td>
+                </tr>
+              ) : (
+                scores.map((s) => (
+                  <tr key={s.id} className="hover:bg-slate-50/80">
+                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                      {s.student_code || "—"}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {s.name}
+                    </td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="number"
+                        min={0}
+                        max={maxScore}
+                        step="0.01"
+                        className={inputClass}
+                        value={s.score ?? ""}
+                        onChange={(e) => updateScore(s.id, e.target.value)}
+                        placeholder="—"
+                      />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </AppShell>
+  );
+}

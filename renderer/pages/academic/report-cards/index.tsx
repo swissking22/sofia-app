@@ -1,0 +1,218 @@
+import React from "react";
+import Link from "next/link";
+import { useRouter } from "next/router";
+import { Add01Icon } from "@hugeicons/core-free-icons";
+import { AppShell } from "../../../components/layout/AppShell";
+import { Icon } from "../../../components/ui/Icon";
+import {
+  fetchAcademicMeta,
+  fetchReportCards,
+  type AcademicMeta,
+} from "../../../lib/academic-mgmt";
+
+const selectClass =
+  "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
+
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    generated: "bg-emerald-50 text-emerald-700",
+    draft: "bg-slate-100 text-slate-600",
+  };
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+        styles[status] ?? "bg-slate-100 text-slate-600"
+      }`}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+      {label}
+    </span>
+  );
+}
+
+export default function ReportCardsIndexPage() {
+  const router = useRouter();
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+  const [meta, setMeta] = React.useState<AcademicMeta | null>(null);
+  const [classId, setClassId] = React.useState("");
+  const [termId, setTermId] = React.useState("");
+  const [cards, setCards] = React.useState<
+    Array<{
+      id: string;
+      student_id: string;
+      student_name: string | null;
+      student_code: string | null;
+      class_id: string;
+      class_name: string | null;
+      term_id: string | null;
+      status: string;
+      generated_at: string | null;
+    }>
+  >([]);
+
+  React.useEffect(() => {
+    void (async () => {
+      const res = await fetchAcademicMeta();
+      if (!res.ok) {
+        setError(res.error);
+        setLoading(false);
+        return;
+      }
+      setMeta(res.data);
+      const qClass =
+        typeof router.query.class_id === "string" ? router.query.class_id : "";
+      const qTerm =
+        typeof router.query.term_id === "string" ? router.query.term_id : "";
+      if (qClass) setClassId(qClass);
+      if (qTerm) setTermId(qTerm);
+      setLoading(false);
+    })();
+  }, [router.query.class_id, router.query.term_id]);
+
+  const loadCards = React.useCallback(async () => {
+    setError("");
+    const res = await fetchReportCards({
+      class_id: classId || undefined,
+      term_id: termId || null,
+    });
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setCards(res.data);
+  }, [classId, termId]);
+
+  React.useEffect(() => {
+    if (loading) return;
+    void loadCards();
+  }, [classId, termId, loading, loadCards]);
+
+  const generateQuery = new URLSearchParams({
+    ...(classId ? { class_id: classId } : {}),
+    ...(termId ? { term_id: termId } : {}),
+  }).toString();
+
+  return (
+    <AppShell
+      title="Report cards"
+      breadcrumb={["Academic Management", "Report Cards"]}
+      heading="Report cards"
+      subtitle="Browse and open generated student report cards."
+    >
+      {error ? (
+        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-wrap gap-2">
+          <label className="block text-xs font-medium text-slate-500">
+            Class
+            <select
+              className={`mt-1 block min-w-40 ${selectClass}`}
+              value={classId}
+              onChange={(e) => setClassId(e.target.value)}
+            >
+              <option value="">All classes</option>
+              {(meta?.classes ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs font-medium text-slate-500">
+            Term
+            <select
+              className={`mt-1 block min-w-36 ${selectClass}`}
+              value={termId}
+              onChange={(e) => setTermId(e.target.value)}
+            >
+              <option value="">All terms</option>
+              {(meta?.terms ?? []).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <Link
+          href={`/academic/report-cards/generate${generateQuery ? `?${generateQuery}` : ""}`}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-(--sofia-primary) px-4 py-2.5 text-sm font-semibold text-white"
+        >
+          <Icon icon={Add01Icon} size={16} />
+          Generate report cards
+        </Link>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Student</th>
+                <th className="px-4 py-3">Class</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Generated</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {cards.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-4 py-8 text-center text-slate-500"
+                  >
+                    No report cards match these filters.
+                  </td>
+                </tr>
+              ) : (
+                cards.map((card) => (
+                  <tr key={card.id} className="hover:bg-slate-50/80">
+                    <td className="px-4 py-3">
+                      <span className="font-medium text-slate-900">
+                        {card.student_name ?? "—"}
+                      </span>
+                      {card.student_code ? (
+                        <span className="ml-2 font-mono text-xs text-slate-500">
+                          {card.student_code}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {card.class_name ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={card.status} />
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {card.generated_at
+                        ? new Date(card.generated_at).toLocaleString()
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/academic/report-cards/view/${card.id}`}
+                        className="font-semibold text-(--sofia-primary) hover:underline"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </AppShell>
+  );
+}

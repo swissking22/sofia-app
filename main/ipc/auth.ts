@@ -1,0 +1,61 @@
+import { ipcMain } from 'electron'
+import type { Repositories } from '../db/repositories'
+import {
+  getSession,
+  getSetupState,
+  login,
+  logout,
+  registerAdmin,
+  registerSchool,
+  type LoginInput,
+  type RegisterAdminInput,
+  type RegisterSchoolInput,
+} from '../auth'
+
+/**
+ * Register all auth IPC handlers.
+ * Renderer talks only through these channels — never touches SQLite.
+ */
+export function registerAuthIpc(repos: Repositories): void {
+  ipcMain.handle('auth:needs-setup', () => {
+    return getSetupState(repos)
+  })
+
+  ipcMain.handle('auth:session', () => {
+    return { session: getSession() }
+  })
+
+  // Step 1–2: create school (details + logo)
+  ipcMain.handle(
+    'auth:register-school',
+    (_event, input: RegisterSchoolInput) => {
+      return registerSchool(repos, input)
+    }
+  )
+
+  // Step 3: create admin for that school
+  ipcMain.handle(
+    'auth:register-admin',
+    async (_event, input: RegisterAdminInput) => {
+      return registerAdmin(repos, input)
+    }
+  )
+
+  ipcMain.handle('auth:login', async (_event, input: LoginInput) => {
+    return login(repos, input)
+  })
+
+  ipcMain.handle('auth:logout', () => {
+    logout()
+    return { ok: true }
+  })
+
+  ipcMain.handle('auth:get-permissions', () => {
+    const session = getSession()
+    if (!session?.userId) {
+      return { ok: false as const, error: 'Not authenticated.' }
+    }
+    const permissions = repos.roles.getPermissionNamesForUser(session.userId)
+    return { ok: true as const, data: { permissions } }
+  })
+}

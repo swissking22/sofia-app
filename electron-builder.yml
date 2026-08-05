@@ -1,0 +1,12 @@
+appId: com.sofia.app
+productName: SOFIA
+copyright: Copyright © 2026 SOFIA
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - from: .
+    filter:
+      - package.json
+      - app
+publish: null

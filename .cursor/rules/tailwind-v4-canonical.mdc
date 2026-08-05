@@ -1,0 +1,38 @@
+---
+description: Always use Tailwind CSS v4 canonical class syntax for CSS variables
+globs: "**/*.{tsx,jsx,css}"
+alwaysApply: false
+---
+
+# Tailwind v4 Canonical Classes
+
+Always use the Tailwind CSS v4 canonical form for CSS variable utilities. Never use the legacy `[var(--token)]` syntax.
+
+## Required form
+
+```
+bg-(--sofia-primary)
+text-(--sofia-primary)
+border-(--sofia-primary)
+hover:bg-(--sofia-primary-dark)
+focus:border-(--sofia-primary)
+focus:ring-(--sofia-primary)/15
+```
+
+## Forbidden form
+
+```
+bg-[var(--sofia-primary)]
+text-[var(--sofia-primary)]
+border-[var(--sofia-primary)]
+hover:bg-[var(--sofia-primary-dark)]
+focus:border-[var(--sofia-primary)]
+focus:ring-[var(--sofia-primary)]/15
+```
+
+## Rule
+
+- When writing or editing Tailwind classes that reference CSS custom properties, always use `utility-(--token)` or `utility-(--token)/opacity`.
+- Never write `utility-[var(--token)]`.
+- Apply this to all utilities: `bg`, `text`, `border`, `ring`, `fill`, `stroke`, `from`, `to`, `via`, `outline`, `shadow`, etc.
+- When touching a file that still uses the old form, convert those classes to the canonical form in the same edit.

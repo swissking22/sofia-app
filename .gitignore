@@ -1,0 +1,15 @@
+# dependencies
+node_modules
+
+# next.js
+.next
+next-env.d.ts
+
+# build
+/app
+/dist
+
+# local database (dev artifacts)
+*.db
+*.db-wal
+*.db-shm

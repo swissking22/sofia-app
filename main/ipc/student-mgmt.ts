@@ -1,0 +1,901 @@
+import { ipcMain } from 'electron'
+import { getSession } from '../auth'
+import type { Repositories } from '../db/repositories'
+import type { StudentStatus } from '../db/repositories/student.repository'
+import type {
+  Admission,
+  DocumentType,
+  Student,
+  StudentDocument,
+  StudentTransfer,
+} from '../db/types'
+import {
+  assetToDataUrl,
+  saveStudentDocumentFile,
+} from '../helpers/student-documents'
+import { generateStudentId } from '../services/student-id'
+
+type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+
+export interface StudentDto {
+  id: string
+  name: string
+  class_id: string
+  class_name: string | null
+  academic_level_id: string | null
+  level_name: string | null
+  section_id: string | null
+  section_name: string | null
+  school_id: string | null
+  student_code: string | null
+  admission_year: number | null
+  sequence_number: number | null
+  gender: string | null
+  date_of_birth: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  admission_type: string | null
+  guardian_name: string | null
+  guardian_phone: string | null
+  guardian_email: string | null
+  guardian_relationship: string | null
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export type StudentDetailDto = StudentDto
+
+export interface StudentListResult {
+  students: StudentDto[]
+  filters: {
+    years: number[]
+    levels: Array<{ id: string; name: string; sort_order: number }>
+    sections: Array<{ id: string; name: string }>
+  }
+}
+
+export interface PromotionPreviewClass {
+  class_id: string
+  class_name: string
+  academic_level_id: string | null
+  level_name: string | null
+  section_id: string | null
+  section_name: string | null
+  student_count: number
+  suggested_to_class_id: string | null
+  suggested_to_class_name: string | null
+}
+
+export interface PromotionPreviewDto {
+  from_year: number
+  to_year?: number
+  classes: PromotionPreviewClass[]
+  mappings: Array<{
+    from_class_id: string
+    to_class_id: string | null
+    student_count: number
+  }>
+}
+
+export interface StudentDocumentDto {
+  id: string
+  school_id: string
+  student_id: string
+  student_name: string | null
+  document_type: DocumentType
+  title: string
+  file_path: string | null
+  file_url: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TransferDto extends StudentTransfer {
+  student_name: string | null
+  student_code: string | null
+}
+
+function resolveSchoolId(repos: Repositories): string | null {
+  const session = getSession()
+  if (session?.schoolId) return session.schoolId
+  return repos.schools.findLatest()?.id ?? null
+}
+
+function enrichStudent(repos: Repositories, student: Student): StudentDto {
+  const cls = student.class_id
+    ? repos.classes.findById(student.class_id)
+    : undefined
+  const levelId = student.academic_level_id ?? cls?.academic_level_id ?? null
+  const level = levelId ? repos.academicLevels.findById(levelId) : undefined
+  const sectionId = cls?.section_id ?? null
+  const section = sectionId ? repos.sections.findById(sectionId) : undefined
+
+  return {
+    id: student.id,
+    name: student.name,
+    class_id: student.class_id,
+    class_name: cls?.name ?? null,
+    academic_level_id: levelId,
+    level_name: level?.name ?? null,
+    section_id: sectionId,
+    section_name: section?.name ?? null,
+    school_id: student.school_id,
+    student_code: student.student_code,
+    admission_year: student.admission_year,
+    sequence_number: student.sequence_number,
+    gender: student.gender,
+    date_of_birth: student.date_of_birth,
+    phone: student.phone,
+    email: student.email,
+    address: student.address,
+    admission_type: student.admission_type,
+    guardian_name: student.guardian_name,
+    guardian_phone: student.guardian_phone,
+    guardian_email: student.guardian_email,
+    guardian_relationship: student.guardian_relationship,
+    status: student.status,
+    created_at: student.created_at,
+    updated_at: student.updated_at,
+  }
+}
+
+function listFilterOptions(
+  repos: Repositories,
+  schoolId: string
+): StudentListResult['filters'] {
+  const allStudents = repos.students.findBySchool(schoolId, 'all')
+  const yearSet = new Set<number>()
+  for (const s of allStudents) {
+    if (s.admission_year != null) yearSet.add(s.admission_year)
+  }
+  const years = Array.from(yearSet).sort((a, b) => b - a)
+  const levels = repos.academicLevels.findBySchool(schoolId).map((l) => ({
+    id: l.id,
+    name: l.name,
+    sort_order: l.sort_order,
+  }))
+  const sections = repos.sections.findBySchool(schoolId).map((s) => ({
+    id: s.id,
+    name: s.name,
+  }))
+  return { years, levels, sections }
+}
+
+function toDocumentDto(
+  repos: Repositories,
+  doc: StudentDocument
+): StudentDocumentDto {
+  const student = repos.students.findById(doc.student_id)
+  return {
+    id: doc.id,
+    school_id: doc.school_id,
+    student_id: doc.student_id,
+    student_name: student?.name ?? null,
+    document_type: doc.document_type,
+    title: doc.title,
+    file_path: doc.file_path,
+    file_url: assetToDataUrl(doc.file_path),
+    notes: doc.notes,
+    created_at: doc.created_at,
+    updated_at: doc.updated_at,
+  }
+}
+
+function toTransferDto(
+  repos: Repositories,
+  transfer: StudentTransfer
+): TransferDto {
+  const student = repos.students.findById(transfer.student_id)
+  return {
+    ...transfer,
+    student_name: student?.name ?? null,
+    student_code: student?.student_code ?? null,
+  }
+}
+
+function buildPromotionPreview(
+  repos: Repositories,
+  schoolId: string,
+  fromYear: number,
+  toYear?: number
+): PromotionPreviewDto {
+  const levels = repos.academicLevels.findBySchool(schoolId)
+  const levelById = new Map(levels.map((l) => [l.id, l]))
+  const sections = repos.sections.findBySchool(schoolId)
+  const sectionById = new Map(sections.map((s) => [s.id, s]))
+  const classes = repos.classes.findStructureClasses(schoolId)
+
+  const nextLevelId = (levelId: string | null): string | null => {
+    if (!levelId) return null
+    const current = levelById.get(levelId)
+    if (!current) return null
+    const next = levels.find((l) => l.sort_order === current.sort_order + 1)
+    return next?.id ?? null
+  }
+
+  const classesDto: PromotionPreviewClass[] = classes.map((cls) => {
+    const students = repos.students
+      .findByClassId(cls.id)
+      .filter((s) => s.status === 'active')
+    const nextLevel = nextLevelId(cls.academic_level_id)
+    const suggested =
+      nextLevel && cls.section_id
+        ? classes.find(
+            (c) =>
+              c.academic_level_id === nextLevel &&
+              c.section_id === cls.section_id &&
+              (cls.specialization_id
+                ? c.specialization_id === cls.specialization_id
+                : true)
+          ) ??
+          classes.find(
+            (c) =>
+              c.academic_level_id === nextLevel &&
+              c.section_id === cls.section_id
+          )
+        : undefined
+
+    return {
+      class_id: cls.id,
+      class_name: cls.name,
+      academic_level_id: cls.academic_level_id,
+      level_name: cls.academic_level_id
+        ? levelById.get(cls.academic_level_id)?.name ?? null
+        : null,
+      section_id: cls.section_id,
+      section_name: cls.section_id
+        ? sectionById.get(cls.section_id)?.name ?? null
+        : null,
+      student_count: students.length,
+      suggested_to_class_id: suggested?.id ?? null,
+      suggested_to_class_name: suggested?.name ?? null,
+    }
+  })
+
+  return {
+    from_year: fromYear,
+    to_year: toYear,
+    classes: classesDto,
+    mappings: classesDto.map((c) => ({
+      from_class_id: c.class_id,
+      to_class_id: c.suggested_to_class_id,
+      student_count: c.student_count,
+    })),
+  }
+}
+
+export function registerStudentMgmtIpc(repos: Repositories): void {
+  ipcMain.handle(
+    'students:mgmt-list',
+    (
+      _e,
+      input?: {
+        status?: StudentStatus | 'all'
+        admissionYear?: number | null
+        academicLevelId?: string | null
+        sectionId?: string | null
+        search?: string | null
+      }
+    ): Result<StudentListResult> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) {
+        return {
+          ok: false,
+          error: 'No school found. Complete registration first.',
+        }
+      }
+
+      const students = repos.students
+        .listFiltered({
+          schoolId,
+          status: input?.status,
+          admissionYear: input?.admissionYear,
+          academicLevelId: input?.academicLevelId,
+          sectionId: input?.sectionId,
+          search: input?.search,
+        })
+        .map((s) => enrichStudent(repos, s))
+
+      return {
+        ok: true,
+        data: {
+          students,
+          filters: listFilterOptions(repos, schoolId),
+        },
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'students:mgmt-get',
+    (_e, input: { id: string }): Result<StudentDetailDto> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.id) return { ok: false, error: 'Student id is required.' }
+
+      const student = repos.students.findById(input.id)
+      if (!student || student.school_id !== schoolId) {
+        return { ok: false, error: 'Student not found.' }
+      }
+      return { ok: true, data: enrichStudent(repos, student) }
+    }
+  )
+
+  ipcMain.handle(
+    'students:mgmt-create',
+    (
+      _e,
+      input: {
+        name: string
+        class_id: string
+        admission_year: number
+        gender?: string | null
+        date_of_birth?: string | null
+        phone?: string | null
+        email?: string | null
+        address?: string | null
+        admission_type?: string | null
+        guardian_name?: string | null
+        guardian_phone?: string | null
+        guardian_email?: string | null
+        guardian_relationship?: string | null
+      }
+    ): Result<StudentDetailDto> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+
+      const name = input?.name?.trim()
+      if (!name) return { ok: false, error: 'Student name is required.' }
+      if (!input?.class_id) return { ok: false, error: 'Class is required.' }
+      if (!input?.admission_year) {
+        return { ok: false, error: 'Admission year is required.' }
+      }
+
+      const cls = repos.classes.findById(input.class_id)
+      if (!cls || cls.school_id !== schoolId) {
+        return { ok: false, error: 'Class not found.' }
+      }
+
+      const academicLevelId = cls.academic_level_id
+      if (!academicLevelId) {
+        return { ok: false, error: 'Class has no academic level assigned.' }
+      }
+
+      const section = cls.section_id
+        ? repos.sections.findById(cls.section_id)
+        : undefined
+      const specialization = cls.specialization_id
+        ? repos.specializations.findById(cls.specialization_id)
+        : undefined
+
+      try {
+        const generated = generateStudentId(repos, {
+          schoolId,
+          admissionYear: input.admission_year,
+          academicLevelId,
+          sectionName: section?.name ?? null,
+          specializationAbbr: specialization?.abbreviation ?? null,
+        })
+
+        const student = repos.students.create({
+          name,
+          class_id: input.class_id,
+          school_id: schoolId,
+          student_code: generated.student_code,
+          admission_year: input.admission_year,
+          academic_level_id: academicLevelId,
+          sequence_number: generated.sequence_number,
+          gender: input.gender ?? null,
+          date_of_birth: input.date_of_birth ?? null,
+          phone: input.phone ?? null,
+          email: input.email ?? null,
+          address: input.address ?? null,
+          admission_type: input.admission_type ?? null,
+          guardian_name: input.guardian_name ?? null,
+          guardian_phone: input.guardian_phone ?? null,
+          guardian_email: input.guardian_email ?? null,
+          guardian_relationship: input.guardian_relationship ?? null,
+          status: 'active',
+        })
+
+        return { ok: true, data: enrichStudent(repos, student) }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : 'Could not create student.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'students:mgmt-update',
+    (
+      _e,
+      input: {
+        id: string
+        name?: string
+        class_id?: string
+        gender?: string | null
+        date_of_birth?: string | null
+        phone?: string | null
+        email?: string | null
+        address?: string | null
+        admission_type?: string | null
+        admission_year?: number | null
+        guardian_name?: string | null
+        guardian_phone?: string | null
+        guardian_email?: string | null
+        guardian_relationship?: string | null
+        status?: string
+      }
+    ): Result<StudentDetailDto> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.id) return { ok: false, error: 'Student id is required.' }
+
+      const existing = repos.students.findById(input.id)
+      if (!existing || existing.school_id !== schoolId) {
+        return { ok: false, error: 'Student not found.' }
+      }
+
+      try {
+        let academic_level_id = existing.academic_level_id
+        let class_id = existing.class_id
+
+        if (input.class_id && input.class_id !== existing.class_id) {
+          const cls = repos.classes.findById(input.class_id)
+          if (!cls || cls.school_id !== schoolId) {
+            return { ok: false, error: 'Class not found.' }
+          }
+          class_id = input.class_id
+          academic_level_id = cls.academic_level_id
+        }
+
+        const updated = repos.students.update(input.id, {
+          name: input.name,
+          class_id,
+          academic_level_id,
+          gender: input.gender,
+          date_of_birth: input.date_of_birth,
+          phone: input.phone,
+          email: input.email,
+          address: input.address,
+          admission_type: input.admission_type,
+          admission_year: input.admission_year,
+          guardian_name: input.guardian_name,
+          guardian_phone: input.guardian_phone,
+          guardian_email: input.guardian_email,
+          guardian_relationship: input.guardian_relationship,
+          status: input.status,
+          // student_code intentionally omitted — immutable
+        })
+        if (!updated) return { ok: false, error: 'Student not found.' }
+        return { ok: true, data: enrichStudent(repos, updated) }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : 'Could not update student.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'students:mgmt-bulk-status',
+    (
+      _e,
+      input: { ids: string[]; status: StudentStatus }
+    ): Result<{ updated: number }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.ids?.length) {
+        return { ok: false, error: 'Select at least one student.' }
+      }
+      if (
+        !input.status ||
+        !['active', 'alumni', 'transferred'].includes(input.status)
+      ) {
+        return { ok: false, error: 'Invalid status.' }
+      }
+
+      const owned = input.ids.filter((id) => {
+        const s = repos.students.findById(id)
+        return s && s.school_id === schoolId
+      })
+      if (!owned.length) return { ok: false, error: 'No matching students.' }
+
+      try {
+        const updated = repos.students.bulkUpdateStatus(owned, input.status)
+        return { ok: true, data: { updated } }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Could not update student status.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'students:mgmt-delete',
+    (_e, input: { id: string }): Result<{ id: string }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.id) return { ok: false, error: 'Student id is required.' }
+
+      const existing = repos.students.findById(input.id)
+      if (!existing || existing.school_id !== schoolId) {
+        return { ok: false, error: 'Student not found.' }
+      }
+
+      try {
+        repos.students.delete(input.id)
+        return { ok: true, data: { id: input.id } }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : 'Could not delete student.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'admissions:create',
+    (
+      _e,
+      input: {
+        full_name: string
+        gender?: string | null
+        date_of_birth?: string | null
+        phone?: string | null
+        email?: string | null
+        address?: string | null
+        academic_level_id?: string | null
+        preferred_class_id?: string | null
+        admission_year?: number | null
+        guardian_name?: string | null
+        guardian_phone?: string | null
+        guardian_email?: string | null
+        guardian_relationship?: string | null
+        notes?: string | null
+      }
+    ): Result<Admission> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+
+      const full_name = input?.full_name?.trim()
+      if (!full_name) return { ok: false, error: 'Full name is required.' }
+
+      try {
+        const admission = repos.admissions.create({
+          school_id: schoolId,
+          full_name,
+          gender: input.gender ?? null,
+          date_of_birth: input.date_of_birth ?? null,
+          phone: input.phone ?? null,
+          email: input.email ?? null,
+          address: input.address ?? null,
+          academic_level_id: input.academic_level_id ?? null,
+          preferred_class_id: input.preferred_class_id ?? null,
+          admission_year: input.admission_year ?? null,
+          guardian_name: input.guardian_name ?? null,
+          guardian_phone: input.guardian_phone ?? null,
+          guardian_email: input.guardian_email ?? null,
+          guardian_relationship: input.guardian_relationship ?? null,
+          notes: input.notes ?? null,
+          status: 'pending',
+        })
+        return { ok: true, data: admission }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Could not create admission.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'transfers:list',
+    (): Result<TransferDto[]> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      const rows = repos.studentTransfers
+        .findBySchool(schoolId)
+        .map((t) => toTransferDto(repos, t))
+      return { ok: true, data: rows }
+    }
+  )
+
+  ipcMain.handle(
+    'transfers:create',
+    (
+      _e,
+      input: {
+        student_id: string
+        to_school_name: string
+        transfer_date: string
+        reason?: string | null
+      }
+    ): Result<TransferDto> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.student_id) {
+        return { ok: false, error: 'Student is required.' }
+      }
+      const toSchool = input?.to_school_name?.trim()
+      if (!toSchool) return { ok: false, error: 'Destination school is required.' }
+      if (!input?.transfer_date) {
+        return { ok: false, error: 'Transfer date is required.' }
+      }
+
+      const student = repos.students.findById(input.student_id)
+      if (!student || student.school_id !== schoolId) {
+        return { ok: false, error: 'Student not found.' }
+      }
+
+      try {
+        // Create as pending, then complete + mark student transferred in one action.
+        const created = repos.studentTransfers.create({
+          school_id: schoolId,
+          student_id: input.student_id,
+          from_class_id: student.class_id,
+          to_school_name: toSchool,
+          transfer_date: input.transfer_date,
+          reason: input.reason ?? null,
+          status: 'pending',
+        })
+        const completed =
+          repos.studentTransfers.updateStatus(created.id, 'completed') ?? created
+        repos.students.update(student.id, { status: 'transferred' })
+        return { ok: true, data: toTransferDto(repos, completed) }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : 'Could not create transfer.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'documents:list',
+    (): Result<StudentDocumentDto[]> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      return {
+        ok: true,
+        data: repos.studentDocuments
+          .findBySchool(schoolId)
+          .map((d) => toDocumentDto(repos, d)),
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'documents:list-by-student',
+    (_e, input: { student_id: string }): Result<StudentDocumentDto[]> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.student_id) {
+        return { ok: false, error: 'Student id is required.' }
+      }
+      const student = repos.students.findById(input.student_id)
+      if (!student || student.school_id !== schoolId) {
+        return { ok: false, error: 'Student not found.' }
+      }
+      return {
+        ok: true,
+        data: repos.studentDocuments
+          .findByStudent(input.student_id)
+          .map((d) => toDocumentDto(repos, d)),
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'documents:upload',
+    (
+      _e,
+      input: {
+        student_id: string
+        document_type: DocumentType
+        title: string
+        file_base64: string
+        mime_type?: string
+        original_name?: string
+        notes?: string | null
+      }
+    ): Result<StudentDocumentDto> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.student_id) {
+        return { ok: false, error: 'Student id is required.' }
+      }
+      const title = input?.title?.trim()
+      if (!title) return { ok: false, error: 'Document title is required.' }
+      if (!input?.document_type) {
+        return { ok: false, error: 'Document type is required.' }
+      }
+      if (!input?.file_base64) {
+        return { ok: false, error: 'File data is required.' }
+      }
+
+      const student = repos.students.findById(input.student_id)
+      if (!student || student.school_id !== schoolId) {
+        return { ok: false, error: 'Student not found.' }
+      }
+
+      try {
+        const file_path = saveStudentDocumentFile(
+          input.file_base64,
+          input.mime_type ?? 'application/octet-stream',
+          input.original_name
+        )
+        const doc = repos.studentDocuments.create({
+          school_id: schoolId,
+          student_id: input.student_id,
+          document_type: input.document_type,
+          title,
+          file_path,
+          notes: input.notes ?? null,
+        })
+        return { ok: true, data: toDocumentDto(repos, doc) }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : 'Could not upload document.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'promotions:preview',
+    (
+      _e,
+      input: { from_year: number; to_year?: number }
+    ): Result<PromotionPreviewDto> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.from_year) {
+        return { ok: false, error: 'From year is required.' }
+      }
+      return {
+        ok: true,
+        data: buildPromotionPreview(
+          repos,
+          schoolId,
+          input.from_year,
+          input.to_year
+        ),
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'promotions:run',
+    (
+      _e,
+      input: {
+        from_year: number
+        to_year: number
+        mappings: Array<{ from_class_id: string; to_class_id: string | null }>
+        confirm: boolean
+      }
+    ): Result<
+      PromotionPreviewDto | { run_id: string; moved: number; status: string }
+    > => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.from_year || !input?.to_year) {
+        return { ok: false, error: 'From and to years are required.' }
+      }
+
+      if (!input.confirm) {
+        return {
+          ok: true,
+          data: buildPromotionPreview(
+            repos,
+            schoolId,
+            input.from_year,
+            input.to_year
+          ),
+        }
+      }
+
+      const mappings = (input.mappings ?? []).filter(
+        (m) => m.from_class_id && m.to_class_id
+      )
+      if (!mappings.length) {
+        return {
+          ok: false,
+          error: 'Provide at least one class mapping with a destination.',
+        }
+      }
+
+      try {
+        let moved = 0
+        const mappingPayload = mappings.map((m) => {
+          const count = repos.students
+            .findByClassId(m.from_class_id)
+            .filter((s) => s.status === 'active').length
+          return {
+            from_class_id: m.from_class_id,
+            to_class_id: m.to_class_id,
+            student_count: count,
+          }
+        })
+
+        const run = repos.promotions.createRun({
+          school_id: schoolId,
+          from_year: input.from_year,
+          to_year: input.to_year,
+          mappings: mappingPayload,
+        })
+
+        for (const m of mappings) {
+          const toClass = repos.classes.findById(m.to_class_id!)
+          if (!toClass || toClass.school_id !== schoolId) continue
+
+          const active = repos.students
+            .findByClassId(m.from_class_id)
+            .filter((s) => s.status === 'active' && s.school_id === schoolId)
+
+          for (const student of active) {
+            repos.students.update(student.id, {
+              class_id: toClass.id,
+              academic_level_id: toClass.academic_level_id,
+              // admission_year kept as-is
+            })
+            moved += 1
+          }
+        }
+
+        const completed = repos.promotions.markCompleted(run.id)
+        return {
+          ok: true,
+          data: {
+            run_id: run.id,
+            moved,
+            status: completed?.status ?? 'completed',
+          },
+        }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error ? err.message : 'Could not run promotions.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'alumni:list',
+    (): Result<StudentDto[]> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      const students = repos.students
+        .findBySchool(schoolId, 'alumni')
+        .map((s) => enrichStudent(repos, s))
+      return { ok: true, data: students }
+    }
+  )
+}
