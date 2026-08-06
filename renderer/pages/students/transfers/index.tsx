@@ -2,14 +2,27 @@ import React from "react";
 import Link from "next/link";
 import { Add01Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
+import {
+  EmptyRow,
+  FilterBar,
+  FilterField,
+  PageAlert,
+  PrimaryButton,
+  StatusBadge,
+  StudentTable,
+  selectClass,
+} from "../../../components/students/ui";
 import { Icon } from "../../../components/ui/Icon";
 import { fetchTransfers, type TransferDto } from "../../../lib/student-mgmt";
+
+type StatusFilter = "all" | string;
 
 export default function TransfersIndexPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [rows, setRows] = React.useState<TransferDto[]>([]);
   const [search, setSearch] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
 
   React.useEffect(() => {
     void (async () => {
@@ -20,15 +33,26 @@ export default function TransfersIndexPage() {
     })();
   }, []);
 
-  const filtered = rows.filter((r) => {
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      (r.student_name || "").toLowerCase().includes(q) ||
-      (r.student_code || "").toLowerCase().includes(q) ||
-      r.to_school_name.toLowerCase().includes(q)
-    );
-  });
+  const statusOptions = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      if (r.status) set.add(r.status);
+    }
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const filtered = React.useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        (r.student_name || "").toLowerCase().includes(q) ||
+        (r.student_code || "").toLowerCase().includes(q) ||
+        r.to_school_name.toLowerCase().includes(q)
+      );
+    });
+  }, [rows, search, statusFilter]);
 
   return (
     <AppShell
@@ -37,93 +61,85 @@ export default function TransfersIndexPage() {
       heading="Student transfers"
       subtitle="Outgoing transfers to other schools."
     >
-      {error ? (
-        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
-      ) : null}
+      {error ? <PageAlert tone="error">{error}</PageAlert> : null}
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <label className="block min-w-56 text-xs font-medium text-slate-500">
-          Search
-          <input
-            className="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Student or destination"
-          />
-        </label>
-        <Link
-          href="/students/transfers/create"
-          className="inline-flex items-center gap-1.5 rounded-xl bg-(--sofia-primary) px-4 py-2.5 text-sm font-semibold text-white"
-        >
-          <Icon icon={Add01Icon} size={16} />
-          New transfer
-        </Link>
-      </div>
+      <FilterBar
+        filters={
+          <>
+            <FilterField label="Status">
+              <select
+                className={selectClass}
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="all">All</option>
+                {statusOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+            <FilterField label="Search" className="min-w-56 flex-1">
+              <input
+                className={`w-full ${selectClass}`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Student or destination"
+              />
+            </FilterField>
+          </>
+        }
+        actions={
+          <PrimaryButton href="/students/transfers/create">
+            <Icon icon={Add01Icon} size={16} />
+            New transfer
+          </PrimaryButton>
+        }
+      />
 
-      {loading ? (
-        <p className="text-sm text-slate-500">Loading transfers…</p>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Student</th>
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">To school</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Reason</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-8 text-center text-slate-500"
+      <StudentTable
+        loading={loading}
+        columns={["Student", "ID", "To school", "Date", "Status", "Reason"]}
+      >
+        {filtered.length === 0 ? (
+          <EmptyRow colSpan={6}>
+            No transfers match these filters.{" "}
+            <Link
+              href="/students/transfers/create"
+              className="font-semibold text-(--sofia-primary)"
+            >
+              Record a transfer
+            </Link>
+          </EmptyRow>
+        ) : (
+          filtered.map((r) => (
+            <tr key={r.id} className="hover:bg-slate-50/80">
+              <td className="px-4 py-3 font-medium text-slate-800">
+                {r.student_id ? (
+                  <Link
+                    href={`/students/${r.student_id}`}
+                    className="text-(--sofia-primary) hover:underline"
                   >
-                    No transfers recorded.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-medium text-slate-800">
-                      {r.student_id ? (
-                        <Link
-                          href={`/students/${r.student_id}`}
-                          className="text-(--sofia-primary) hover:underline"
-                        >
-                          {r.student_name || "—"}
-                        </Link>
-                      ) : (
-                        r.student_name || "—"
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                      {r.student_code || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">
-                      {r.to_school_name}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {r.transfer_date}
-                    </td>
-                    <td className="px-4 py-3 capitalize text-slate-600">
-                      {r.status}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">
-                      {r.reason || "—"}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    {r.student_name || "—"}
+                  </Link>
+                ) : (
+                  r.student_name || "—"
+                )}
+              </td>
+              <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                {r.student_code || "—"}
+              </td>
+              <td className="px-4 py-3 text-slate-700">{r.to_school_name}</td>
+              <td className="px-4 py-3 text-slate-600">{r.transfer_date}</td>
+              <td className="px-4 py-3">
+                <StatusBadge status={r.status} />
+              </td>
+              <td className="px-4 py-3 text-slate-500">{r.reason || "—"}</td>
+            </tr>
+          ))
+        )}
+      </StudentTable>
     </AppShell>
   );
 }

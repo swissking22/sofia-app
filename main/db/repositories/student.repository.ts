@@ -117,6 +117,7 @@ export class StudentRepository extends BaseRepository<Student> {
       guardian_email?: string | null
       guardian_relationship?: string | null
       status?: string
+      photo_path?: string | null
     }
   ): Student {
     const record: Student = {
@@ -139,6 +140,7 @@ export class StudentRepository extends BaseRepository<Student> {
       guardian_email: input.guardian_email ?? null,
       guardian_relationship: input.guardian_relationship ?? null,
       status: input.status ?? 'active',
+      photo_path: input.photo_path ?? null,
     }
 
     const tx = this.db.transaction(() => {
@@ -149,14 +151,14 @@ export class StudentRepository extends BaseRepository<Student> {
              admission_year, academic_level_id, sequence_number,
              gender, date_of_birth, phone, email, address, admission_type,
              guardian_name, guardian_phone, guardian_email, guardian_relationship,
-             status,
+             status, photo_path,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @name, @class_id, @school_id, @student_code,
              @admission_year, @academic_level_id, @sequence_number,
              @gender, @date_of_birth, @phone, @email, @address, @admission_type,
              @guardian_name, @guardian_phone, @guardian_email, @guardian_relationship,
-             @status,
+             @status, @photo_path,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
         )
@@ -211,6 +213,7 @@ export class StudentRepository extends BaseRepository<Student> {
                guardian_email = @guardian_email,
                guardian_relationship = @guardian_relationship,
                status = @status,
+               photo_path = @photo_path,
                updated_at = @updated_at,
                version = @version,
                sync_status = @sync_status

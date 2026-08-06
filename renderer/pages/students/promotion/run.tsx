@@ -3,6 +3,14 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
+  ConfirmModal,
+  EmptyRow,
+  PageAlert,
+  PrimaryButton,
+  SecondaryButton,
+  StudentTable,
+} from "../../../components/students/ui";
+import {
   fetchPromotionPreview,
   runPromotion,
   type PromotionPreview,
@@ -20,6 +28,7 @@ export default function PromotionRunPage() {
   const [running, setRunning] = React.useState(false);
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [payload, setPayload] = React.useState<StoredPayload | null>(null);
   const [preview, setPreview] = React.useState<PromotionPreview | null>(null);
 
@@ -54,6 +63,10 @@ export default function PromotionRunPage() {
   }, []);
 
   const activeMappings = (payload?.mappings ?? []).filter((m) => m.to_class_id);
+  const skippedMappings = (payload?.mappings ?? []).filter(
+    (m) => !m.to_class_id,
+  );
+
   const classNameById = React.useMemo(() => {
     const map: Record<string, string> = {};
     for (const c of preview?.classes ?? []) {
@@ -66,6 +79,11 @@ export default function PromotionRunPage() {
   }, [preview]);
 
   const totalStudents = activeMappings.reduce((sum, m) => {
+    const cls = preview?.classes.find((c) => c.class_id === m.from_class_id);
+    return sum + (cls?.student_count ?? 0);
+  }, 0);
+
+  const skippedStudents = skippedMappings.reduce((sum, m) => {
     const cls = preview?.classes.find((c) => c.class_id === m.from_class_id);
     return sum + (cls?.student_count ?? 0);
   }, 0);
@@ -92,6 +110,7 @@ export default function PromotionRunPage() {
       };
       setSuccess(`Promotion complete. ${data.moved} student(s) moved.`);
       sessionStorage.removeItem("sofia_promotion_run");
+      setConfirmOpen(false);
       setTimeout(() => {
         void router.push("/students");
       }, 1500);
@@ -102,6 +121,28 @@ export default function PromotionRunPage() {
     }
   }
 
+  function renderMappingRow(m: {
+    from_class_id: string;
+    to_class_id: string | null;
+  }) {
+    const count =
+      preview?.classes.find((c) => c.class_id === m.from_class_id)
+        ?.student_count ?? 0;
+    return (
+      <tr key={m.from_class_id} className="hover:bg-slate-50/80">
+        <td className="px-4 py-3 font-medium text-slate-800">
+          {classNameById[m.from_class_id] || m.from_class_id}
+        </td>
+        <td className="px-4 py-3 text-slate-700">
+          {m.to_class_id
+            ? classNameById[m.to_class_id] || m.to_class_id
+            : "— Skip / graduate —"}
+        </td>
+        <td className="px-4 py-3 text-slate-600">{count}</td>
+      </tr>
+    );
+  }
+
   return (
     <AppShell
       title="Confirm promotion"
@@ -109,16 +150,8 @@ export default function PromotionRunPage() {
       heading="Preview & confirm promotion"
       subtitle="Review the mapping, then confirm to move students."
     >
-      {error ? (
-        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
-      ) : null}
-      {success ? (
-        <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {success}
-        </div>
-      ) : null}
+      {error ? <PageAlert tone="error">{error}</PageAlert> : null}
+      {success ? <PageAlert tone="success">{success}</PageAlert> : null}
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading preview…</p>
@@ -128,68 +161,55 @@ export default function PromotionRunPage() {
             Promoting from <strong>{payload.from_year}</strong> to{" "}
             <strong>{payload.to_year}</strong> ·{" "}
             <strong>{activeMappings.length}</strong> class mapping(s) · about{" "}
-            <strong>{totalStudents}</strong> student(s).
+            <strong>{totalStudents}</strong> student(s) to move
+            {skippedMappings.length > 0 ? (
+              <>
+                {" "}
+                · <strong>{skippedMappings.length}</strong> class(es) skipped (
+                {skippedStudents} student(s))
+              </>
+            ) : null}
+            .
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">From</th>
-                  <th className="px-4 py-3">To</th>
-                  <th className="px-4 py-3">Students</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {activeMappings.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={3}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
-                      No destination mappings selected.
-                    </td>
-                  </tr>
-                ) : (
-                  activeMappings.map((m) => {
-                    const count =
-                      preview?.classes.find(
-                        (c) => c.class_id === m.from_class_id,
-                      )?.student_count ?? 0;
-                    return (
-                      <tr key={m.from_class_id}>
-                        <td className="px-4 py-3 font-medium">
-                          {classNameById[m.from_class_id] || m.from_class_id}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {m.to_class_id
-                            ? classNameById[m.to_class_id] || m.to_class_id
-                            : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">{count}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <h3 className="mb-2 text-sm font-semibold text-slate-900">
+            Active mappings
+          </h3>
+          <StudentTable columns={["From", "To", "Students"]} loading={false}>
+            {activeMappings.length === 0 ? (
+              <EmptyRow colSpan={3}>
+                No destination mappings selected.
+              </EmptyRow>
+            ) : (
+              activeMappings.map(renderMappingRow)
+            )}
+          </StudentTable>
+
+          {skippedMappings.length > 0 ? (
+            <>
+              <h3 className="mb-2 mt-6 text-sm font-semibold text-slate-900">
+                Skipped (no destination)
+              </h3>
+              <p className="mb-3 text-xs text-slate-500">
+                Students in these classes will not be promoted. They may
+                graduate or remain in place depending on your school policy.
+              </p>
+              <StudentTable columns={["From", "To", "Students"]} loading={false}>
+                {skippedMappings.map(renderMappingRow)}
+              </StudentTable>
+            </>
+          ) : null}
 
           <div className="mt-4 flex flex-wrap gap-3">
-            <button
-              type="button"
+            <PrimaryButton
               disabled={running || activeMappings.length === 0}
-              onClick={() => void confirmRun()}
-              className="cursor-pointer rounded-xl bg-(--sofia-primary) px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+              onClick={() => setConfirmOpen(true)}
             >
-              {running ? "Running…" : "Confirm promotion"}
-            </button>
-            <Link
-              href="/students/promotion"
-              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700"
-            >
+              Confirm promotion
+            </PrimaryButton>
+            <SecondaryButton href="/students/promotion">
               Back to mapping
-            </Link>
+            </SecondaryButton>
           </div>
         </>
       ) : (
@@ -200,6 +220,25 @@ export default function PromotionRunPage() {
           Go to promotion setup
         </Link>
       )}
+
+      <ConfirmModal
+        open={confirmOpen}
+        title="Run promotion?"
+        description={
+          <>
+            This will move about <strong>{totalStudents}</strong> student(s) from{" "}
+            <strong>{payload?.from_year}</strong> to{" "}
+            <strong>{payload?.to_year}</strong> according to{" "}
+            {activeMappings.length} class mapping(s). This action cannot be
+            undone from this screen.
+          </>
+        }
+        confirmLabel="Run promotion"
+        danger
+        busy={running}
+        onConfirm={() => void confirmRun()}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </AppShell>
   );
 }

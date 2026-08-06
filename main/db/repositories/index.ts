@@ -17,6 +17,7 @@ import { RoleRepository } from './role.repository'
 import { StudentSettingsRepository } from './student-settings.repository'
 import { StudentIdSettingsRepository } from './student-id-settings.repository'
 import { FinanceRepository } from './finance.repository'
+import { FinanceMgmtRepository } from './finance-mgmt.repository'
 import { DocumentTemplateRepository } from './document-template.repository'
 import { CommunicationRepository } from './communication.repository'
 import { BackupSyncRepository } from './backup-sync.repository'
@@ -32,6 +33,9 @@ import {
   ResultsRepository,
   TimetableRepository,
 } from './academic-mgmt.repository'
+import { StaffAttendanceRepository } from './staff-attendance.repository'
+import { LeaveRepository } from './leave.repository'
+import { StaffNotificationRepository } from './staff-notification.repository'
 
 /** Factory that creates all repositories from a shared DB connection. */
 export function createRepositories(db: Database.Database) {
@@ -54,6 +58,7 @@ export function createRepositories(db: Database.Database) {
     studentSettings: new StudentSettingsRepository(db),
     studentIdSettings: new StudentIdSettingsRepository(db),
     finance: new FinanceRepository(db),
+    financeMgmt: new FinanceMgmtRepository(db),
     documentTemplates: new DocumentTemplateRepository(db),
     communication: new CommunicationRepository(db),
     backupSync: new BackupSyncRepository(db),
@@ -67,6 +72,9 @@ export function createRepositories(db: Database.Database) {
     exams: new ExamRepository(db),
     results: new ResultsRepository(db),
     reportCards: new ReportCardRepository(db),
+    staffAttendance: new StaffAttendanceRepository(db),
+    leave: new LeaveRepository(db),
+    staffNotifications: new StaffNotificationRepository(db),
   }
 }
 
@@ -91,6 +99,7 @@ export {
   StudentSettingsRepository,
   StudentIdSettingsRepository,
   FinanceRepository,
+  FinanceMgmtRepository,
   DocumentTemplateRepository,
   CommunicationRepository,
   BackupSyncRepository,
@@ -104,4 +113,7 @@ export {
   ExamRepository,
   ResultsRepository,
   ReportCardRepository,
+  StaffAttendanceRepository,
+  LeaveRepository,
+  StaffNotificationRepository,
 }

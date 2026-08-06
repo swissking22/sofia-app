@@ -2,6 +2,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { ArrowLeft01Icon, Home01Icon } from "@hugeicons/core-free-icons";
+import { SofiaBrand } from "../components/brand/SofiaBrand";
 import { Icon } from "../components/ui/Icon";
 
 /**
@@ -28,8 +29,12 @@ export default function NotFoundPage() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,#e0e7ff_0%,transparent_55%),radial-gradient(ellipse_at_bottom_right,#e2e8f0_0%,transparent_50%)]" />
 
         <div className="relative w-full max-w-md text-center animate-[fadeInUp_0.5s_ease-out]">
-          <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-(--sofia-primary) text-xl font-bold text-white shadow-lg shadow-indigo-600/25">
-            S
+          <div className="mx-auto mb-6 flex justify-center">
+            <SofiaBrand
+              variant="icon"
+              height={56}
+              className="rounded-2xl shadow-lg shadow-indigo-600/20"
+            />
           </div>
 
           <p className="text-7xl font-bold tracking-tight text-slate-200">

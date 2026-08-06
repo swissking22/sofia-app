@@ -4,6 +4,7 @@ import type { Repositories } from '../db/repositories'
 import type { StudentStatus } from '../db/repositories/student.repository'
 import type {
   Admission,
+  AdmissionStatus,
   DocumentType,
   Student,
   StudentDocument,
@@ -12,6 +13,7 @@ import type {
 import {
   assetToDataUrl,
   saveStudentDocumentFile,
+  saveStudentPhoto,
 } from '../helpers/student-documents'
 import { generateStudentId } from '../services/student-id'
 
@@ -41,6 +43,7 @@ export interface StudentDto {
   guardian_email: string | null
   guardian_relationship: string | null
   status: string
+  photo_url: string | null
   created_at: string
   updated_at: string
 }
@@ -137,6 +140,7 @@ function enrichStudent(repos: Repositories, student: Student): StudentDto {
     guardian_email: student.guardian_email,
     guardian_relationship: student.guardian_relationship,
     status: student.status,
+    photo_url: assetToDataUrl(student.photo_path),
     created_at: student.created_at,
     updated_at: student.updated_at,
   }
@@ -353,6 +357,14 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
       if (!input?.admission_year) {
         return { ok: false, error: 'Admission year is required.' }
       }
+      const guardianName = input?.guardian_name?.trim()
+      if (!guardianName) {
+        return { ok: false, error: 'Guardian name is required.' }
+      }
+      const guardianPhone = input?.guardian_phone?.trim()
+      if (!guardianPhone) {
+        return { ok: false, error: 'Guardian phone is required.' }
+      }
 
       const cls = repos.classes.findById(input.class_id)
       if (!cls || cls.school_id !== schoolId) {
@@ -394,8 +406,8 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           email: input.email ?? null,
           address: input.address ?? null,
           admission_type: input.admission_type ?? null,
-          guardian_name: input.guardian_name ?? null,
-          guardian_phone: input.guardian_phone ?? null,
+          guardian_name: guardianName,
+          guardian_phone: guardianPhone,
           guardian_email: input.guardian_email ?? null,
           guardian_relationship: input.guardian_relationship ?? null,
           status: 'active',
@@ -569,6 +581,8 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         guardian_email?: string | null
         guardian_relationship?: string | null
         notes?: string | null
+        photo_base64?: string | null
+        photo_mime_type?: string | null
       }
     ): Result<Admission> => {
       const schoolId = resolveSchoolId(repos)
@@ -576,6 +590,23 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
 
       const full_name = input?.full_name?.trim()
       if (!full_name) return { ok: false, error: 'Full name is required.' }
+
+      let photo_path: string | null = null
+      if (input.photo_base64?.trim()) {
+        const mime = input.photo_mime_type || 'image/jpeg'
+        if (!mime.startsWith('image/')) {
+          return { ok: false, error: 'Photo must be an image file.' }
+        }
+        try {
+          photo_path = saveStudentPhoto(input.photo_base64, mime)
+        } catch (err) {
+          return {
+            ok: false,
+            error:
+              err instanceof Error ? err.message : 'Could not save photo.',
+          }
+        }
+      }
 
       try {
         const admission = repos.admissions.create({
@@ -595,6 +626,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           guardian_relationship: input.guardian_relationship ?? null,
           notes: input.notes ?? null,
           status: 'pending',
+          photo_path,
         })
         return { ok: true, data: admission }
       } catch (err) {
@@ -604,6 +636,235 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
             err instanceof Error
               ? err.message
               : 'Could not create admission.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'admissions:list',
+    (
+      _e,
+      input?: {
+        status?: AdmissionStatus | 'all'
+        search?: string | null
+        admissionYear?: number | null
+      }
+    ): Result<
+      Array<{
+        id: string
+        full_name: string
+        gender: string | null
+        phone: string | null
+        email: string | null
+        academic_level_id: string | null
+        level_name: string | null
+        preferred_class_id: string | null
+        class_name: string | null
+        admission_year: number | null
+        guardian_name: string | null
+        guardian_phone: string | null
+        status: string
+        notes: string | null
+        student_id: string | null
+        photo_url: string | null
+        created_at: string
+      }>
+    > => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+
+      let rows = repos.admissions.findBySchool(schoolId)
+      const status = input?.status ?? 'all'
+      if (status !== 'all') {
+        rows = rows.filter((r) => r.status === status)
+      }
+      if (input?.admissionYear) {
+        rows = rows.filter((r) => r.admission_year === input.admissionYear)
+      }
+      const q = input?.search?.trim().toLowerCase()
+      if (q) {
+        rows = rows.filter(
+          (r) =>
+            r.full_name.toLowerCase().includes(q) ||
+            (r.phone || '').toLowerCase().includes(q) ||
+            (r.email || '').toLowerCase().includes(q) ||
+            (r.guardian_name || '').toLowerCase().includes(q)
+        )
+      }
+
+      return {
+        ok: true,
+        data: rows.map((r) => ({
+          id: r.id,
+          full_name: r.full_name,
+          gender: r.gender,
+          phone: r.phone,
+          email: r.email,
+          academic_level_id: r.academic_level_id,
+          level_name: r.academic_level_id
+            ? repos.academicLevels.findById(r.academic_level_id)?.name ?? null
+            : null,
+          preferred_class_id: r.preferred_class_id,
+          class_name: r.preferred_class_id
+            ? repos.classes.findById(r.preferred_class_id)?.name ?? null
+            : null,
+          admission_year: r.admission_year,
+          guardian_name: r.guardian_name,
+          guardian_phone: r.guardian_phone,
+          status: r.status,
+          notes: r.notes,
+          student_id: r.student_id,
+          photo_url: assetToDataUrl(r.photo_path),
+          created_at: r.created_at,
+        })),
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'admissions:approve',
+    (
+      _e,
+      input: {
+        id: string
+        class_id?: string | null
+        admission_year?: number | null
+      }
+    ): Result<{ admission_id: string; student_id: string; student_code: string | null }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.id) return { ok: false, error: 'Admission id is required.' }
+
+      const admission = repos.admissions.findById(input.id)
+      if (!admission || admission.school_id !== schoolId) {
+        return { ok: false, error: 'Admission not found.' }
+      }
+      if (admission.status !== 'pending') {
+        return { ok: false, error: 'Only pending applications can be approved.' }
+      }
+
+      const classId =
+        input.class_id?.trim() || admission.preferred_class_id || ''
+      if (!classId) {
+        return {
+          ok: false,
+          error: 'Assign a class before approving this application.',
+        }
+      }
+
+      const cls = repos.classes.findById(classId)
+      if (!cls || cls.school_id !== schoolId) {
+        return { ok: false, error: 'Class not found.' }
+      }
+      const academicLevelId = cls.academic_level_id
+      if (!academicLevelId) {
+        return { ok: false, error: 'Class has no academic level assigned.' }
+      }
+
+      const admissionYear =
+        input.admission_year ||
+        admission.admission_year ||
+        new Date().getFullYear()
+
+      const section = cls.section_id
+        ? repos.sections.findById(cls.section_id)
+        : undefined
+      const specialization = cls.specialization_id
+        ? repos.specializations.findById(cls.specialization_id)
+        : undefined
+
+      try {
+        const generated = generateStudentId(repos, {
+          schoolId,
+          admissionYear,
+          academicLevelId,
+          sectionName: section?.name ?? null,
+          specializationAbbr: specialization?.abbreviation ?? null,
+        })
+
+        const student = repos.students.create({
+          name: admission.full_name,
+          class_id: classId,
+          school_id: schoolId,
+          student_code: generated.student_code,
+          admission_year: admissionYear,
+          academic_level_id: academicLevelId,
+          sequence_number: generated.sequence_number,
+          gender: admission.gender,
+          date_of_birth: admission.date_of_birth,
+          phone: admission.phone,
+          email: admission.email,
+          address: admission.address,
+          admission_type: 'new',
+          guardian_name: admission.guardian_name,
+          guardian_phone: admission.guardian_phone,
+          guardian_email: admission.guardian_email,
+          guardian_relationship: admission.guardian_relationship,
+          status: 'active',
+          photo_path: admission.photo_path,
+        })
+
+        repos.admissions.updateDecision(admission.id, {
+          status: 'accepted',
+          student_id: student.id,
+          preferred_class_id: classId,
+        })
+
+        return {
+          ok: true,
+          data: {
+            admission_id: admission.id,
+            student_id: student.id,
+            student_code: student.student_code,
+          },
+        }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Could not approve admission.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'admissions:reject',
+    (
+      _e,
+      input: { id: string; notes?: string | null }
+    ): Result<{ id: string; status: string }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.id) return { ok: false, error: 'Admission id is required.' }
+
+      const admission = repos.admissions.findById(input.id)
+      if (!admission || admission.school_id !== schoolId) {
+        return { ok: false, error: 'Admission not found.' }
+      }
+      if (admission.status !== 'pending') {
+        return { ok: false, error: 'Only pending applications can be rejected.' }
+      }
+
+      try {
+        const updated = repos.admissions.updateDecision(admission.id, {
+          status: 'rejected',
+          notes: input.notes?.trim()
+            ? [admission.notes, input.notes.trim()].filter(Boolean).join('\n')
+            : admission.notes,
+        })
+        if (!updated) return { ok: false, error: 'Could not reject admission.' }
+        return { ok: true, data: { id: updated.id, status: updated.status } }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Could not reject admission.',
         }
       }
     }

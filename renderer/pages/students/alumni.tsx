@@ -2,6 +2,16 @@ import React from "react";
 import Link from "next/link";
 import { AppShell } from "../../components/layout/AppShell";
 import {
+  EmptyRow,
+  FilterBar,
+  FilterField,
+  PageAlert,
+  StatusBadge,
+  StudentTable,
+  selectClass,
+  useDebouncedValue,
+} from "../../components/students/ui";
+import {
   fetchAlumni,
   STATUS_LABELS,
   type StudentDto,
@@ -13,6 +23,7 @@ export default function AlumniPage() {
   const [rows, setRows] = React.useState<StudentDto[]>([]);
   const [year, setYear] = React.useState("");
   const [search, setSearch] = React.useState("");
+  const debouncedSearch = useDebouncedValue(search, 300);
 
   React.useEffect(() => {
     void (async () => {
@@ -33,8 +44,8 @@ export default function AlumniPage() {
 
   const filtered = rows.filter((r) => {
     if (year && String(r.admission_year) !== year) return false;
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
+    if (!debouncedSearch.trim()) return true;
+    const q = debouncedSearch.toLowerCase();
     return (
       r.name.toLowerCase().includes(q) ||
       (r.student_code || "").toLowerCase().includes(q)
@@ -48,98 +59,98 @@ export default function AlumniPage() {
       heading="Alumni"
       subtitle="Former students marked as alumni."
     >
-      {error ? (
-        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
-      ) : null}
+      {error ? <PageAlert tone="error">{error}</PageAlert> : null}
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        <label className="block text-xs font-medium text-slate-500">
-          Admission year
-          <select
-            className="mt-1 block rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15"
-            value={year}
-            onChange={(e) => setYear(e.target.value)}
-          >
-            <option value="">All years</option>
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block min-w-48 flex-1 text-xs font-medium text-slate-500">
-          Search
-          <input
-            className="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Name or student ID"
-          />
-        </label>
-      </div>
+      <FilterBar
+        filters={
+          <>
+            <FilterField label="Admission year">
+              <select
+                className={selectClass}
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+              >
+                <option value="">All years</option>
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+            <FilterField label="Search" className="min-w-48 flex-1">
+              <input
+                className={selectClass}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Name or student ID"
+              />
+            </FilterField>
+          </>
+        }
+      />
 
-      {loading ? (
-        <p className="text-sm text-slate-500">Loading alumni…</p>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Student ID</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Last class</th>
-                <th className="px-4 py-3">Level</th>
-                <th className="px-4 py-3">Year</th>
-                <th className="px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-8 text-center text-slate-500"
-                  >
-                    No alumni yet. Mark students as alumni from the students
-                    list or profile.
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                      {s.student_code || "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/students/${s.id}`}
-                        className="font-medium text-(--sofia-primary) hover:underline"
-                      >
-                        {s.name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {s.class_name || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {s.level_name || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {s.admission_year ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {STATUS_LABELS[s.status] ?? s.status}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <StudentTable
+        columns={[
+          "Student ID",
+          "Name",
+          "Last class",
+          "Level",
+          "Year",
+          "Status",
+        ]}
+        loading={loading}
+      >
+        {filtered.length === 0 ? (
+          <EmptyRow colSpan={6}>
+            {rows.length === 0 ? (
+              <>
+                No alumni yet. Mark students as alumni from the{" "}
+                <Link
+                  href="/students"
+                  className="font-semibold text-(--sofia-primary) hover:underline"
+                >
+                  students list
+                </Link>{" "}
+                or profile.
+              </>
+            ) : (
+              "No alumni match these filters."
+            )}
+          </EmptyRow>
+        ) : (
+          filtered.map((s) => (
+            <tr key={s.id} className="hover:bg-slate-50/80">
+              <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                {s.student_code || "—"}
+              </td>
+              <td className="px-4 py-3">
+                <Link
+                  href={`/students/${s.id}`}
+                  className="font-medium text-(--sofia-primary) hover:underline"
+                >
+                  {s.name}
+                </Link>
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {s.class_name || "—"}
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {s.level_name || "—"}
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {s.admission_year ?? "—"}
+              </td>
+              <td className="px-4 py-3">
+                <StatusBadge
+                  status={s.status}
+                  label={STATUS_LABELS[s.status] ?? s.status}
+                />
+              </td>
+            </tr>
+          ))
+        )}
+      </StudentTable>
     </AppShell>
   );
 }

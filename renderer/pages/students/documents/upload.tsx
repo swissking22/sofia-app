@@ -1,17 +1,20 @@
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
+import {
+  PageAlert,
+  PrimaryButton,
+  SecondaryButton,
+  fieldClass,
+  useDebouncedValue,
+} from "../../../components/students/ui";
 import {
   DOCUMENT_TYPE_OPTIONS,
   fetchStudentList,
   uploadDocument,
   type StudentDto,
 } from "../../../lib/student-mgmt";
-
-const fieldClass =
-  "w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -35,6 +38,8 @@ export default function UploadDocumentPage() {
   const [error, setError] = React.useState("");
   const [students, setStudents] = React.useState<StudentDto[]>([]);
   const [studentId, setStudentId] = React.useState("");
+  const [studentSearch, setStudentSearch] = React.useState("");
+  const debouncedStudentSearch = useDebouncedValue(studentSearch, 300);
   const [docType, setDocType] = React.useState("birth_certificate");
   const [title, setTitle] = React.useState("");
   const [notes, setNotes] = React.useState("");
@@ -50,6 +55,16 @@ export default function UploadDocumentPage() {
   React.useEffect(() => {
     if (preselect) setStudentId(preselect);
   }, [preselect]);
+
+  const filteredStudents = React.useMemo(() => {
+    if (!debouncedStudentSearch.trim()) return students;
+    const q = debouncedStudentSearch.toLowerCase();
+    return students.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.student_code || "").toLowerCase().includes(q),
+    );
+  }, [students, debouncedStudentSearch]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -98,21 +113,24 @@ export default function UploadDocumentPage() {
       heading="Upload document"
       subtitle="Attach a file to a student record with a document type."
     >
-      {error ? (
-        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
-      ) : null}
+      {error ? <PageAlert tone="error">{error}</PageAlert> : null}
 
       <form
         onSubmit={(e) => void handleSubmit(e)}
         className="max-w-2xl space-y-5"
       >
         <FormSection title="Document" layout="stack">
-          <label className="mb-4 block">
+          <div className="mb-4">
             <span className="mb-1.5 block text-sm font-medium text-slate-700">
               Student <span className="text-red-500">*</span>
             </span>
+            <input
+              type="search"
+              className={`mb-2 ${fieldClass}`}
+              value={studentSearch}
+              onChange={(e) => setStudentSearch(e.target.value)}
+              placeholder="Search by name or student ID…"
+            />
             <select
               className={fieldClass}
               value={studentId}
@@ -120,14 +138,21 @@ export default function UploadDocumentPage() {
               required
             >
               <option value="">Select student…</option>
-              {students.map((s) => (
+              {filteredStudents.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                   {s.student_code ? ` (${s.student_code})` : ""}
                 </option>
               ))}
             </select>
-          </label>
+            {debouncedStudentSearch.trim() &&
+            filteredStudents.length === 0 ? (
+              <p className="mt-1.5 text-xs text-slate-500">
+                No students match your search.
+              </p>
+            ) : null}
+          </div>
+
           <label className="mb-4 block">
             <span className="mb-1.5 block text-sm font-medium text-slate-700">
               Type <span className="text-red-500">*</span>
@@ -144,6 +169,7 @@ export default function UploadDocumentPage() {
               ))}
             </select>
           </label>
+
           <FormField
             label="Title"
             required
@@ -151,6 +177,7 @@ export default function UploadDocumentPage() {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Birth certificate scan"
           />
+
           <label className="mb-4 block">
             <span className="mb-1.5 block text-sm font-medium text-slate-700">
               File <span className="text-red-500">*</span>
@@ -161,6 +188,7 @@ export default function UploadDocumentPage() {
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </label>
+
           <FormField
             label="Notes"
             value={notes}
@@ -169,19 +197,10 @@ export default function UploadDocumentPage() {
         </FormSection>
 
         <div className="flex flex-wrap gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="cursor-pointer rounded-xl bg-(--sofia-primary) px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-          >
+          <PrimaryButton type="submit" disabled={saving}>
             {saving ? "Uploading…" : "Upload"}
-          </button>
-          <Link
-            href="/students/documents"
-            className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700"
-          >
-            Cancel
-          </Link>
+          </PrimaryButton>
+          <SecondaryButton href="/students/documents">Cancel</SecondaryButton>
         </div>
       </form>
     </AppShell>

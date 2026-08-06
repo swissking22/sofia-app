@@ -9,6 +9,10 @@
   "scripts": {
     "dev": "nextron",
     "build": "nextron build",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "npm run test -- --watch",
+    "seed": "tsx scripts/seed/seed.ts",
+    "seed:dev": "tsx scripts/seed/seed.ts --dev --reset",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -17,24 +21,30 @@
     "bcryptjs": "^3.0.2",
     "better-sqlite3": "^13.0.2",
     "electron-serve": "^3.0.0",
-    "electron-store": "^11.0.2"
+    "electron-store": "^11.0.2",
+    "react-easy-crop": "^6.2.3"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.5.0",
     "@tailwindcss/postcss": "^4.1.11",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/jest": "^29.5.14",
     "@types/node": "^20.11.16",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.21",
     "electron": "^41.0.3",
     "electron-builder": "^26.8.1",
+    "jest": "^29.7.0",
     "next": "^16.2.1",
     "nextron": "^10.0.0",
     "postcss": "^8.5.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tailwindcss": "^4.1.11",
+    "ts-jest": "^29.4.12",
+    "tsx": "^4.23.9",
     "typescript": "^5.9.3"
   }
 }

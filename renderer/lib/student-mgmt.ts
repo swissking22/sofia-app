@@ -26,6 +26,7 @@ export interface StudentDto {
   guardian_email: string | null
   guardian_relationship: string | null
   status: string
+  photo_url: string | null
   created_at: string
   updated_at: string
 }
@@ -191,6 +192,76 @@ export async function createAdmission(
     'admissions:create',
     input
   )) as Result<unknown>
+}
+
+export type AdmissionStatusFilter = 'pending' | 'accepted' | 'rejected' | 'all'
+
+export interface AdmissionDto {
+  id: string
+  full_name: string
+  gender: string | null
+  phone: string | null
+  email: string | null
+  academic_level_id: string | null
+  level_name: string | null
+  preferred_class_id: string | null
+  class_name: string | null
+  admission_year: number | null
+  guardian_name: string | null
+  guardian_phone: string | null
+  status: string
+  notes: string | null
+  student_id: string | null
+  photo_url: string | null
+  created_at: string
+}
+
+export const ADMISSION_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending',
+  accepted: 'Accepted',
+  rejected: 'Rejected',
+}
+
+export async function fetchAdmissions(filters?: {
+  status?: AdmissionStatusFilter
+  search?: string | null
+  admissionYear?: number | null
+}): Promise<Result<AdmissionDto[]>> {
+  return (await window.ipc.invoke(
+    'admissions:list',
+    filters ?? {}
+  )) as Result<AdmissionDto[]>
+}
+
+export async function approveAdmission(input: {
+  id: string
+  class_id?: string | null
+  admission_year?: number | null
+}): Promise<
+  Result<{
+    admission_id: string
+    student_id: string
+    student_code: string | null
+  }>
+> {
+  return (await window.ipc.invoke(
+    'admissions:approve',
+    input
+  )) as Result<{
+    admission_id: string
+    student_id: string
+    student_code: string | null
+  }>
+}
+
+export async function rejectAdmission(input: {
+  id: string
+  notes?: string | null
+}): Promise<Result<{ id: string; status: string }>> {
+  return (await window.ipc.invoke(
+    'admissions:reject',
+    input
+  )) as Result<{ id: string; status: string }>
 }
 
 export async function fetchTransfers(): Promise<Result<TransferDto[]>> {

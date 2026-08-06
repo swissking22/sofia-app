@@ -8,6 +8,7 @@ import {
   type SetupProgress,
   type SetupStepId,
 } from "../../lib/setup";
+import { SofiaBrand } from "../brand/SofiaBrand";
 import { Icon } from "../ui/Icon";
 
 interface SetupProgressCardProps {
@@ -48,9 +49,7 @@ export function SetupSidebar({ progress, currentStepId }: SetupSidebarProps) {
   return (
     <aside className="flex h-full w-70 shrink-0 flex-col border-r border-slate-200/80 bg-white">
       <div className="flex items-center gap-2.5 border-b border-slate-100 px-5 py-4">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-(--sofia-primary) text-sm font-bold text-white">
-          S
-        </div>
+        <SofiaBrand variant="icon" height={36} />
         <div>
           <p className="text-sm font-bold tracking-tight text-slate-900">
             SOFIA Setup
@@ -244,6 +243,8 @@ interface FormFieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
   hint?: string;
   fullWidth?: boolean;
+  /** When set, renders instead of the default text input (e.g. select/textarea). */
+  children?: React.ReactNode;
 }
 
 export function FormField({
@@ -251,6 +252,7 @@ export function FormField({
   hint,
   fullWidth,
   className = "",
+  children,
   ...props
 }: FormFieldProps) {
   return (
@@ -264,10 +266,12 @@ export function FormField({
           </span>
         ) : null}
       </span>
-      <input
-        {...props}
-        className={`w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${className}`}
-      />
+      {children ?? (
+        <input
+          {...props}
+          className={`w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 ${className}`}
+        />
+      )}
       {hint ? (
         <span className="mt-1 block text-xs text-slate-400">{hint}</span>
       ) : null}

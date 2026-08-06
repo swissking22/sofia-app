@@ -35,6 +35,7 @@ export class AdmissionRepository extends BaseRepository<Admission> {
     guardian_relationship?: string | null
     notes?: string | null
     status?: AdmissionStatus
+    photo_path?: string | null
   }): Admission {
     const record: Admission = {
       ...this.buildBaseFields(),
@@ -55,6 +56,7 @@ export class AdmissionRepository extends BaseRepository<Admission> {
       status: input.status ?? 'pending',
       notes: input.notes ?? null,
       student_id: null,
+      photo_path: input.photo_path ?? null,
     }
 
     this.db
@@ -63,13 +65,13 @@ export class AdmissionRepository extends BaseRepository<Admission> {
           id, school_id, full_name, gender, date_of_birth, phone, email, address,
           academic_level_id, preferred_class_id, admission_year,
           guardian_name, guardian_phone, guardian_email, guardian_relationship,
-          status, notes, student_id,
+          status, notes, student_id, photo_path,
           created_at, updated_at, deleted_at, sync_status, version
         ) VALUES (
           @id, @school_id, @full_name, @gender, @date_of_birth, @phone, @email, @address,
           @academic_level_id, @preferred_class_id, @admission_year,
           @guardian_name, @guardian_phone, @guardian_email, @guardian_relationship,
-          @status, @notes, @student_id,
+          @status, @notes, @student_id, @photo_path,
           @created_at, @updated_at, @deleted_at, @sync_status, @version
         )`
       )
@@ -80,6 +82,55 @@ export class AdmissionRepository extends BaseRepository<Admission> {
       this.tableName,
       record.id,
       'INSERT',
+      record as unknown as Record<string, unknown>
+    )
+    return record
+  }
+
+  updateDecision(
+    id: string,
+    input: {
+      status: AdmissionStatus
+      student_id?: string | null
+      notes?: string | null
+      preferred_class_id?: string | null
+    }
+  ): Admission | undefined {
+    const existing = this.findById(id)
+    if (!existing) return undefined
+
+    const record: Admission = {
+      ...existing,
+      status: input.status,
+      student_id:
+        input.student_id !== undefined ? input.student_id : existing.student_id,
+      notes: input.notes !== undefined ? input.notes : existing.notes,
+      preferred_class_id:
+        input.preferred_class_id !== undefined
+          ? input.preferred_class_id
+          : existing.preferred_class_id,
+      ...this.applyUpdateMeta(existing),
+    }
+
+    this.db
+      .prepare(
+        `UPDATE admissions
+         SET status = @status,
+             student_id = @student_id,
+             notes = @notes,
+             preferred_class_id = @preferred_class_id,
+             updated_at = @updated_at,
+             version = @version,
+             sync_status = @sync_status
+         WHERE id = @id`
+      )
+      .run(record)
+
+    enqueueSync(
+      this.db,
+      this.tableName,
+      record.id,
+      'UPDATE',
       record as unknown as Record<string, unknown>
     )
     return record

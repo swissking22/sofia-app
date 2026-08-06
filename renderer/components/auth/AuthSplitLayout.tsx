@@ -1,4 +1,5 @@
 import React from "react";
+import { SofiaBrand } from "../brand/SofiaBrand";
 
 interface AuthSplitLayoutProps {
   children: React.ReactNode;
@@ -54,15 +55,11 @@ export function AuthSplitLayout({
 
         <div className="relative z-10 flex h-full min-h-screen flex-1 flex-col px-10 pb-8 pt-10 xl:px-14">
           <div className="flex items-center gap-2.5 animate-[fadeIn_0.5s_ease-out]">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white shadow-md shadow-blue-600/30">
-              S
-            </div>
-            <span
-              className="text-2xl font-semibold tracking-tight text-blue-700"
-              style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
-            >
-              SOFIA
-            </span>
+            <SofiaBrand
+              variant="logo"
+              height={48}
+              className="max-w-55 drop-shadow-sm"
+            />
           </div>
 
           <h1 className="mt-12 max-w-md text-4xl font-bold leading-[1.15] tracking-tight text-blue-800 xl:text-[2.75rem] animate-[fadeInUp_0.6s_ease-out]">

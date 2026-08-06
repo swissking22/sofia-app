@@ -19,6 +19,8 @@ import { registerDepartmentsIpc } from './departments'
 import { registerSubjectsIpc } from './subjects'
 import { registerStudentMgmtIpc } from './student-mgmt'
 import { registerAcademicMgmtIpc } from './academic-mgmt'
+import { registerStaffMgmtIpc } from './staff-mgmt'
+import { registerFinanceMgmtIpc } from './finance-mgmt'
 
 /** Register all IPC handlers for the main process. */
 export function registerIpcHandlers(
@@ -33,12 +35,14 @@ export function registerIpcHandlers(
   registerAcademicStructureIpc(repos)
   registerGradingSystemIpc(repos)
   registerStaffIpc(repos)
+  registerStaffMgmtIpc(repos)
   registerRolesIpc(repos)
   registerStudentsIpc(repos)
   registerStudentIdIpc(repos)
   registerStudentMgmtIpc(repos)
   registerAcademicMgmtIpc(repos)
   registerFinanceIpc(repos)
+  registerFinanceMgmtIpc(repos)
   registerDocumentsIpc(repos)
   registerCommunicationIpc(repos)
   registerBackupSyncIpc(db, repos)

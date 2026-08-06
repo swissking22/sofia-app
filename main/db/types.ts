@@ -40,6 +40,8 @@ export interface School extends BaseRecord {
   website: string | null
   stamp_path: string | null
   principal_signature_path: string | null
+  /** Max weekly teaching periods before workload warning (default 30). */
+  max_teacher_periods: number | null
 }
 
 export interface User extends BaseRecord {
@@ -60,6 +62,25 @@ export type StaffAdminRole =
   | 'secretary'
 export type StaffStatus = 'active' | 'inactive'
 export type StaffGender = 'male' | 'female' | 'other'
+/** Day-to-day job role shown in Staff Management (not payroll). */
+export type StaffJobRole =
+  | 'teacher'
+  | 'head_of_department'
+  | 'admin'
+  | 'support'
+
+export type StaffAttendanceStatus =
+  | 'present'
+  | 'absent'
+  | 'late'
+  | 'half_day'
+
+export type LeaveType = 'sick' | 'casual' | 'paid' | 'unpaid'
+export type LeaveRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled'
 
 export interface Staff extends BaseRecord {
   school_id: string
@@ -72,6 +93,10 @@ export interface Staff extends BaseRecord {
   department_id: string | null
   status: StaffStatus
   user_id: string | null
+  employee_code: string | null
+  joining_date: string | null
+  address: string | null
+  job_role: StaffJobRole | null
 }
 
 export interface StaffSubject extends BaseRecord {
@@ -97,6 +122,50 @@ export interface Class extends BaseRecord {
   specialization_id: string | null
   capacity: number | null
   is_active: number
+  /** Homeroom / class teacher */
+  class_teacher_id: string | null
+}
+
+export interface StaffAttendance extends BaseRecord {
+  school_id: string
+  staff_id: string
+  date: string
+  status: StaffAttendanceStatus
+  notes: string | null
+  marked_by: string | null
+}
+
+export interface LeaveBalance extends BaseRecord {
+  school_id: string
+  staff_id: string
+  leave_type: LeaveType
+  year: number
+  /** null = unlimited (used for unpaid) */
+  entitled: number | null
+  used: number
+}
+
+export interface LeaveRequest extends BaseRecord {
+  school_id: string
+  staff_id: string
+  leave_type: LeaveType
+  start_date: string
+  end_date: string
+  days: number
+  reason: string | null
+  status: LeaveRequestStatus
+  reviewed_by: string | null
+  reviewed_at: string | null
+  review_notes: string | null
+}
+
+export interface StaffNotification extends BaseRecord {
+  school_id: string
+  user_id: string
+  title: string
+  body: string | null
+  link: string | null
+  read_at: string | null
 }
 
 export interface AcademicLevel extends BaseRecord {
@@ -145,6 +214,8 @@ export interface Student extends BaseRecord {
   guardian_phone: string | null
   guardian_email: string | null
   guardian_relationship: string | null
+  /** Passport / 4×4 photo stored under userData */
+  photo_path: string | null
   /** active | alumni | transferred */
   status: string
 }
@@ -170,6 +241,8 @@ export interface Admission extends BaseRecord {
   status: AdmissionStatus
   notes: string | null
   student_id: string | null
+  /** Passport / 4×4 applicant photo */
+  photo_path: string | null
 }
 
 export type TransferStatus = 'pending' | 'completed' | 'cancelled'
@@ -265,6 +338,189 @@ export interface FinanceSettings extends BaseRecord {
   payment_methods: string
   receipt_prefix: string
   receipt_next_number: number
+  invoice_prefix: string
+  invoice_next_number: number
+  payment_prefix: string
+  payment_next_number: number
+  expense_prefix: string
+  expense_next_number: number
+  /** 1 = overpayments create student credit */
+  allow_credit: number
+}
+
+export type FeeFrequency = 'one_time' | 'monthly' | 'termly' | 'yearly'
+export type LateFeeMode = 'none' | 'fixed' | 'percent'
+export type DiscountMode = 'percent' | 'fixed'
+export type InvoiceStatus =
+  | 'pending'
+  | 'partially_paid'
+  | 'paid'
+  | 'overdue'
+  | 'cancelled'
+export type PaymentMethod =
+  | 'cash'
+  | 'mobile_money'
+  | 'bank_transfer'
+  | 'card'
+  | 'cheque'
+export type ExpenseCategory =
+  | 'salaries'
+  | 'utilities'
+  | 'maintenance'
+  | 'supplies'
+  | 'transport'
+  | 'miscellaneous'
+
+export interface FeeStructure extends BaseRecord {
+  school_id: string
+  name: string
+  academic_year_id: string
+  academic_term_id: string | null
+  academic_level_id: string | null
+  class_id: string | null
+  is_active: number
+  notes: string | null
+}
+
+export interface FeeStructureLine extends BaseRecord {
+  school_id: string
+  fee_structure_id: string
+  fee_category_id: string | null
+  name: string
+  amount: number
+  frequency: FeeFrequency
+  is_mandatory: number
+  late_fee_mode: LateFeeMode
+  late_fee_value: number
+  sort_order: number
+}
+
+export interface FeeDiscount extends BaseRecord {
+  school_id: string
+  name: string
+  discount_mode: DiscountMode
+  discount_value: number
+  academic_year_id: string | null
+  is_active: number
+  notes: string | null
+}
+
+export interface StudentFeeDiscount extends BaseRecord {
+  school_id: string
+  student_id: string
+  fee_discount_id: string | null
+  discount_mode: DiscountMode
+  discount_value: number
+  reason: string | null
+  is_active: number
+}
+
+export interface Invoice extends BaseRecord {
+  school_id: string
+  student_id: string
+  invoice_number: string
+  academic_year_id: string | null
+  academic_term_id: string | null
+  fee_structure_id: string | null
+  billing_period: string | null
+  issue_date: string
+  due_date: string | null
+  status: InvoiceStatus
+  subtotal: number
+  discount_total: number
+  net_payable: number
+  amount_paid: number
+  balance: number
+  carried_from_invoice_id: string | null
+  notes: string | null
+}
+
+export interface InvoiceLine extends BaseRecord {
+  school_id: string
+  invoice_id: string
+  fee_category_id: string | null
+  description: string
+  amount: number
+  is_adjustment: number
+  sort_order: number
+}
+
+export interface Payment extends BaseRecord {
+  school_id: string
+  student_id: string
+  invoice_id: string
+  payment_number: string
+  amount: number
+  method: PaymentMethod
+  reference: string | null
+  paid_at: string
+  recorded_by: string | null
+  notes: string | null
+  credit_applied: number
+}
+
+export interface Receipt extends BaseRecord {
+  school_id: string
+  payment_id: string
+  student_id: string
+  receipt_number: string
+  amount: number
+  balance_remaining: number
+  issued_at: string
+  reprint_count: number
+}
+
+export interface StudentCredit extends BaseRecord {
+  school_id: string
+  student_id: string
+  source_payment_id: string | null
+  amount: number
+  remaining: number
+  notes: string | null
+}
+
+export interface Expense extends BaseRecord {
+  school_id: string
+  expense_number: string
+  category: ExpenseCategory
+  amount: number
+  expense_date: string
+  description: string | null
+  vendor: string | null
+  payment_method: string | null
+  receipt_path: string | null
+  is_recurring: number
+  recurring_interval: string | null
+}
+
+export interface LedgerEntry extends BaseRecord {
+  school_id: string
+  entry_date: string
+  account: string
+  debit: number
+  credit: number
+  ref_type: string
+  ref_id: string
+  description: string | null
+  created_by: string | null
+}
+
+export interface FinanceAuditLog extends BaseRecord {
+  school_id: string
+  action: string
+  entity_type: string
+  entity_id: string
+  payload_json: string | null
+  user_id: string | null
+}
+
+export interface FinanceReminder extends BaseRecord {
+  school_id: string
+  student_id: string
+  invoice_id: string | null
+  channel: string
+  message: string | null
+  sent_at: string
 }
 
 export type DocumentTemplateKey =

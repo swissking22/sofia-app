@@ -9,6 +9,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import type { SessionData } from "../../lib/auth";
 import { NAV_SECTIONS, type NavItem } from "../../lib/navigation";
+import { SofiaBrand } from "../brand/SofiaBrand";
 import { Icon } from "../ui/Icon";
 
 interface AppSidebarProps {
@@ -21,6 +22,21 @@ interface AppSidebarProps {
 function pathMatches(pathname: string, href: string): boolean {
   if (href === "/home") return pathname === "/home" || pathname === "/";
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** Prefer the longest matching href so /students does not stay active on /students/admissions. */
+function isNavHrefActive(
+  pathname: string,
+  href: string,
+  siblingHrefs: string[],
+): boolean {
+  if (!pathMatches(pathname, href)) return false;
+  return !siblingHrefs.some(
+    (other) =>
+      other !== href &&
+      other.length > href.length &&
+      pathMatches(pathname, other),
+  );
 }
 
 /** Left navigation with collapsible groups — Hugeicons + primary active state. */
@@ -89,14 +105,11 @@ export function AppSidebar({
           collapsed ? "justify-center" : ""
         }`}
       >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--sofia-primary) text-sm font-bold text-white">
-          S
-        </div>
-        {!collapsed ? (
+        {collapsed ? (
+          <SofiaBrand variant="icon" height={36} />
+        ) : (
           <>
-            <span className="text-lg font-semibold tracking-tight text-slate-900">
-              SOFIA
-            </span>
+            <SofiaBrand variant="logo" height={42} className="max-w-48" />
             <button
               type="button"
               className="ml-auto cursor-pointer rounded-lg p-1 text-slate-400 transition hover:bg-slate-200/70 hover:text-slate-600"
@@ -105,7 +118,7 @@ export function AppSidebar({
               <Icon icon={MoreVerticalIcon} size={16} />
             </button>
           </>
-        ) : null}
+        )}
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto overflow-x-visible px-3 pb-3">
@@ -224,9 +237,13 @@ export function AppSidebar({
                     {!collapsed && expanded ? (
                       <ul className="relative ml-5 mt-1 space-y-0.5 border-l border-slate-200 py-1 pl-3">
                         {item.children!.map((child) => {
-                          const childActive = pathMatches(
+                          const siblingHrefs = item.children!.map(
+                            (c) => c.href,
+                          );
+                          const childActive = isNavHrefActive(
                             router.pathname,
                             child.href,
+                            siblingHrefs,
                           );
                           const childClass = `block cursor-pointer rounded-xl px-3 py-2 text-sm font-medium transition ${
                             childActive
@@ -264,9 +281,13 @@ export function AppSidebar({
                           {item.label}
                         </p>
                         {item.children!.map((child) => {
-                          const childActive = pathMatches(
+                          const siblingHrefs = item.children!.map(
+                            (c) => c.href,
+                          );
+                          const childActive = isNavHrefActive(
                             router.pathname,
                             child.href,
+                            siblingHrefs,
                           );
                           const childClass = `block w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
                             childActive

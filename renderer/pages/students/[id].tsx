@@ -1,16 +1,37 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { Upload04Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../components/layout/AppShell";
+import {
+  ActionDrawer,
+  EmptyRow,
+  PageAlert,
+  PrimaryButton,
+  SecondaryButton,
+  StatusBadge,
+  StudentTable,
+} from "../../components/students/ui";
+import { Icon } from "../../components/ui/Icon";
 import {
   DOCUMENT_TYPE_OPTIONS,
   fetchStudent,
   fetchStudentDocuments,
+  fetchTransfers,
   STATUS_LABELS,
   updateStudent,
   type StudentDocumentDto,
   type StudentDto,
+  type TransferDto,
 } from "../../lib/student-mgmt";
+import {
+  INVOICE_STATUS_LABELS,
+  PAYMENT_METHOD_LABELS,
+  fetchFinanceMeta,
+  fetchStudentFinanceSummary,
+  formatMoney,
+  type StudentFinanceSummary,
+} from "../../lib/finance-mgmt";
 
 type TabKey = "overview" | "academic" | "documents" | "finance";
 
@@ -30,6 +51,10 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+function docTypeLabel(key: string): string {
+  return DOCUMENT_TYPE_OPTIONS.find((o) => o.key === key)?.label ?? key;
+}
+
 export default function StudentDetailPage() {
   const router = useRouter();
   const id = typeof router.query.id === "string" ? router.query.id : "";
@@ -39,18 +64,31 @@ export default function StudentDetailPage() {
   const [success, setSuccess] = React.useState("");
   const [student, setStudent] = React.useState<StudentDto | null>(null);
   const [docs, setDocs] = React.useState<StudentDocumentDto[]>([]);
+  const [transfers, setTransfers] = React.useState<TransferDto[]>([]);
   const [statusOpen, setStatusOpen] = React.useState(false);
+  const [finance, setFinance] = React.useState<StudentFinanceSummary | null>(
+    null
+  );
+  const [currency, setCurrency] = React.useState("");
 
   const load = React.useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const [sRes, dRes] = await Promise.all([
+    const [sRes, dRes, tRes, fRes, metaRes] = await Promise.all([
       fetchStudent(id),
       fetchStudentDocuments(id),
+      fetchTransfers(),
+      fetchStudentFinanceSummary(id),
+      fetchFinanceMeta(),
     ]);
     if (sRes.ok) setStudent(sRes.data);
     else setError(sRes.error);
     if (dRes.ok) setDocs(dRes.data);
+    if (tRes.ok) {
+      setTransfers(tRes.data.filter((t) => t.student_id === id));
+    }
+    if (fRes.ok) setFinance(fRes.data);
+    if (metaRes.ok) setCurrency(metaRes.data.currency);
     setLoading(false);
   }, [id]);
 
@@ -91,13 +129,10 @@ export default function StudentDetailPage() {
         breadcrumb={["Student Management", "Students"]}
         heading="Student not found"
       >
-        <p className="text-sm text-red-600">{error || "Student not found."}</p>
-        <Link
-          href="/students"
-          className="mt-4 inline-block text-sm font-semibold text-(--sofia-primary)"
-        >
+        <PageAlert tone="error">{error || "Student not found."}</PageAlert>
+        <SecondaryButton href="/students" className="mt-4">
           Back to students
-        </Link>
+        </SecondaryButton>
       </AppShell>
     );
   }
@@ -109,54 +144,57 @@ export default function StudentDetailPage() {
       heading={student.name}
       subtitle={`${student.student_code || "No ID"} · ${student.class_name || "No class"}`}
     >
-      {error ? (
-        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
-      ) : null}
-      {success ? (
-        <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {success}
-        </div>
-      ) : null}
+      {error ? <PageAlert tone="error">{error}</PageAlert> : null}
+      {success ? <PageAlert tone="success">{success}</PageAlert> : null}
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={`cursor-pointer rounded-lg px-3.5 py-2 text-sm font-medium transition ${
-                tab === t.key
-                  ? "bg-(--sofia-primary) text-white"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+      <div className="mb-5 flex flex-wrap items-start gap-4">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+          {student.photo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={student.photo_url}
+              alt={`${student.name} photo`}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <span className="text-xs text-slate-400">No photo</span>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setStatusOpen(true)}
-            className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-          >
-            Status: {STATUS_LABELS[student.status] ?? student.status}
-          </button>
-          <Link
-            href={`/students/documents/upload?student_id=${student.id}`}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-          >
-            Upload document
-          </Link>
-          <Link
-            href="/students"
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-          >
-            Back
-          </Link>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1">
+              {TABS.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setTab(t.key)}
+                  className={`cursor-pointer rounded-lg px-3.5 py-2 text-sm font-medium transition ${
+                    tab === t.key
+                      ? "bg-(--sofia-primary) text-white"
+                      : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <StatusBadge
+              status={student.status}
+              label={STATUS_LABELS[student.status] ?? student.status}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <SecondaryButton onClick={() => setStatusOpen(true)}>
+              Update status
+            </SecondaryButton>
+            <SecondaryButton
+              href={`/students/documents/upload?student_id=${student.id}`}
+            >
+              <Icon icon={Upload04Icon} size={16} />
+              Upload document
+            </SecondaryButton>
+            <SecondaryButton href="/students">Back</SecondaryButton>
+          </div>
         </div>
       </div>
 
@@ -201,7 +239,12 @@ export default function StudentDetailPage() {
               <InfoRow label="Admission type" value={student.admission_type} />
               <InfoRow
                 label="Status"
-                value={STATUS_LABELS[student.status] ?? student.status}
+                value={
+                  <StatusBadge
+                    status={student.status}
+                    label={STATUS_LABELS[student.status] ?? student.status}
+                  />
+                }
               />
             </dl>
           </section>
@@ -209,138 +252,264 @@ export default function StudentDetailPage() {
       ) : null}
 
       {tab === "academic" ? (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h3 className="mb-3 text-sm font-semibold text-slate-900">
-            Academic history
-          </h3>
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <div className="space-y-6">
+          <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <h3 className="mb-3 text-sm font-semibold text-slate-900">
+              Current placement
+            </h3>
+            <StudentTable
+              columns={["Year", "Level", "Class", "Department", "Note"]}
+              loading={false}
+            >
               <tr>
-                <th className="px-2 py-2">Year</th>
-                <th className="px-2 py-2">Level</th>
-                <th className="px-2 py-2">Class</th>
-                <th className="px-2 py-2">Department</th>
-                <th className="px-2 py-2">Note</th>
+                <td className="px-4 py-3">{student.admission_year ?? "—"}</td>
+                <td className="px-4 py-3">{student.level_name || "—"}</td>
+                <td className="px-4 py-3">{student.class_name || "—"}</td>
+                <td className="px-4 py-3">{student.section_name || "—"}</td>
+                <td className="px-4 py-3 text-slate-500">Current placement</td>
               </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="px-2 py-3">{student.admission_year ?? "—"}</td>
-                <td className="px-2 py-3">{student.level_name || "—"}</td>
-                <td className="px-2 py-3">{student.class_name || "—"}</td>
-                <td className="px-2 py-3">{student.section_name || "—"}</td>
-                <td className="px-2 py-3 text-slate-500">Current placement</td>
-              </tr>
-            </tbody>
-          </table>
-          <p className="mt-3 text-xs text-slate-400">
-            Full term-by-term history will appear here as promotions and
-            transfers are recorded.
-          </p>
-        </section>
-      ) : null}
+            </StudentTable>
+          </section>
 
-      {tab === "documents" ? (
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Title</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Uploaded</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {docs.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={3}
-                    className="px-4 py-8 text-center text-slate-500"
-                  >
-                    No documents yet.{" "}
-                    <Link
-                      href={`/students/documents/upload?student_id=${student.id}`}
-                      className="font-semibold text-(--sofia-primary)"
-                    >
-                      Upload one
-                    </Link>
-                  </td>
-                </tr>
+          <section>
+            <h3 className="mb-3 text-sm font-semibold text-slate-900">
+              Transfers
+            </h3>
+            <StudentTable
+              columns={["Destination school", "Date", "Status", "Reason"]}
+              loading={false}
+            >
+              {transfers.length === 0 ? (
+                <EmptyRow colSpan={4}>
+                  No transfer records for this student.
+                </EmptyRow>
               ) : (
-                docs.map((d) => (
-                  <tr key={d.id}>
+                transfers.map((t) => (
+                  <tr key={t.id} className="hover:bg-slate-50/80">
                     <td className="px-4 py-3 font-medium text-slate-800">
-                      {d.title}
+                      {t.to_school_name}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      {DOCUMENT_TYPE_OPTIONS.find(
-                        (o) => o.key === d.document_type,
-                      )?.label ?? d.document_type}
+                      {t.transfer_date?.slice(0, 10) || "—"}
                     </td>
-                    <td className="px-4 py-3 text-slate-500">
-                      {d.created_at?.slice(0, 10) || "—"}
+                    <td className="px-4 py-3">
+                      <StatusBadge status={t.status} />
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {t.reason || "—"}
                     </td>
                   </tr>
                 ))
               )}
-            </tbody>
-          </table>
-        </section>
+            </StudentTable>
+          </section>
+        </div>
+      ) : null}
+
+      {tab === "documents" ? (
+        <div>
+          <div className="mb-4 flex justify-end">
+            <PrimaryButton
+              href={`/students/documents/upload?student_id=${student.id}`}
+            >
+              <Icon icon={Upload04Icon} size={16} />
+              Upload
+            </PrimaryButton>
+          </div>
+          <StudentTable
+            columns={["Title", "Type", "Uploaded", ""]}
+            loading={false}
+          >
+            {docs.length === 0 ? (
+              <EmptyRow colSpan={4}>
+                No documents yet.{" "}
+                <Link
+                  href={`/students/documents/upload?student_id=${student.id}`}
+                  className="font-semibold text-(--sofia-primary) hover:underline"
+                >
+                  Upload one
+                </Link>
+              </EmptyRow>
+            ) : (
+              docs.map((d) => (
+                <tr key={d.id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3 font-medium text-slate-800">
+                    {d.title}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {docTypeLabel(d.document_type)}
+                  </td>
+                  <td className="px-4 py-3 text-slate-500">
+                    {d.created_at?.slice(0, 10) || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {d.file_url ? (
+                      <a
+                        href={d.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-semibold text-(--sofia-primary) hover:underline"
+                      >
+                        Open
+                      </a>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </StudentTable>
+        </div>
       ) : null}
 
       {tab === "finance" ? (
-        <section className="rounded-xl border border-slate-200 bg-white p-8 text-center">
-          <h3 className="text-sm font-semibold text-slate-900">Finance</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Fee balances, invoices, and payments will appear here once the
-            Finance module is connected.
-          </p>
-        </section>
-      ) : null}
-
-      {statusOpen ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40">
-          <div className="flex h-full w-full max-w-sm flex-col bg-white shadow-xl">
-            <div className="border-b border-slate-100 px-5 py-4">
-              <h3 className="text-base font-semibold text-slate-900">
-                Update status
-              </h3>
-              <p className="mt-1 text-sm text-slate-500">{student.name}</p>
+        <div className="space-y-6">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-medium text-slate-500">
+                Outstanding
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                {formatMoney(finance?.outstanding ?? 0, currency)}
+              </div>
             </div>
-            <div className="flex flex-1 flex-col gap-2 p-5">
-              {(
-                [
-                  ["active", "Active"],
-                  ["alumni", "Alumni"],
-                  ["transferred", "Transferred"],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => void setStatus(key)}
-                  className={`cursor-pointer rounded-xl border px-4 py-3 text-left text-sm font-semibold ${
-                    student.status === key
-                      ? "border-(--sofia-primary) bg-(--sofia-primary)/5 text-(--sofia-primary)"
-                      : "border-slate-200 text-slate-700 hover:border-slate-300"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-medium text-slate-500">
+                Credit balance
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                {formatMoney(finance?.credit_balance ?? 0, currency)}
+              </div>
             </div>
-            <div className="border-t border-slate-100 p-4">
-              <button
-                type="button"
-                onClick={() => setStatusOpen(false)}
-                className="w-full cursor-pointer rounded-xl px-4 py-2.5 text-sm font-medium text-slate-500"
-              >
-                Close
-              </button>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-medium text-slate-500">Invoices</div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                {finance?.invoices.length ?? 0}
+              </div>
             </div>
           </div>
+
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">
+              Invoices
+            </h3>
+            <StudentTable
+              columns={["Invoice", "Issued", "Due", "Net", "Balance", "Status"]}
+            >
+              {!finance?.invoices.length ? (
+                <EmptyRow colSpan={6} message="No invoices for this student." />
+              ) : (
+                finance.invoices.map((inv) => (
+                  <tr key={inv.id} className="border-t border-slate-100">
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {inv.invoice_number}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {inv.issue_date}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {inv.due_date ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {formatMoney(inv.net_payable, currency)}
+                    </td>
+                    <td className="px-4 py-3 font-medium">
+                      {formatMoney(inv.balance, currency)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge
+                        status={inv.status}
+                        label={INVOICE_STATUS_LABELS[inv.status]}
+                      />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </StudentTable>
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">
+              Payments
+            </h3>
+            <StudentTable
+              columns={["Payment #", "Date", "Amount", "Method", "Reference"]}
+            >
+              {!finance?.payments.length ? (
+                <EmptyRow colSpan={5} message="No payments recorded." />
+              ) : (
+                finance.payments.map((p) => (
+                  <tr key={p.id} className="border-t border-slate-100">
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {p.payment_number}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{p.paid_at}</td>
+                    <td className="px-4 py-3 font-medium">
+                      {formatMoney(p.amount, currency)}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {PAYMENT_METHOD_LABELS[p.method] ?? p.method}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {p.reference || "—"}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </StudentTable>
+          </div>
+
+          <p className="text-xs text-slate-400">
+            Manage billing under{" "}
+            <Link
+              href="/finance/billing"
+              className="font-medium text-(--sofia-primary)"
+            >
+              Finance → Student Billing
+            </Link>
+            .
+          </p>
         </div>
       ) : null}
+
+      <ActionDrawer
+        open={statusOpen}
+        title="Update status"
+        subtitle={student.name}
+        onClose={() => setStatusOpen(false)}
+        footer={
+          <SecondaryButton
+            onClick={() => setStatusOpen(false)}
+            className="w-full"
+          >
+            Close
+          </SecondaryButton>
+        }
+      >
+        <div className="flex flex-col gap-2">
+          {(
+            [
+              ["active", "Active"],
+              ["alumni", "Alumni"],
+              ["transferred", "Transferred"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => void setStatus(key)}
+              className={`cursor-pointer rounded-xl border px-4 py-3 text-left text-sm font-semibold ${
+                student.status === key
+                  ? "border-(--sofia-primary) bg-(--sofia-primary)/5 text-(--sofia-primary)"
+                  : "border-slate-200 text-slate-700 hover:border-slate-300"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </ActionDrawer>
     </AppShell>
   );
 }

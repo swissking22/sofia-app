@@ -5,6 +5,7 @@ import type {
   StaffAdminRole,
   StaffClass,
   StaffGender,
+  StaffJobRole,
   StaffStatus,
   StaffSubject,
   StaffType,
@@ -47,10 +48,16 @@ export interface StaffDto {
   department_name: string | null
   status: StaffStatus
   user_id: string | null
+  employee_code: string | null
+  joining_date: string | null
+  address: string | null
+  job_role: StaffJobRole | null
   subject_ids: string[]
   subject_names: string[]
   class_ids: string[]
   class_names: string[]
+  homeroom_class_ids: string[]
+  homeroom_class_names: string[]
 }
 
 export interface StaffSetupData {
@@ -161,6 +168,10 @@ export class StaffRepository extends BaseRepository<Staff> {
         null,
       status: row.status,
       user_id: row.user_id,
+      employee_code: row.employee_code,
+      joining_date: row.joining_date,
+      address: row.address,
+      job_role: row.job_role,
       subject_ids,
       subject_names: subject_ids
         .map((id) => lookups.subjects.find((s) => s.id === id)?.name)
@@ -169,6 +180,8 @@ export class StaffRepository extends BaseRepository<Staff> {
       class_names: class_ids
         .map((id) => lookups.classes.find((c) => c.id === id)?.name)
         .filter((n): n is string => Boolean(n)),
+      homeroom_class_ids: [],
+      homeroom_class_names: [],
     }
   }
 
@@ -207,6 +220,10 @@ export class StaffRepository extends BaseRepository<Staff> {
       department_id: input.department_id ?? null,
       status: input.status ?? 'active',
       user_id: input.user_id ?? null,
+      employee_code: input.employee_code?.trim() || null,
+      joining_date: input.joining_date ?? null,
+      address: input.address?.trim() || null,
+      job_role: input.job_role ?? null,
     }
 
     const tx = this.db.transaction(() => {
@@ -215,10 +232,12 @@ export class StaffRepository extends BaseRepository<Staff> {
           `INSERT INTO staff (
              id, school_id, full_name, gender, phone, email,
              staff_type, admin_role, department_id, status, user_id,
+             employee_code, joining_date, address, job_role,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @school_id, @full_name, @gender, @phone, @email,
              @staff_type, @admin_role, @department_id, @status, @user_id,
+             @employee_code, @joining_date, @address, @job_role,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
         )
@@ -269,6 +288,10 @@ export class StaffRepository extends BaseRepository<Staff> {
                department_id = @department_id,
                status = @status,
                user_id = @user_id,
+               employee_code = @employee_code,
+               joining_date = @joining_date,
+               address = @address,
+               job_role = @job_role,
                updated_at = @updated_at,
                version = @version,
                sync_status = @sync_status
@@ -373,6 +396,10 @@ export class StaffRepository extends BaseRepository<Staff> {
         department_id: null,
         status: 'active',
         user_id: null,
+        employee_code: null,
+        joining_date: null,
+        address: null,
+        job_role: 'admin',
       })
     }
 
@@ -439,6 +466,10 @@ export class StaffRepository extends BaseRepository<Staff> {
         department_id: input.department_id ?? null,
         status: input.status ?? 'active',
         user_id: null,
+        employee_code: null,
+        joining_date: null,
+        address: null,
+        job_role: 'teacher',
       })
     }
 
@@ -453,6 +484,85 @@ export class StaffRepository extends BaseRepository<Staff> {
       userHelpers.passwordHash
     )
     return this.findById(staff.id)!
+  }
+
+  setSubjects(staffId: string, subjectIds: string[]): void {
+    this.replaceSubjects(staffId, subjectIds)
+  }
+
+  setClasses(staffId: string, classIds: string[]): void {
+    this.replaceClasses(staffId, classIds)
+  }
+
+  nextEmployeeCode(schoolId: string): string {
+    const year = new Date().getFullYear()
+    const prefix = `EMP-${year}-`
+    const rows = this.db
+      .prepare(
+        `SELECT employee_code FROM staff
+         WHERE school_id = ? AND deleted_at IS NULL
+           AND employee_code LIKE ?`
+      )
+      .all(schoolId, `${prefix}%`) as Array<{ employee_code: string }>
+    let max = 0
+    for (const row of rows) {
+      const n = Number(row.employee_code.slice(prefix.length))
+      if (!Number.isNaN(n) && n > max) max = n
+    }
+    return `${prefix}${String(max + 1).padStart(3, '0')}`
+  }
+
+  findByEmployeeCode(
+    schoolId: string,
+    code: string,
+    excludeId?: string
+  ): Staff | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM staff
+         WHERE school_id = ? AND employee_code = ? AND deleted_at IS NULL
+         LIMIT 1`
+      )
+      .get(schoolId, code) as Staff | undefined
+    if (!row) return undefined
+    if (excludeId && row.id === excludeId) return undefined
+    return row
+  }
+
+  findByEmail(
+    schoolId: string,
+    email: string,
+    excludeId?: string
+  ): Staff | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM staff
+         WHERE school_id = ? AND lower(email) = lower(?) AND deleted_at IS NULL
+         LIMIT 1`
+      )
+      .get(schoolId, email) as Staff | undefined
+    if (!row) return undefined
+    if (excludeId && row.id === excludeId) return undefined
+    return row
+  }
+
+  findByUserId(userId: string): Staff | undefined {
+    return this.db
+      .prepare(
+        `SELECT * FROM staff WHERE user_id = ? AND deleted_at IS NULL LIMIT 1`
+      )
+      .get(userId) as Staff | undefined
+  }
+
+  findHomeroomClassIds(staffId: string): string[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id FROM classes
+           WHERE class_teacher_id = ? AND deleted_at IS NULL`
+        )
+        .all(staffId) as Array<{ id: string }>
+    ).map((r) => r.id)
   }
 
   private replaceSubjects(staffId: string, subjectIds: string[]): void {

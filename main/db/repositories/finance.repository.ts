@@ -131,14 +131,25 @@ export class FinanceRepository extends BaseRepository<FinanceSettings> {
       payment_methods: JSON.stringify(['cash', 'mobile_money', 'bank_transfer']),
       receipt_prefix: 'RCP',
       receipt_next_number: 1,
+      invoice_prefix: 'INV',
+      invoice_next_number: 1,
+      payment_prefix: 'PAY',
+      payment_next_number: 1,
+      expense_prefix: 'EXP',
+      expense_next_number: 1,
+      allow_credit: 1,
     }
     this.db
       .prepare(
         `INSERT INTO finance_settings (
           id, school_id, currency, payment_methods, receipt_prefix, receipt_next_number,
+          invoice_prefix, invoice_next_number, payment_prefix, payment_next_number,
+          expense_prefix, expense_next_number, allow_credit,
           created_at, updated_at, deleted_at, sync_status, version
         ) VALUES (
           @id, @school_id, @currency, @payment_methods, @receipt_prefix, @receipt_next_number,
+          @invoice_prefix, @invoice_next_number, @payment_prefix, @payment_next_number,
+          @expense_prefix, @expense_next_number, @allow_credit,
           @created_at, @updated_at, @deleted_at, @sync_status, @version
         )`
       )

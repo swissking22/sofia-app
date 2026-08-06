@@ -45,6 +45,7 @@ export class ClassRepository extends BaseRepository<Class> {
       specialization_id: input.specialization_id ?? null,
       capacity: input.capacity ?? null,
       is_active: input.is_active ?? 1,
+      class_teacher_id: input.class_teacher_id ?? null,
     }
 
     const tx = this.db.transaction(() => {
@@ -53,10 +54,12 @@ export class ClassRepository extends BaseRepository<Class> {
           `INSERT INTO classes (
              id, name, school_id, level, form_key, stream,
              academic_level_id, section_id, specialization_id, capacity, is_active,
+             class_teacher_id,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @name, @school_id, @level, @form_key, @stream,
              @academic_level_id, @section_id, @specialization_id, @capacity, @is_active,
+             @class_teacher_id,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
         )
@@ -100,6 +103,7 @@ export class ClassRepository extends BaseRepository<Class> {
                specialization_id = @specialization_id,
                capacity = @capacity,
                is_active = @is_active,
+               class_teacher_id = @class_teacher_id,
                updated_at = @updated_at,
                version = @version,
                sync_status = @sync_status
@@ -155,6 +159,7 @@ export class ClassRepository extends BaseRepository<Class> {
       level: null,
       form_key: null,
       stream: null,
+      class_teacher_id: null,
     })
   }
 }

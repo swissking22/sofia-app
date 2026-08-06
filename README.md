@@ -15,12 +15,12 @@ Built with [Nextron](https://github.com/saltyshiomix/nextron) (Electron + Next.j
 | **Setup wizard** | School profile, academic year, structure, grading, staff, roles, student IDs, import, finance/docs/comms/backup setup |
 | **Dashboard** | Enrollment and overview KPIs |
 | **School management** | Profile, year/terms, classes, departments, subjects |
-| **Student management** | Roster, create (auto student ID), profile tabs, transfers, promotion, documents, alumni |
+| **Student management** | Roster, create (auto student ID), profile tabs, admissions (approve → student), transfers, promotion, documents, alumni |
 | **Academic management** | Timetable, attendance, continuous assessment, exams, results processing/publish, report cards, academic reports |
 
 ### Coming soon
 
-Staff directory & leave, full finance operations, communication center, cross-cutting analytics hub, admissions list workflow, assignments, and system admin screens. See [DOCS.md](./DOCS.md) for the live status of each screen.
+Staff directory & leave, full finance operations, communication center, cross-cutting analytics hub, assignments, and system admin screens. See [DOCS.md](./DOCS.md) for the live status of each screen.
 
 ---
 
@@ -66,6 +66,9 @@ Output goes to `dist/` (see `electron-builder.yml`). Product name: **SOFIA** (`c
 |---------|-------------|
 | `npm run dev` | Run the app in development with hot reload |
 | `npm run build` | Package a production Electron build |
+| `npm test` | Run Jest unit tests (finance & staff business logic) |
+| `npm run seed` | Populate `data/sofia.seed.db` with demo school data |
+| `npm run seed:dev` | Reset & seed the Electron development `sofia.db` |
 | `npm run postinstall` | Install Electron native deps (runs after `npm install`) |
 
 ---
@@ -78,10 +81,13 @@ sofia/
 │   ├── db/               # SQLite schema, types, repositories
 │   ├── ipc/              # IPC handlers (no REST API)
 │   ├── sync/             # Sync queue (offline-ready)
-│   ├── services/         # Domain services (e.g. student ID)
+│   ├── services/         # Domain services (finance, staff, student ID)
+│   ├── domain/           # Pure business rules (money, leave, aging)
 │   ├── helpers/          # Window, assets, file helpers
 │   ├── auth/             # Session / auth
 │   └── main.ts           # Entry
+├── tests/                # Jest unit tests (mocked repositories)
+├── scripts/seed/         # Fake demo data seeder (Faker + better-sqlite3)
 ├── renderer/             # Next.js UI
 │   ├── pages/            # Routes (setup, school, students, academic, …)
 │   ├── components/       # Shared UI

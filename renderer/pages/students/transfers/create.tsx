@@ -1,22 +1,25 @@
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
+import {
+  fieldClass,
+  PageAlert,
+  PrimaryButton,
+  SecondaryButton,
+} from "../../../components/students/ui";
 import {
   createTransfer,
   fetchStudentList,
   type StudentDto,
 } from "../../../lib/student-mgmt";
 
-const fieldClass =
-  "w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
-
 export default function CreateTransferPage() {
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
   const [students, setStudents] = React.useState<StudentDto[]>([]);
+  const [studentSearch, setStudentSearch] = React.useState("");
   const [studentId, setStudentId] = React.useState("");
   const [toSchool, setToSchool] = React.useState("");
   const [transferDate, setTransferDate] = React.useState(
@@ -30,6 +33,28 @@ export default function CreateTransferPage() {
       if (res.ok) setStudents(res.data.students);
     })();
   }, []);
+
+  React.useEffect(() => {
+    const q = router.query.student_id;
+    if (typeof q === "string" && q) {
+      setStudentId(q);
+    }
+  }, [router.query.student_id]);
+
+  const filteredStudents = React.useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter((s) => {
+      const haystack = [
+        s.name,
+        s.student_code ?? "",
+        s.class_name ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [students, studentSearch]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -69,11 +94,7 @@ export default function CreateTransferPage() {
       heading="Record transfer"
       subtitle="Mark a student as transferred to another school."
     >
-      {error ? (
-        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
-      ) : null}
+      {error ? <PageAlert tone="error">{error}</PageAlert> : null}
 
       <form
         onSubmit={(e) => void handleSubmit(e)}
@@ -88,6 +109,12 @@ export default function CreateTransferPage() {
             <span className="mb-1.5 block text-sm font-medium text-slate-700">
               Student <span className="text-red-500">*</span>
             </span>
+            <input
+              className={`mb-2 ${fieldClass}`}
+              value={studentSearch}
+              onChange={(e) => setStudentSearch(e.target.value)}
+              placeholder="Search by name, ID, or class…"
+            />
             <select
               className={fieldClass}
               value={studentId}
@@ -95,7 +122,7 @@ export default function CreateTransferPage() {
               required
             >
               <option value="">Select student…</option>
-              {students.map((s) => (
+              {filteredStudents.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                   {s.student_code ? ` (${s.student_code})` : ""}
@@ -103,6 +130,11 @@ export default function CreateTransferPage() {
                 </option>
               ))}
             </select>
+            {studentSearch.trim() && filteredStudents.length === 0 ? (
+              <p className="mt-1.5 text-xs text-slate-500">
+                No students match your search.
+              </p>
+            ) : null}
           </label>
           <FormField
             label="Destination school"
@@ -127,19 +159,10 @@ export default function CreateTransferPage() {
         </FormSection>
 
         <div className="flex flex-wrap gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="cursor-pointer rounded-xl bg-(--sofia-primary) px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-          >
+          <PrimaryButton type="submit" disabled={saving}>
             {saving ? "Saving…" : "Complete transfer"}
-          </button>
-          <Link
-            href="/students/transfers"
-            className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700"
-          >
-            Cancel
-          </Link>
+          </PrimaryButton>
+          <SecondaryButton href="/students/transfers">Cancel</SecondaryButton>
         </div>
       </form>
     </AppShell>

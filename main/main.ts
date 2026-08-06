@@ -1,4 +1,5 @@
 import path from 'path'
+import fs from 'fs'
 import { app } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers/create-window'
@@ -21,8 +22,22 @@ function getStartPath(repos: ReturnType<typeof createRepositories>): string {
   return 'login'
 }
 
+/** Dev-only PNG next to the project; packaged macOS uses the bundle .icns. */
+function getRuntimeIconPath(): string | undefined {
+  const candidates = [
+    path.join(import.meta.dirname, '../resources/icon.png'),
+    path.join(process.resourcesPath, 'icon.png'),
+  ]
+  return candidates.find((p) => fs.existsSync(p))
+}
+
 ;(async () => {
   await app.whenReady()
+
+  const iconPath = getRuntimeIconPath()
+  if (iconPath && process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(iconPath)
+  }
 
   const db = getDatabase()
   const repos = createRepositories(db)
@@ -38,6 +53,7 @@ function getStartPath(repos: ReturnType<typeof createRepositories>): string {
     minWidth: 1200,
     minHeight: 700,
     title: 'SOFIA',
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, 'preload.js'),
     },
@@ -50,7 +66,10 @@ function getStartPath(repos: ReturnType<typeof createRepositories>): string {
     await mainWindow.loadURL(`http://localhost:${port}/${startPath}`)
     mainWindow.webContents.openDevTools()
   }
-})()
+})().catch((err) => {
+  console.error('[sofia] Failed to start:', err)
+  app.quit()
+})
 
 app.on('window-all-closed', () => {
   closeDatabase()

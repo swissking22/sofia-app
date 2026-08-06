@@ -79,6 +79,7 @@ export class SchoolRepository extends BaseRepository<School> {
       website: input.website ?? null,
       stamp_path: input.stamp_path ?? null,
       principal_signature_path: input.principal_signature_path ?? null,
+      max_teacher_periods: input.max_teacher_periods ?? null,
     }
 
     const tx = this.db.transaction(() => {
@@ -88,13 +89,13 @@ export class SchoolRepository extends BaseRepository<School> {
              id, name, email, phone, country, address, logo_path,
              school_code, short_code, school_type, education_system, school_category,
              region, division, subdivision, website,
-             stamp_path, principal_signature_path,
+             stamp_path, principal_signature_path, max_teacher_periods,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @name, @email, @phone, @country, @address, @logo_path,
              @school_code, @short_code, @school_type, @education_system, @school_category,
              @region, @division, @subdivision, @website,
-             @stamp_path, @principal_signature_path,
+             @stamp_path, @principal_signature_path, @max_teacher_periods,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
         )
@@ -164,6 +165,7 @@ export class SchoolRepository extends BaseRepository<School> {
                website = @website,
                stamp_path = @stamp_path,
                principal_signature_path = @principal_signature_path,
+               max_teacher_periods = @max_teacher_periods,
                updated_at = @updated_at,
                version = @version,
                sync_status = @sync_status
