@@ -47,6 +47,7 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
       class_id: string
       class_name: string | null
       academic_level_id: string | null
+      residence_type: string
     }>
   }> => {
     const session = requireSession()
@@ -73,6 +74,7 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
       class_id: s.class_id,
       class_name: classes.find((c) => c.id === s.class_id)?.name ?? null,
       academic_level_id: s.academic_level_id,
+      residence_type: s.residence_type || 'day',
     }))
 
     const years = repos.academicYears
@@ -171,6 +173,7 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         academic_level_id?: string | null
         class_id?: string | null
         notes?: string | null
+        applies_to_residence?: 'all' | 'day' | 'boarding'
         lines: Array<{
           fee_category_id?: string | null
           name: string
@@ -564,11 +567,20 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
       const invoice = payment ? fm().getInvoice(payment.invoice_id) : null
       const school = repos.schools.findById(receipt.school_id)
       const template = repos.documentTemplates
-        .findAll()
-        .find(
-          (t) =>
-            t.school_id === receipt.school_id && t.template_key === 'receipt'
+        .listBySchool(receipt.school_id)
+        .find((t) => t.template_key === 'receipt' || t.document_family === 'receipt')
+      let rendered_html: string | null = null
+      let print_css: string | null = null
+      try {
+        const rendered = repos.documents.renderReceipt(
+          receipt.school_id,
+          receipt.payment_id
         )
+        rendered_html = rendered.html
+        print_css = rendered.css
+      } catch {
+        rendered_html = null
+      }
       return {
         ok: true,
         data: {
@@ -578,6 +590,8 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
           invoice,
           school_name: school?.name ?? 'School',
           template,
+          rendered_html,
+          print_css,
         },
       }
     }
@@ -740,6 +754,14 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
             'Fee reminder: please settle outstanding school fees.',
           userId: session.userId,
         })
+        repos.communicationMgmt.queueFeeReminderDeliveries({
+          school_id: sid,
+          student_id,
+          message:
+            input.message ||
+            'Fee reminder: please settle outstanding school fees.',
+          created_by: session.userId,
+        })
         sent += 1
       }
       return { ok: true, data: { sent } }
@@ -788,14 +810,36 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         return { ok: false, error: 'Access denied.' }
       }
       try {
-        return {
-          ok: true,
-          data: fm().createExpense({
-            ...input,
-            school_id: schoolId(repos, session),
-            userId: session.userId,
-          }),
+        const expense = fm().createExpense({
+          ...input,
+          school_id: schoolId(repos, session),
+          userId: session.userId,
+        })
+        const alerts = repos.budgets.applyExpense({
+          school_id: schoolId(repos, session),
+          category: input.category,
+          amount: input.amount,
+          expense_date: input.expense_date,
+        })
+        for (const alert of alerts) {
+          const admins = repos.users
+            .findAll()
+            .filter(
+              (u) =>
+                u.school_id === schoolId(repos, session) &&
+                (u.role === 'admin' || u.role === 'secretary')
+            )
+          for (const u of admins) {
+            repos.staffNotifications.create({
+              school_id: schoolId(repos, session),
+              user_id: u.id,
+              title: `Budget ${alert.level}`,
+              body: alert.message,
+              link: '/finance/budgeting',
+            })
+          }
         }
+        return { ok: true, data: expense }
       } catch (err) {
         return {
           ok: false,

@@ -14,7 +14,8 @@ export type PaymentMethod =
   | "mobile_money"
   | "bank_transfer"
   | "card"
-  | "cheque";
+  | "cheque"
+  | "online";
 export type ExpenseCategory =
   | "salaries"
   | "utilities"
@@ -72,6 +73,7 @@ export interface FeeStructureDto {
   year_name: string | null;
   level_name: string | null;
   class_name: string | null;
+  applies_to_residence?: "all" | "day" | "boarding";
   lines: FeeStructureLineDto[];
   total: number;
 }
@@ -163,6 +165,8 @@ export interface ReceiptDetailDto {
     footer_text: string;
     title: string;
   } | null;
+  rendered_html?: string | null;
+  print_css?: string | null;
 }
 
 export interface OutstandingStudentRow {
@@ -245,6 +249,7 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   bank_transfer: "Bank transfer",
   card: "Card",
   cheque: "Cheque",
+  online: "Online payment",
 };
 
 export const EXPENSE_CATEGORY_LABELS: Record<ExpenseCategory, string> = {
@@ -282,6 +287,7 @@ export async function createStructure(input: {
   academic_level_id?: string | null;
   class_id?: string | null;
   notes?: string | null;
+  applies_to_residence?: "all" | "day" | "boarding";
   lines: Array<{
     fee_category_id?: string | null;
     name: string;

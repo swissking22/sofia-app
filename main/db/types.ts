@@ -42,6 +42,20 @@ export interface School extends BaseRecord {
   principal_signature_path: string | null
   /** Max weekly teaching periods before workload warning (default 30). */
   max_teacher_periods: number | null
+  /** First bell / first period start (HH:MM). */
+  day_start_time: string | null
+  /** Target school-day end (HH:MM). */
+  day_end_time: string | null
+  period_duration_minutes: number | null
+  periods_per_day: number | null
+}
+
+export interface SchoolDayBreak extends BaseRecord {
+  school_id: string
+  name: string
+  after_period: number
+  duration_minutes: number
+  sort_order: number
 }
 
 export interface User extends BaseRecord {
@@ -52,6 +66,15 @@ export interface User extends BaseRecord {
   role: UserRole
   /** RBAC role FK */
   role_id: string | null
+  first_name: string
+  last_name: string
+  phone: string | null
+  status: 'active' | 'inactive' | 'suspended' | string
+  last_login_at: string | null
+  staff_id: string | null
+  failed_login_count: number
+  locked_until: string | null
+  must_change_password: number
 }
 
 export type StaffType = 'administrative' | 'teaching'
@@ -102,6 +125,8 @@ export interface Staff extends BaseRecord {
 export interface StaffSubject extends BaseRecord {
   staff_id: string
   subject_id: string
+  /** Class this subject is taught in. Null only on unmigrated legacy rows. */
+  class_id: string | null
 }
 
 export interface StaffClass extends BaseRecord {
@@ -216,9 +241,13 @@ export interface Student extends BaseRecord {
   guardian_relationship: string | null
   /** Passport / 4×4 photo stored under userData */
   photo_path: string | null
+  /** day | boarding — boarding/dormitory fee targeting, not a boarding module */
+  residence_type: ResidenceType
   /** active | alumni | transferred */
   status: string
 }
+
+export type ResidenceType = 'day' | 'boarding'
 
 export type AdmissionStatus = 'pending' | 'accepted' | 'rejected'
 
@@ -346,6 +375,10 @@ export interface FinanceSettings extends BaseRecord {
   expense_next_number: number
   /** 1 = overpayments create student credit */
   allow_credit: number
+  budget_alert_pct?: number
+  budget_warning_pct?: number
+  budget_critical_pct?: number
+  require_full_deposit_reconciliation?: number
 }
 
 export type FeeFrequency = 'one_time' | 'monthly' | 'termly' | 'yearly'
@@ -363,6 +396,9 @@ export type PaymentMethod =
   | 'bank_transfer'
   | 'card'
   | 'cheque'
+  | 'online'
+
+export type ResidenceApplies = 'all' | 'day' | 'boarding'
 export type ExpenseCategory =
   | 'salaries'
   | 'utilities'
@@ -380,6 +416,7 @@ export interface FeeStructure extends BaseRecord {
   class_id: string | null
   is_active: number
   notes: string | null
+  applies_to_residence: ResidenceApplies
 }
 
 export interface FeeStructureLine extends BaseRecord {
@@ -523,11 +560,36 @@ export interface FinanceReminder extends BaseRecord {
   sent_at: string
 }
 
-export type DocumentTemplateKey =
+/** Setup wizard keys. Custom templates use other slugs (e.g. certificate.conduct). */
+export type DocumentSetupKey =
   | 'report_card'
   | 'admission_letter'
   | 'receipt'
   | 'certificate'
+
+export type DocumentTemplateKey = string
+
+export type DocumentFamily =
+  | 'admission_letter'
+  | 'certificate'
+  | 'transcript'
+  | 'receipt'
+  | 'official'
+  | 'report_card'
+
+export type IssuedDocumentStatus =
+  | 'draft'
+  | 'generated'
+  | 'issued'
+  | 'voided'
+  | 'superseded'
+
+export type DocumentCategory =
+  | 'academic'
+  | 'administrative'
+  | 'student'
+  | 'finance'
+  | 'other'
 
 /** Per-template document branding / layout settings. */
 export interface DocumentTemplate extends BaseRecord {
@@ -542,6 +604,72 @@ export interface DocumentTemplate extends BaseRecord {
   show_signature: number
   signature_label: string
   is_enabled: number
+  body_text: string
+  document_family: DocumentFamily | string
+  type_code: string
+  category: DocumentCategory | string
+  description: string
+  required_fields: string
+  number_pattern: string
+  signatory_role: string
+  is_default: number
+  requires_approval: number
+  created_by: string | null
+}
+
+export interface DocumentNumberSequence extends BaseRecord {
+  school_id: string
+  type_code: string
+  year_key: string
+  next_number: number
+}
+
+export interface DocumentSignatory extends BaseRecord {
+  school_id: string
+  role_key: string
+  display_name: string
+  title: string
+  signature_path: string | null
+  is_active: number
+}
+
+export interface IssuedDocument extends BaseRecord {
+  school_id: string
+  document_family: string
+  template_id: string
+  template_key: string
+  document_number: string
+  verification_code: string
+  student_id: string | null
+  academic_year_id: string | null
+  term_id: string | null
+  status: IssuedDocumentStatus | string
+  version_number: number
+  supersedes_id: string | null
+  generated_by: string | null
+  issued_at: string | null
+  issued_by: string | null
+  voided_at: string | null
+  rendered_html: string
+  metadata_json: string
+}
+
+export interface IssuedDocumentVersion extends BaseRecord {
+  school_id: string
+  issued_document_id: string
+  version_number: number
+  rendered_html: string
+  metadata_json: string
+  created_by: string | null
+}
+
+export interface DocumentAuditLog extends BaseRecord {
+  school_id: string
+  action: string
+  entity_type: string
+  entity_id: string
+  user_id: string | null
+  payload_json: string | null
 }
 
 /** School-wide SMS + notification channel configuration. */
@@ -569,6 +697,82 @@ export interface NotificationTemplate extends BaseRecord {
   subject: string
   body: string
   is_enabled: number
+}
+
+export type AnnouncementAudience = 'all' | 'class' | 'level'
+export type AnnouncementStatus = 'draft' | 'sent'
+export type CommunicationChannel = 'sms' | 'email' | 'internal'
+export type DeliveryStatus = 'queued' | 'sent' | 'failed'
+export type MessageDirection = 'outbound' | 'inbound'
+export type NoticeAudience = 'all' | 'teachers' | 'admin'
+export type NoticePriority = 'normal' | 'high'
+
+/** School-wide announcement to parents (draft or sent). */
+export interface Announcement extends BaseRecord {
+  school_id: string
+  title: string
+  body: string
+  audience_type: AnnouncementAudience
+  class_id: string | null
+  academic_level_id: string | null
+  status: AnnouncementStatus
+  /** JSON array of CommunicationChannel */
+  channels_json: string
+  recipient_count: number
+  sent_at: string | null
+  created_by: string | null
+}
+
+/** Outbound delivery log (SMS, email, or internal parent inbox). */
+export interface CommunicationDelivery extends BaseRecord {
+  school_id: string
+  announcement_id: string | null
+  student_id: string | null
+  thread_id: string | null
+  channel: CommunicationChannel
+  recipient_name: string | null
+  recipient_contact: string | null
+  subject: string | null
+  body: string
+  status: DeliveryStatus
+  sent_at: string | null
+  error_message: string | null
+  created_by: string | null
+}
+
+/** Parent messaging thread (one per student). */
+export interface ParentMessageThread extends BaseRecord {
+  school_id: string
+  student_id: string
+  guardian_name: string | null
+  guardian_phone: string | null
+  guardian_email: string | null
+  last_message_at: string
+}
+
+/** Message within a parent thread. */
+export interface ParentMessage extends BaseRecord {
+  school_id: string
+  thread_id: string
+  direction: MessageDirection
+  channel: CommunicationChannel
+  body: string
+  status: DeliveryStatus
+  sent_at: string | null
+  created_by: string | null
+}
+
+/** Internal notice broadcast to staff. */
+export interface InternalNotice extends BaseRecord {
+  school_id: string
+  title: string
+  body: string
+  audience: NoticeAudience
+  priority: NoticePriority
+  expires_at: string | null
+  sent_at: string | null
+  recipient_count: number
+  created_by: string | null
 }
 
 export type BackupFrequency = 'daily' | 'weekly' | 'monthly'
@@ -676,6 +880,7 @@ export interface Role extends BaseRecord {
   name: string
   description: string | null
   is_system: number
+  is_enabled?: number
 }
 
 /** Global permission catalog entry (MODULE.ACTION). */
@@ -746,6 +951,7 @@ export interface CaScore extends BaseRecord {
   assessment_id: string
   student_id: string
   score: number | null
+  score_status?: string
 }
 
 export type ExamSessionStatus = 'draft' | 'active' | 'closed'
@@ -772,9 +978,15 @@ export interface ExamScore extends BaseRecord {
   paper_id: string
   student_id: string
   score: number | null
+  score_status?: string
 }
 
-export type ResultRunStatus = 'draft' | 'computed' | 'published' | 'locked'
+export type ResultRunStatus =
+  | 'draft'
+  | 'computed'
+  | 'approved'
+  | 'published'
+  | 'locked'
 
 export interface ResultRun extends BaseRecord {
   school_id: string
@@ -784,6 +996,13 @@ export interface ResultRun extends BaseRecord {
   status: ResultRunStatus
   computed_at: string | null
   published_at: string | null
+  calculation_profile_id?: string | null
+  calculation_version?: number | null
+  calculation_hash?: string | null
+  snapshot_json?: string | null
+  calculated_by?: string | null
+  approved_at?: string | null
+  approved_by?: string | null
 }
 
 export interface ResultSubjectRow extends BaseRecord {
@@ -804,6 +1023,9 @@ export interface ResultStudentSummary extends BaseRecord {
   grade: string | null
   position: number | null
   remark: string | null
+  promotion_outcome?: string | null
+  gpa?: number | null
+  failed_subjects?: number
 }
 
 export type ReportCardStatus = 'draft' | 'generated'
@@ -818,4 +1040,206 @@ export interface ReportCard extends BaseRecord {
   status: ReportCardStatus
   generated_at: string | null
   payload: string | null
+}
+
+export type BudgetPeriodType = 'monthly' | 'termly' | 'annual' | 'custom'
+export type BudgetStatus = 'draft' | 'active' | 'closed'
+export type BudgetAlertLevel = 'alert' | 'warning' | 'critical'
+
+export interface BudgetCategory extends BaseRecord {
+  school_id: string
+  name: string
+  category_key: string
+  is_system: number
+  is_active: number
+  sort_order: number
+}
+
+export interface Budget extends BaseRecord {
+  school_id: string
+  academic_year_id: string
+  budget_category_id: string
+  period_type: BudgetPeriodType
+  period_start: string
+  period_end: string
+  allocated_amount: number
+  description: string | null
+  status: BudgetStatus
+  alert_pct: number | null
+  warning_pct: number | null
+  critical_pct: number | null
+  created_by: string | null
+}
+
+export interface BudgetAlert extends BaseRecord {
+  school_id: string
+  budget_id: string
+  level: BudgetAlertLevel
+  utilization: number
+  spent: number
+  allocated: number
+  message: string
+}
+
+export type OnlinePaymentStatus =
+  | 'pending'
+  | 'processing'
+  | 'successful'
+  | 'failed'
+  | 'cancelled'
+  | 'refunded'
+
+export interface OnlinePaymentTransaction extends BaseRecord {
+  school_id: string
+  student_id: string
+  invoice_id: string
+  payment_id: string | null
+  amount: number
+  currency: string
+  status: OnlinePaymentStatus
+  provider_key: string
+  provider_reference: string | null
+  idempotency_key: string | null
+  failure_reason: string | null
+  initiated_by: string | null
+  completed_at: string | null
+}
+
+export type BankDepositStatus =
+  | 'pending_verification'
+  | 'verified'
+  | 'posted'
+
+export interface BankDeposit extends BaseRecord {
+  school_id: string
+  deposit_number: string
+  amount: number
+  collection_source: string | null
+  collection_date: string | null
+  deposit_date: string
+  bank_name: string
+  bank_account: string | null
+  deposit_reference: string | null
+  deposited_by: string | null
+  notes: string | null
+  document_path: string | null
+  status: BankDepositStatus
+  verified_by: string | null
+  verified_at: string | null
+  posted_at: string | null
+  created_by: string | null
+}
+
+export interface BankDepositAllocation extends BaseRecord {
+  school_id: string
+  bank_deposit_id: string
+  payment_id: string
+  amount: number
+}
+
+export interface StudentIdCardTemplate extends BaseRecord {
+  school_id: string
+  name: string
+  is_default: number
+  front_layout: string
+  back_layout: string
+  show_photo: number
+  validity_months: number
+  description: string
+  card_type: 'student' | 'staff'
+  status: 'draft' | 'active' | 'archived'
+  orientation: 'landscape' | 'portrait'
+  width_mm: number
+  height_mm: number
+  unit: string
+  sample_key: string | null
+  current_version_id: string | null
+  current_version_number: number
+  updated_by: string | null
+}
+
+export interface IdCardTemplateVersion {
+  id: string
+  school_id: string
+  template_id: string
+  version_number: number
+  design_json: string
+  created_by: string | null
+  created_at: string
+}
+
+export interface StudentIdCard extends BaseRecord {
+  school_id: string
+  student_id: string
+  student_code: string
+  academic_year_id: string
+  template_id: string | null
+  template_version_id: string | null
+  class_id: string | null
+  class_name: string | null
+  student_name: string
+  valid_from: string
+  valid_to: string
+  generated_at: string
+  generated_by: string | null
+  card_number: string | null
+  verification_code: string | null
+  issue_date: string | null
+  expiry_date: string | null
+  status: string
+  card_kind: string
+  replaced_card_id: string | null
+  replacement_reason: string | null
+  printed_at: string | null
+  issued_at: string | null
+  issued_by: string | null
+  job_id: string | null
+  snapshot_json: string | null
+  revoked_at: string | null
+  revoked_by: string | null
+}
+
+export type TopicCoverageStatus = 'not_started' | 'in_progress' | 'completed'
+export type TeachingLogStatus =
+  | 'planned'
+  | 'taught'
+  | 'partially_covered'
+  | 'completed'
+
+export interface TeachingSyllabus extends BaseRecord {
+  school_id: string
+  subject_id: string
+  academic_year_id: string
+  academic_level_id: string | null
+  class_id: string | null
+  title: string
+  term_weeks: number
+  created_by: string | null
+}
+
+export interface SyllabusTopic extends BaseRecord {
+  school_id: string
+  syllabus_id: string
+  parent_id: string | null
+  title: string
+  sequence: number
+  objectives: string | null
+  coverage_status: TopicCoverageStatus
+}
+
+export interface TeachingLog extends BaseRecord {
+  school_id: string
+  syllabus_id: string | null
+  topic_id: string | null
+  staff_id: string
+  class_id: string
+  subject_id: string
+  academic_year_id: string | null
+  academic_term_id: string | null
+  lesson_date: string
+  description: string | null
+  status: TeachingLogStatus
+  progress_percent: number | null
+  remarks: string | null
+  created_by: string | null
 }

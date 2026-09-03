@@ -1,11 +1,11 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
 import {
-  ActionDrawer,
+  FormModal,
   EmptyRow,
   FilterBar,
   FilterField,
@@ -19,6 +19,7 @@ import {
   useDebouncedValue,
 } from "../../../components/staff/ui";
 import { Icon } from "../../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   JOB_ROLE_LABELS,
   createStaff,
@@ -237,20 +238,21 @@ export default function StaffDirectoryPage() {
                 <StatusBadge status={s.status} />
               </td>
               <td className="px-4 py-3 text-right">
-                <Link
-                  href={`/staff/directory/${s.id}`}
-                  className="text-sm font-semibold text-(--sofia-primary) hover:underline"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  View
-                </Link>
+                <TableActionGroup>
+                  <TableIconButton
+                    icon={ViewIcon}
+                    label="View staff"
+                    tone="primary"
+                    href={`/staff/directory/${s.id}`}
+                  />
+                </TableActionGroup>
               </td>
             </tr>
           ))
         )}
       </StaffTable>
 
-      <ActionDrawer
+      <FormModal
         open={createOpen}
         title="Add staff"
         subtitle="Create a non-teaching staff member"
@@ -373,7 +375,7 @@ export default function StaffDirectoryPage() {
             />
           </FormSection>
         </form>
-      </ActionDrawer>
+      </FormModal>
     </AppShell>
   );
 }

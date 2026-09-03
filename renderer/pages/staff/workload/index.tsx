@@ -1,13 +1,15 @@
 import React from "react";
+import { ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
-  ActionDrawer,
+  FormModal,
   EmptyRow,
   PageAlert,
   SecondaryButton,
   StatusBadge,
   StaffTable,
 } from "../../../components/staff/ui";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   fetchWorkloadDetail,
   fetchWorkloadSummary,
@@ -134,23 +136,21 @@ export default function TeacherWorkloadPage() {
                 </div>
               </td>
               <td className="px-4 py-3 text-right">
-                <button
-                  type="button"
-                  className="cursor-pointer text-sm font-semibold text-(--sofia-primary) hover:underline"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void openDetail(row);
-                  }}
-                >
-                  Details
-                </button>
+                <TableActionGroup>
+                  <TableIconButton
+                    icon={ViewIcon}
+                    label="Details"
+                    tone="primary"
+                    onClick={() => void openDetail(row)}
+                  />
+                </TableActionGroup>
               </td>
             </tr>
           ))
         )}
       </StaffTable>
 
-      <ActionDrawer
+      <FormModal
         open={!!selected}
         title={selected?.full_name ?? "Workload"}
         subtitle={
@@ -229,7 +229,7 @@ export default function TeacherWorkloadPage() {
         ) : (
           <p className="text-sm text-slate-500">No detail available.</p>
         )}
-      </ActionDrawer>
+      </FormModal>
     </AppShell>
   );
 }

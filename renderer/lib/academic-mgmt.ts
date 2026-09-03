@@ -3,13 +3,98 @@
 export type AttendanceMark = 'present' | 'absent' | 'late' | 'excused'
 
 export interface AcademicMeta {
-  classes: Array<{ id: string; name: string }>
-  subjects: Array<{ id: string; name: string; class_ids: string[] }>
-  teachers: Array<{ id: string; full_name: string }>
+  classes: Array<{
+    id: string
+    name: string
+    academic_level_id: string | null
+  }>
+  subjects: Array<{
+    id: string
+    name: string
+    class_ids: string[]
+    is_common?: boolean
+    level_class_ids?: string[]
+  }>
+  teachers: Array<{
+    id: string
+    full_name: string
+    assignments: Array<{ class_id: string; subject_id: string }>
+  }>
   terms: Array<{ id: string; name: string; term_number: number }>
   academic_year: { id: string; name: string } | null
   periods: number
+  period_times: Array<{
+    period_number: number
+    label: string
+    start_time: string
+    end_time: string
+  }>
+  breaks: Array<{
+    name: string
+    after_period: number
+    start_time: string
+    end_time: string
+    duration_minutes: number
+  }>
+  day_start_time: string
+  day_end_time: string
+  period_duration_minutes: number
   days: Array<{ day: number; label: string }>
+}
+
+/** Interleave teaching periods with break rows for timetable grids. */
+export function buildTimetableRows(meta: Pick<
+  AcademicMeta,
+  'periods' | 'period_times' | 'breaks'
+>): Array<
+  | {
+      kind: 'period'
+      period: number
+      label: string
+      timeLabel: string
+    }
+  | {
+      kind: 'break'
+      name: string
+      timeLabel: string
+    }
+> {
+  const periods = meta.periods ?? 8
+  const breakAfter = new Map(
+    (meta.breaks ?? []).map((b) => [b.after_period, b])
+  )
+  const rows: Array<
+    | {
+        kind: 'period'
+        period: number
+        label: string
+        timeLabel: string
+      }
+    | {
+        kind: 'break'
+        name: string
+        timeLabel: string
+      }
+  > = []
+
+  for (let p = 1; p <= periods; p++) {
+    const pt = meta.period_times?.find((x) => x.period_number === p)
+    rows.push({
+      kind: 'period',
+      period: p,
+      label: pt?.label ?? `Period ${p}`,
+      timeLabel: pt ? `${pt.start_time}–${pt.end_time}` : '',
+    })
+    const br = breakAfter.get(p)
+    if (br) {
+      rows.push({
+        kind: 'break',
+        name: br.name,
+        timeLabel: `${br.start_time}–${br.end_time}`,
+      })
+    }
+  }
+  return rows
 }
 
 export interface TimetableSlotDto {
@@ -104,22 +189,32 @@ export async function saveTimetableSlot(input: {
   day_of_week: number
   period_number: number
   room?: string | null
-}): Promise<Result<unknown>> {
+}): Promise<
+  Result<{
+    slots: unknown[]
+    synced_class_ids: string[]
+    is_common: boolean
+  }>
+> {
   return (await window.ipc.invoke(
     'timetable:save-slot',
     input
-  )) as Result<unknown>
+  )) as Result<{
+    slots: unknown[]
+    synced_class_ids: string[]
+    is_common: boolean
+  }>
 }
 
 export async function clearTimetableSlot(input: {
   class_id: string
   day_of_week: number
   period_number: number
-}): Promise<Result<{ cleared: boolean }>> {
+}): Promise<Result<{ cleared: boolean; synced_class_ids?: string[] }>> {
   return (await window.ipc.invoke(
     'timetable:clear-slot',
     input
-  )) as Result<{ cleared: boolean }>
+  )) as Result<{ cleared: boolean; synced_class_ids?: string[] }>
 }
 
 export async function fetchAttendanceSessions(classId?: string | null) {
@@ -327,7 +422,17 @@ export async function processResults(input: {
   return (await window.ipc.invoke(
     'results:process',
     input
-  )) as Result<{ run_id: string; students: number; subjects: number }>
+  )) as Result<{ run_id: string; students: number; subjects: number; profile?: string }>
+}
+
+export async function approveResults(input: {
+  class_id: string
+  term_id?: string | null
+}) {
+  return (await window.ipc.invoke(
+    'results:approve',
+    input
+  )) as Result<{ status: string }>
 }
 
 export async function publishResults(input: {

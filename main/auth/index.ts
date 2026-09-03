@@ -3,6 +3,7 @@ import Store from 'electron-store'
 import type { Repositories } from '../db/repositories'
 import type { School, User, UserRole } from '../db/types'
 import { saveSchoolLogo } from '../helpers/save-logo'
+import { SystemAdminService } from '../services/system-admin'
 
 const BCRYPT_ROUNDS = 10
 
@@ -251,13 +252,63 @@ export async function login(
 
   const user = repos.users.findByEmail(email)
   if (!user) {
+    try {
+      const latest = repos.schools.findLatest()
+      if (latest) {
+        repos.systemAdmin.writeAudit({
+          school_id: latest.id,
+          actor_user_id: null,
+          action: 'auth.login_failed',
+          description: `Failed sign-in for ${email}`,
+          result: 'failure',
+        })
+      }
+    } catch {
+      /* audit table may not exist yet */
+    }
     return { ok: false, error: 'Invalid email or password.' }
   }
 
-  const valid = await verifyPassword(password, user.password_hash)
-  if (!valid) {
-    return { ok: false, error: 'Invalid email or password.' }
+  const settings = repos.systemAdmin.ensureSettings(user.school_id) as {
+    lockout_attempts: number
+    lockout_minutes: number
   }
+  const gate = new SystemAdminService().assertLogin({
+    status: user.status || 'active',
+    locked_until: user.locked_until,
+    failed_count: user.failed_login_count || 0,
+    passwordOk: await verifyPassword(password, user.password_hash),
+    maxAttempts: Number(settings.lockout_attempts) || 5,
+    lockMinutes: Number(settings.lockout_minutes) || 15,
+  })
+
+  if (!gate.ok) {
+    repos.systemAdmin.patchUser(user.school_id, user.id, {
+      failed_login_count: gate.failed,
+      locked_until: gate.locked_until,
+    })
+    repos.systemAdmin.writeAudit({
+      school_id: user.school_id,
+      actor_user_id: user.id,
+      action: 'auth.login_failed',
+      description: gate.error,
+      result: 'failure',
+    })
+    return { ok: false, error: gate.error }
+  }
+
+  repos.systemAdmin.patchUser(user.school_id, user.id, {
+    failed_login_count: 0,
+    locked_until: null,
+    last_login_at: new Date().toISOString(),
+  })
+  repos.systemAdmin.createSession(user.school_id, user.id)
+  repos.systemAdmin.writeAudit({
+    school_id: user.school_id,
+    actor_user_id: user.id,
+    action: 'auth.login',
+    description: 'Signed in',
+  })
 
   const school = repos.schools.findById(user.school_id)
   const session: SessionData = {
@@ -273,12 +324,39 @@ export async function login(
   return { ok: true, user: toSafeUser(user), session }
 }
 
-export function logout(): void {
+export function logout(repos?: Repositories): void {
+  const current = getSession()
+  if (current && repos) {
+    try {
+      repos.systemAdmin.revokeSessions(current.schoolId, current.userId)
+      repos.systemAdmin.writeAudit({
+        school_id: current.schoolId,
+        actor_user_id: current.userId,
+        action: 'auth.logout',
+        description: 'Signed out',
+      })
+    } catch {
+      /* ignore */
+    }
+  }
   sessionStore.set('session', null)
 }
 
 export function getSession(): SessionData | null {
   return sessionStore.get('session', null)
+}
+
+/** Drop a stored session if the school or user no longer exists (e.g. after a DB reset). */
+export function ensureValidSession(repos: Repositories): SessionData | null {
+  const session = getSession()
+  if (!session) return null
+  const school = repos.schools.findById(session.schoolId)
+  const user = repos.users.findById(session.userId)
+  if (!school || !user || user.school_id !== school.id) {
+    sessionStore.set('session', null)
+    return null
+  }
+  return session
 }
 
 /** Keep the local session in sync when the school name changes. */

@@ -22,13 +22,15 @@ export function PageAlert({
   tone,
   children,
 }: {
-  tone: "error" | "success";
+  tone: "error" | "success" | "warning";
   children: React.ReactNode;
 }) {
   const styles =
     tone === "error"
       ? "border-red-100 bg-red-50 text-red-600"
-      : "border-emerald-100 bg-emerald-50 text-emerald-700";
+      : tone === "warning"
+        ? "border-amber-100 bg-amber-50 text-amber-800"
+        : "border-emerald-100 bg-emerald-50 text-emerald-700";
   return (
     <div className={`mb-4 rounded-xl border px-4 py-3 text-sm ${styles}`}>
       {children}
@@ -84,6 +86,10 @@ const BADGE_TONES: Record<string, string> = {
   paid: "border-emerald-100 bg-emerald-50 text-emerald-700",
   partially_paid: "border-sky-100 bg-sky-50 text-sky-700",
   overdue: "border-red-100 bg-red-50 text-red-600",
+  generated: "border-sky-100 bg-sky-50 text-sky-700",
+  issued: "border-emerald-100 bg-emerald-50 text-emerald-700",
+  voided: "border-red-100 bg-red-50 text-red-600",
+  superseded: "border-slate-200 bg-slate-50 text-slate-500",
 };
 
 export function StatusBadge({
@@ -123,9 +129,9 @@ export function StudentTable({
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
-              {columns.map((col) => (
+              {columns.map((col, i) => (
                 <th
-                  key={col || "actions"}
+                  key={`${col || "col"}-${i}`}
                   className="whitespace-nowrap px-4 py-3"
                 >
                   {col}
@@ -158,13 +164,14 @@ export function EmptyRow({
   );
 }
 
-export function ActionDrawer({
+export function FormModal({
   open,
   title,
   subtitle,
   onClose,
   children,
   footer,
+  size = "lg",
 }: {
   open: boolean;
   title: string;
@@ -172,6 +179,7 @@ export function ActionDrawer({
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  size?: "md" | "lg" | "xl";
 }) {
   React.useEffect(() => {
     if (!open) return;
@@ -184,18 +192,30 @@ export function ActionDrawer({
 
   if (!open) return null;
 
+  const maxWidth =
+    size === "xl" ? "max-w-3xl" : size === "lg" ? "max-w-2xl" : "max-w-md";
+
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <button
-        type="button"
-        aria-label="Close drawer"
-        className="absolute inset-0 cursor-pointer bg-slate-900/40"
-        onClick={onClose}
-      />
-      <div className="relative flex h-full w-full max-w-md flex-col bg-white shadow-xl">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/40 p-4 sm:p-6"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="form-modal-title"
+        className={`my-auto flex max-h-[min(90vh,900px)] w-full flex-col rounded-2xl bg-white shadow-2xl ${maxWidth}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+            <h3
+              id="form-modal-title"
+              className="text-base font-semibold text-slate-900"
+            >
+              {title}
+            </h3>
             {subtitle ? (
               <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
             ) : null}
@@ -203,6 +223,7 @@ export function ActionDrawer({
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close"
             className="cursor-pointer rounded-lg p-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-700"
           >
             <Icon icon={Cancel01Icon} size={18} />
@@ -210,7 +231,7 @@ export function ActionDrawer({
         </div>
         <div className="flex-1 overflow-y-auto p-5">{children}</div>
         {footer ? (
-          <div className="space-y-2 border-t border-slate-100 p-4">
+          <div className="shrink-0 space-y-2 border-t border-slate-100 p-4">
             {footer}
           </div>
         ) : null}

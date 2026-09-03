@@ -1,9 +1,9 @@
 import React from "react";
 import Link from "next/link";
-import { useRouter } from "next/router";
+import { PrinterIcon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
-  ActionDrawer,
+  FormModal,
   EmptyRow,
   FilterBar,
   FilterField,
@@ -14,6 +14,10 @@ import {
   selectClass,
   useDebouncedValue,
 } from "../../../components/finance/ui";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import {
   PAYMENT_METHOD_LABELS,
   fetchFinanceMeta,
@@ -27,7 +31,6 @@ import {
 } from "../../../lib/finance-mgmt";
 
 export default function ReceiptsPage() {
-  const router = useRouter();
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -64,7 +67,7 @@ export default function ReceiptsPage() {
         r.receipt_number.toLowerCase().includes(q) ||
         (r.student_name || "").toLowerCase().includes(q) ||
         (r.student_code || "").toLowerCase().includes(q) ||
-        (r.payment_number || "").toLowerCase().includes(q)
+        (r.payment_number || "").toLowerCase().includes(q),
     );
   }, [receipts, debouncedSearch]);
 
@@ -155,9 +158,7 @@ export default function ReceiptsPage() {
                 {formatMoney(r.amount, currency)}
               </td>
               <td className="px-4 py-3 text-slate-600">
-                {r.method
-                  ? PAYMENT_METHOD_LABELS[r.method] ?? r.method
-                  : "—"}
+                {r.method ? (PAYMENT_METHOD_LABELS[r.method] ?? r.method) : "—"}
               </td>
               <td className="px-4 py-3">
                 {formatMoney(r.balance_remaining, currency)}
@@ -165,30 +166,29 @@ export default function ReceiptsPage() {
               <td className="px-4 py-3 text-slate-600">{r.issued_at}</td>
               <td className="px-4 py-3 text-slate-600">{r.reprint_count}</td>
               <td className="px-4 py-3">
-                <div className="flex flex-wrap gap-2">
-                  <SecondaryButton onClick={() => void openPreview(r.id)}>
-                    View
-                  </SecondaryButton>
-                  <SecondaryButton
-                    onClick={() =>
-                      void router.push(`/finance/receipts/${r.id}`)
-                    }
-                  >
-                    Print page
-                  </SecondaryButton>
-                </div>
+                <TableActionGroup>
+                  <TableIconButton
+                    icon={ViewIcon}
+                    label="View receipt"
+                    tone="primary"
+                    onClick={() => void openPreview(r.id)}
+                  />
+                  <TableIconButton
+                    icon={PrinterIcon}
+                    label="Print page"
+                    href={`/finance/receipts/${r.id}`}
+                  />
+                </TableActionGroup>
               </td>
             </tr>
           ))
         )}
       </FinanceTable>
 
-      <ActionDrawer
+      <FormModal
         open={!!preview}
         title={
-          preview
-            ? `Receipt ${preview.receipt.receipt_number}`
-            : "Receipt"
+          preview ? `Receipt ${preview.receipt.receipt_number}` : "Receipt"
         }
         subtitle={preview?.student?.name}
         onClose={() => setPreview(null)}
@@ -261,8 +261,8 @@ export default function ReceiptsPage() {
                 <dt className="text-xs text-slate-500">Method</dt>
                 <dd>
                   {preview.payment?.method
-                    ? PAYMENT_METHOD_LABELS[preview.payment.method] ??
-                      preview.payment.method
+                    ? (PAYMENT_METHOD_LABELS[preview.payment.method] ??
+                      preview.payment.method)
                     : "—"}
                 </dd>
               </div>
@@ -280,7 +280,7 @@ export default function ReceiptsPage() {
             ) : null}
           </div>
         ) : null}
-      </ActionDrawer>
+      </FormModal>
     </AppShell>
   );
 }

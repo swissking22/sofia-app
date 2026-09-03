@@ -22,6 +22,7 @@ export interface RoleListItem {
   name: string
   description: string | null
   is_system: boolean
+  is_enabled?: boolean
   user_count: number
   permission_count: number
 }
@@ -113,7 +114,15 @@ export class RoleRepository extends BaseRepository<Role> {
            WHERE school_id = ? AND name = ? AND deleted_at IS NULL`
         )
         .get(schoolId, seed.name) as { id: string } | undefined
-      if (existing) continue
+      if (existing) {
+        if (seed.permissions === 'all') {
+          this.replaceRolePermissions(
+            existing.id,
+            allPerms.map((p) => p.id)
+          )
+        }
+        continue
+      }
 
       const role: Role = {
         ...this.buildBaseFields(),
@@ -199,6 +208,7 @@ export class RoleRepository extends BaseRepository<Role> {
       name: role.name,
       description: role.description,
       is_system: role.is_system === 1,
+      is_enabled: role.is_enabled !== 0,
       user_count: this.countUsersForRole(role.id),
       permission_count: this.countPermissionsForRole(role.id),
     }))
@@ -330,6 +340,21 @@ export class RoleRepository extends BaseRepository<Role> {
       )
     }
     this.delete(roleId)
+  }
+
+  setEnabled(roleId: string, enabled: boolean): RoleDetail {
+    const existing = this.findById(roleId)
+    if (!existing) throw new Error('Role not found.')
+    const now = new Date().toISOString()
+    this.db
+      .prepare(
+        `UPDATE roles SET is_enabled = ?, updated_at = ?, version = version + 1, sync_status = 'pending'
+         WHERE id = ?`
+      )
+      .run(enabled ? 1 : 0, now, roleId)
+    const detail = this.getDetail(roleId)
+    if (!detail) throw new Error('Role not found.')
+    return detail
   }
 
   duplicateRole(roleId: string): RoleDetail {

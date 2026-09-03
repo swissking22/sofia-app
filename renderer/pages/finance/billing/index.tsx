@@ -1,9 +1,9 @@
 import React from "react";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
 import {
-  ActionDrawer,
+  FormModal,
   EmptyRow,
   FilterBar,
   FilterField,
@@ -17,6 +17,7 @@ import {
   useDebouncedValue,
 } from "../../../components/finance/ui";
 import { Icon } from "../../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   INVOICE_STATUS_LABELS,
   adjustInvoice,
@@ -304,16 +305,21 @@ export default function BillingPage() {
                 />
               </td>
               <td className="px-4 py-3">
-                <SecondaryButton onClick={() => void openDetail(inv.id)}>
-                  View
-                </SecondaryButton>
+                <TableActionGroup>
+                  <TableIconButton
+                    icon={ViewIcon}
+                    label="View invoice"
+                    tone="primary"
+                    onClick={() => void openDetail(inv.id)}
+                  />
+                </TableActionGroup>
               </td>
             </tr>
           ))
         )}
       </FinanceTable>
 
-      <ActionDrawer
+      <FormModal
         open={genOpen}
         title="Generate invoice"
         subtitle="Bill one student from a fee structure."
@@ -413,9 +419,9 @@ export default function BillingPage() {
             </FormField>
           </div>
         </form>
-      </ActionDrawer>
+      </FormModal>
 
-      <ActionDrawer
+      <FormModal
         open={bulkOpen}
         title="Bulk generate"
         subtitle="Create invoices for a class (or structure scope)."
@@ -486,9 +492,9 @@ export default function BillingPage() {
             Carry previous arrears
           </label>
         </form>
-      </ActionDrawer>
+      </FormModal>
 
-      <ActionDrawer
+      <FormModal
         open={!!detail}
         title={detail ? `Invoice ${detail.invoice_number}` : "Invoice"}
         subtitle={detail?.student_name}
@@ -584,7 +590,7 @@ export default function BillingPage() {
             ) : null}
           </div>
         ) : null}
-      </ActionDrawer>
+      </FormModal>
     </AppShell>
   );
 }

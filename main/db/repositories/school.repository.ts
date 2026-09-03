@@ -2,11 +2,19 @@ import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
 import { enqueueSync } from '../../sync/queue'
 import {
+  buildDaySchedule,
+  mergeDaySchedule,
+  normalizeBreaks,
+  validateDaySchedule,
+  type DayBreakInput,
+  type DayScheduleConfig,
+} from '../../domain/day-schedule'
+import {
   generateSchoolShortCode,
   normalizeShortCode,
   validateShortCode,
 } from '../../helpers/school-short-code'
-import type { School } from '../types'
+import type { School, SchoolDayBreak } from '../types'
 import { BaseRepository, type CreateInput, type UpdateInput } from './base'
 
 /** Auto-generate a legacy system school code (e.g. SOF-A1B2C3D4). */
@@ -80,6 +88,10 @@ export class SchoolRepository extends BaseRepository<School> {
       stamp_path: input.stamp_path ?? null,
       principal_signature_path: input.principal_signature_path ?? null,
       max_teacher_periods: input.max_teacher_periods ?? null,
+      day_start_time: input.day_start_time ?? null,
+      day_end_time: input.day_end_time ?? null,
+      period_duration_minutes: input.period_duration_minutes ?? null,
+      periods_per_day: input.periods_per_day ?? null,
     }
 
     const tx = this.db.transaction(() => {
@@ -90,12 +102,14 @@ export class SchoolRepository extends BaseRepository<School> {
              school_code, short_code, school_type, education_system, school_category,
              region, division, subdivision, website,
              stamp_path, principal_signature_path, max_teacher_periods,
+             day_start_time, day_end_time, period_duration_minutes, periods_per_day,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @name, @email, @phone, @country, @address, @logo_path,
              @school_code, @short_code, @school_type, @education_system, @school_category,
              @region, @division, @subdivision, @website,
              @stamp_path, @principal_signature_path, @max_teacher_periods,
+             @day_start_time, @day_end_time, @period_duration_minutes, @periods_per_day,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
         )
@@ -166,6 +180,10 @@ export class SchoolRepository extends BaseRepository<School> {
                stamp_path = @stamp_path,
                principal_signature_path = @principal_signature_path,
                max_teacher_periods = @max_teacher_periods,
+               day_start_time = @day_start_time,
+               day_end_time = @day_end_time,
+               period_duration_minutes = @period_duration_minutes,
+               periods_per_day = @periods_per_day,
                updated_at = @updated_at,
                version = @version,
                sync_status = @sync_status
@@ -214,5 +232,146 @@ export class SchoolRepository extends BaseRepository<School> {
         `SELECT * FROM schools WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`
       )
       .get() as School | undefined
+  }
+
+  listDayBreaks(schoolId: string): SchoolDayBreak[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM school_day_breaks
+         WHERE school_id = ? AND deleted_at IS NULL
+         ORDER BY after_period ASC, sort_order ASC`
+      )
+      .all(schoolId) as SchoolDayBreak[]
+  }
+
+  /**
+   * Effective day schedule for timetable grids.
+   * Unconfigured schools get DEFAULT_DAY_SCHEDULE (08:00–15:00, 45 min × 8).
+   */
+  getDayScheduleConfig(schoolId: string): DayScheduleConfig {
+    const school = this.findById(schoolId)
+    if (!school) return mergeDaySchedule(null)
+
+    const breaks = this.listDayBreaks(schoolId)
+    const hasCustom =
+      Boolean(school.day_start_time?.trim()) ||
+      Boolean(school.day_end_time?.trim()) ||
+      school.period_duration_minutes != null ||
+      school.periods_per_day != null ||
+      breaks.length > 0
+
+    if (!hasCustom) return mergeDaySchedule(null)
+
+    return mergeDaySchedule({
+      day_start_time: school.day_start_time ?? undefined,
+      day_end_time: school.day_end_time ?? undefined,
+      period_duration_minutes: school.period_duration_minutes ?? undefined,
+      periods_per_day: school.periods_per_day ?? undefined,
+      breaks: breaks.map((b) => ({
+        name: b.name,
+        after_period: b.after_period,
+        duration_minutes: b.duration_minutes,
+      })),
+    })
+  }
+
+  getDayScheduleDto(schoolId: string) {
+    const config = this.getDayScheduleConfig(schoolId)
+    const built = buildDaySchedule(config)
+    return {
+      ...config,
+      periods: built.periods,
+      blocks: built.blocks,
+      computed_end_time: built.computed_end_time,
+    }
+  }
+
+  saveDaySchedule(
+    schoolId: string,
+    input: {
+      day_start_time: string
+      day_end_time: string
+      period_duration_minutes: number
+      periods_per_day: number
+      breaks: DayBreakInput[]
+    }
+  ) {
+    const school = this.findById(schoolId)
+    if (!school) throw new Error('School not found.')
+
+    const config: DayScheduleConfig = {
+      day_start_time: input.day_start_time,
+      day_end_time: input.day_end_time,
+      period_duration_minutes: Number(input.period_duration_minutes),
+      periods_per_day: Number(input.periods_per_day),
+      breaks: normalizeBreaks(input.breaks ?? []),
+    }
+    const error = validateDaySchedule(config)
+    if (error) throw new Error(error)
+
+    const now = new Date().toISOString()
+    const tx = this.db.transaction(() => {
+      const updated =
+        this.update(schoolId, {
+          day_start_time: config.day_start_time,
+          day_end_time: config.day_end_time,
+          period_duration_minutes: config.period_duration_minutes,
+          periods_per_day: config.periods_per_day,
+        }) ?? school
+
+      const existing = this.listDayBreaks(schoolId)
+      for (const row of existing) {
+        this.db
+          .prepare(
+            `UPDATE school_day_breaks
+             SET deleted_at = ?, updated_at = ?, version = version + 1, sync_status = 'pending'
+             WHERE id = ?`
+          )
+          .run(now, now, row.id)
+        enqueueSync(this.db, 'school_day_breaks', row.id, 'DELETE', {
+          id: row.id,
+          school_id: schoolId,
+        })
+      }
+
+      config.breaks.forEach((b, index) => {
+        const record: SchoolDayBreak = {
+          id: randomUUID(),
+          school_id: schoolId,
+          name: b.name,
+          after_period: b.after_period,
+          duration_minutes: b.duration_minutes,
+          sort_order: index,
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+          sync_status: 'pending',
+          version: 1,
+        }
+        this.db
+          .prepare(
+            `INSERT INTO school_day_breaks (
+               id, school_id, name, after_period, duration_minutes, sort_order,
+               created_at, updated_at, deleted_at, sync_status, version
+             ) VALUES (
+               @id, @school_id, @name, @after_period, @duration_minutes, @sort_order,
+               @created_at, @updated_at, @deleted_at, @sync_status, @version
+             )`
+          )
+          .run(record)
+        enqueueSync(
+          this.db,
+          'school_day_breaks',
+          record.id,
+          'INSERT',
+          record as unknown as Record<string, unknown>
+        )
+      })
+
+      return updated
+    })
+
+    tx()
+    return this.getDayScheduleDto(schoolId)
   }
 }

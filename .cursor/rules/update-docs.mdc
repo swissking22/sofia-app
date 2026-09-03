@@ -1,24 +1,31 @@
 ---
-description: Keep DOCS.md updated whenever modules or user-facing features are added or changed
+description: Every code change must be documented in DOCS.md in the same change
 alwaysApply: true
 ---
 
-# Update product documentation
+# Document every change
 
-When you add, remove, or meaningfully change a **module, route, or user-facing workflow**, update [`DOCS.md`](../../DOCS.md) in the **same change**.
+Documentation is part of the work, not a follow-up. If you add, remove, or modify code in this repo, update [`DOCS.md`](../../DOCS.md) **in the same change** before you consider the task done.
 
-## Required updates
+## Always
 
-1. Add or revise the module section (paths, how to use, workflows).
-2. Remove the item from **Coming soon** / **Other modules** when it becomes usable.
-3. Add a row to the **Changelog** with today’s date and a one-line summary.
-4. If you unlock a nav item in `renderer/lib/navigation.ts`, document that screen in `DOCS.md`.
+1. Add a **Changelog** row (today’s date + one line on what changed and why it matters).
+2. Update the relevant **module / screen / workflow** section when behaviour, routes, or how-to-use steps change.
+3. If you unlock a nav item in `renderer/lib/navigation.ts`, document that screen.
+4. Remove items from **Coming soon** / **Other modules** when they become usable.
+5. For IPC, schema, RBAC, or service changes, add a short architecture note and the code/IPC path.
+
+## Includes (do not skip)
+
+- New features and new files
+- Bug fixes and behaviour changes
+- UX/UI changes (tables, keyboard shortcuts, buttons, labels)
+- Setup, seed, tests, and developer workflows that people need to run
+
+Trivial formatting-only edits (whitespace, unused import) do not need a changelog row.
 
 ## Do not
 
-- Leave new sidebar routes undocumented.
-- Put only developer notes in chat — the doc is for people using and extending SOFIA.
-
-## Scope
-
-User-facing behaviour and workflows first; keep architecture notes brief and point to code paths when useful.
+- Leave the only explanation in chat.
+- Ship an undocumented sidebar route or user-facing workflow.
+- Treat a change as “too small” to document if a user or maintainer would notice it.

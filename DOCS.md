@@ -4,7 +4,7 @@ Offline-first school management desktop app (Nextron: Electron + Next.js + SQLit
 
 **How to use this file:** Start with [Getting started](#getting-started), then open the module you need. Each section lists screens, what they do, and the usual workflow.
 
-**Maintaining this file:** Whenever a module or feature is added or meaningfully changed, update this document in the same change (routes, how to use it, and status). See [Changelog](#changelog).
+**Maintaining this file:** Every code change (feature, fix, UX, IPC, schema) must update this document in the **same change**: revise the relevant section and add a Changelog row. See [Changelog](#changelog). Trivial formatting-only edits are the exception.
 
 ---
 
@@ -44,9 +44,9 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 |------|------|---------|
 | School Profile | `/setup/school-profile` | Name, codes, contact, logo/stamp/signature |
 | Academic Year | `/setup/academic-year` | Current year dates + calendar events |
-| Academic Structure | `/setup/academic-structure` | Levels → sections → specializations → classes |
+| Academic Structure | `/setup/academic-structure` | Levels → sections → specializations → classes; **school day schedule** (start/close times, period duration, breaks) for the timetable |
 | Grading System | `/setup/grading-system` | CA/exam weights + grade bands (A–F, etc.) |
-| Staff | `/setup/staff` | Admin staff + teachers (subjects/classes) |
+| Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments) |
 | Permissions | `/setup/permissions` | Roles & permissions |
 | Student ID | `/setup/student-id` | ID pattern (school code, year, sequence, …) |
 | Students | `/setup/students` | Bulk import / initial student load |
@@ -76,7 +76,7 @@ Day-to-day school configuration (mirrors much of setup, editable anytime).
 | School Profile | `/school/profile` | Edit identity and branding assets |
 | Academic Year | `/school/academic-year` | Edit year + calendar |
 | Terms & Sessions | `/school/terms` | Term dates within the year |
-| Classes | `/school/classes` | Manage levels, sections, specs, and classes |
+| Classes | `/school/classes` | Manage levels, sections, specs, classes, and the school day schedule (period times + breaks) |
 | Departments | `/school/departments` | Add/edit/delete departments |
 | Subjects | `/school/subjects` | Pick an **academic level**, then add subjects (classes in that level are selected by default) |
 
@@ -94,8 +94,8 @@ Consistent UI across all student routes: filters at top, clean tables, status ba
 
 ### Add student — `/students/create`
 
-Sections: **Personal**, **Admission** (level → department → specialization if any → class, plus year + type), **Guardian** (name and phone required).  
-Student ID is **auto-generated on save** from the Student ID pattern.
+Sections: **Personal**, **Admission** (level → department → specialization if any → class, plus year + type + **Residence** day/boarding), **Guardian** (name and phone required).  
+Student ID is **auto-generated on save** from the Student ID pattern. Residence is used only to apply boarding/day fee structures.
 
 ### Student profile — `/students/:id`
 
@@ -103,7 +103,7 @@ Tabs:
 
 | Tab | Content |
 |-----|---------|
-| Overview | Personal, guardian, placement |
+| Overview | Personal, guardian, placement, day/boarding residence |
 | Academic History | Current placement (expands as promotions/transfers accumulate) |
 | Documents | Files for this student; link to upload |
 | Finance | Outstanding, invoices, and payments from Finance & Fees |
@@ -151,6 +151,26 @@ Types include birth certificate, report card, ID card, medical, other.
 
 Students with status **alumni**. Filter by admission year / search. Open profile from the name.
 
+### ID Cards — `/students/id-cards`
+
+Data-driven student (and future staff) ID cards. Schools design a template once; Sofia fills it from existing student, school, class, and academic-year records. Generation and PDF/print work **offline**. Cloud sync only sends metadata (templates, jobs, issued-card rows) — not a requirement to print.
+
+| Screen | Path | How to use |
+|--------|------|------------|
+| Dashboard | `/students/id-cards` | Active students, issued/pending/expiring counts, recent jobs. |
+| Templates | `/students/id-cards/templates` | List designs (front/back preview). Open designer, duplicate, activate, archive. Templates with issued cards cannot be deleted — archive them so old cards stay reprintable. |
+| Create template | `/students/id-cards/templates/new` | Wizard: type, orientation, starting layout, fields to include. |
+| Designer | `/students/id-cards/designer/[id]` | Front/back canvas, drag fields, layers, school/student variables, QR/barcode, colours, millimetre sizes (default CR80). Preview with sample data or a real student. |
+| Generate | `/students/id-cards/generate` | Template → year → students (person, class, or school) → new/replacement/renewal → check missing photos/IDs → generate job → print. |
+| Issued cards | `/students/id-cards/issued` | Card number, verification code, status (active / replaced / revoked / expired). Replace or revoke; history is kept. |
+| Print | `/students/id-cards/print?ids=` | Print-ready front+back at physical size; browser **Print → Save as PDF**. Layout uses the **template version** stored on each card. |
+| Print history | `/students/id-cards/print-history` | Who printed what, when. |
+| Settings | `/students/id-cards/settings` | Card number pattern (e.g. `SCH/ID/2026/00001`), expiry, motto/footer, paper defaults. |
+
+Sample templates (customise freely): Classic University Vertical, Modern School Horizontal, Minimal Student Card, Professional Blue, Blank.
+
+Student photos and school logo/signature come from existing student and school profile files. QR codes carry a **verification code** (`sofia:v1:ID-…`), not extra personal data, unless you bind a field yourself.
+
 ---
 
 ## Academic Management
@@ -169,10 +189,10 @@ Typical term workflow:
 
 | Screen | Path | How to use |
 |--------|------|------------|
-| Weekly grid | `/academic/timetable` | View by **Class** or **Teacher**; Mon–Fri × periods |
-| Builder | `/academic/timetable/create` | Select class → drag subjects onto periods → drop saves; double-click cell to clear |
+| Weekly grid | `/academic/timetable` | View by **Class** or **Teacher**; Mon–Fri × periods from the school day schedule (clock times + break rows) |
+| Builder | `/academic/timetable/create` | Select class → drag subjects onto periods. Period count and labels come from **Academic Structure → School day & periods**. **Common** subjects (linked to every class at the level, e.g. Mathematics for all Form 1) are written to the **same day/period for all classes at that level**. Clearing a common slot clears it across those classes when they still hold that subject. If the teacher already teaches a different subject in another class at that time, an alert blocks the save. |
 
-Teachers come from teaching staff set up in Staff setup.
+A teacher is assigned to a **subject in a specific class** (not to subjects and classes independently). One teacher may teach many classes and many subjects. Timetable slots pick that assigned teacher automatically. Subjects offered to every class at an academic level are treated as shared/common so they cannot be scheduled at conflicting times for the shared teacher.
 
 ### Attendance
 
@@ -187,7 +207,7 @@ Teachers come from teaching staff set up in Staff setup.
 | Screen | Path | How to use |
 |--------|------|------------|
 | Assessments | `/academic/ca` | List with weights; create assessment (class, subject, term, weight, max score) |
-| Score entry | `/academic/ca/entry?assessment_id=` | Enter scores per student (capped at max score) |
+| Score entry | `/academic/ca/entry?assessment_id=` | Enter scores per student (capped at max score). Arrow Up/Down moves to the previous or next student. |
 
 ### Examinations
 
@@ -195,17 +215,22 @@ Teachers come from teaching staff set up in Staff setup.
 |--------|------|------------|
 | Sessions | `/academic/exams` | List exam sessions and paper counts |
 | Create | `/academic/exams/create` | Name, term, dates, status + one or more papers (subject, class, max score) |
-| Scores | `/academic/exams/scores` | Pick a paper → enter scores |
+| Scores | `/academic/exams/scores` | Pick a paper → enter scores. Arrow Up/Down moves to the previous or next student. |
 
 ### Results processing
 
-Weights come from **Grading System** (e.g. CA 30% + Exam 70%). Grades use configured grade bands.
+Each school defines how scores become grades on **Calculation Settings**. Processing reads that configuration (or, if none is active for the class, the Setup grading-system weights).
 
 | Screen | Path | How to use |
 |--------|------|------------|
 | View | `/academic/results` | Select class + term → rankings / averages |
-| Process | `/academic/results/process` | Run computation from CA + exam scores |
+| Process | `/academic/results/process` | Year/term/class → calculate from CA + exams using the active profile |
 | Publish | `/academic/results/publish` | Publish, or publish & **lock** (locked runs cannot be recomputed) |
+| Calculation settings | `/academic/results/calculation-settings` | Wizard: profiles, assessments, weights, grades, pass mark, average, ranking, promotion, test calculation, activate |
+
+**Profiles** are versioned. Activating requires assessment weights to total 100%. Processed results store a snapshot of the profile version so later rule changes do not rewrite history. Missing scores are not treated as zero unless the school chooses that policy.
+
+Demo profiles (created on first visit): **Standard Secondary - 40/60** and **Upper Secondary - Tests + Exam**.
 
 ### Report cards
 
@@ -220,6 +245,10 @@ Requires results that are computed / published / locked for that class + term.
 ### Academic reports — `/academic/reports`
 
 Dashboard: counts (attendance sessions, CA, exams, published results, report cards) and class averages from recent result runs.
+
+### Teaching progress — `/academic/teaching-progress`
+
+Syllabus (subject / class / year, topics and subtopics) and a teaching logbook. Coverage percentages are calculated from topics marked covered by lesson status — teachers do not enter a percentage. Dashboard: completed / in progress / not started, expected vs actual vs calendar, ahead/on track/behind. Teachers see their own log; managers can filter by teacher, subject, and class.
 
 ### Coming soon
 
@@ -236,8 +265,8 @@ Shared list/filter UI mirrors Student Management (`renderer/components/staff/ui.
 | Screen | Path | How to use |
 |--------|------|------------|
 | List | `/staff/teachers` | Filter by search, status, department, job role. Actions drawer: view/edit or delete (managers). |
-| Add | `/staff/teachers/create` | Personal + role fields; multi-select subjects/classes/homeroom. Employee ID auto-generated if blank. |
-| Profile / edit | `/staff/teachers/:id` | Edit the same fields; assignments shown as checkboxes. |
+| Add | `/staff/teachers/create` | Personal + role fields; per-class subject checkboxes (a teacher can teach many classes and many subjects); homeroom. Employee ID auto-generated if blank. |
+| Profile / edit | `/staff/teachers/:id` | Same fields. Teaching assignments are class × subject, not separate subject and class lists. |
 
 ### Staff directory
 
@@ -281,15 +310,89 @@ Fee categories and currency come from Setup → Finance. Receipt header/footer u
 
 | Screen | Path | How to use |
 |--------|------|------------|
-| Fee structure | `/finance/fee-structure` | List packages with total, year, level/class, active badge. Managers create structures with fee lines (category or custom name, amount, frequency, mandatory, late fee). Activate/deactivate or soft-delete. |
-| Student billing | `/finance/billing` | Filter invoices by status/search. Generate for one student (structure, due date, carry arrears, discount) or bulk by class/structure. Drawer shows lines and allows adjustments. |
-| Payments | `/finance/payments` | Payment history. Record against an outstanding invoice (amount, method, reference, optional use of credit). Success shows receipt number with link. |
+| Fee structure | `/finance/fee-structure` | List packages with total, year, level/class, active badge, and day/boarding applicability. Managers create structures with fee lines (tuition, boarding, dormitory, transport, …), amount, frequency, mandatory, late fee, and **Applies to** (all / day / boarding). Activate/deactivate or soft-delete. |
+| Student billing | `/finance/billing` | Filter invoices by status/search. Generate for one student (structure, due date, carry arrears, discount) or bulk by class/structure. Drawer shows lines and allows adjustments. Generation is refused if the structure’s residence scope does not match the student. |
+| Payments | `/finance/payments` | Payment history. Record against an outstanding invoice (amount, method, reference, optional use of credit). **Online payment** starts a request (`pending`/`processing`); Confirm/Fail/Cancel after the provider settles. A request is not a successful payment — student balance and receipt update only on verified success. |
 | Receipts | `/finance/receipts` | List + search. View/print drawer or full page `/finance/receipts/:id`. Managers can log a reprint. |
 | Outstanding | `/finance/outstanding` | Toggle student vs class grouping; aging columns (current / 1–30 / 60+). Select students and send in-app fee reminders. |
-| Expenses | `/finance/expenses` | List with date filters. Create: category, amount, date, vendor, description, method, optional recurring. |
+| Expenses | `/finance/expenses` | List with date filters. Create: category, amount, date, vendor, description, method, optional recurring. Recording an expense updates matching **budgets** and may raise spending alerts. |
+| Budgeting | `/finance/budgeting` | Totals (allocated / spent / remaining / utilization) and per-category bars. Managers add configurable categories, allocate budgets by period (monthly / termly / annual / custom), and set alert / warning / critical thresholds. Spending is computed from existing Expenses. |
+| Bank deposits | `/finance/bank-deposits` | Track school cash **already collected** when it is later deposited in the bank. Not a student payment method. Workflow: record (pending) → reconcile cash collections (many payments to one slip) → verify → post to ledger. Verified deposits cannot be silently edited. |
 | Financial reports | `/finance/reports` | Date range → cards for revenue, collected, outstanding, expenses, P&L; tables by payment method and expense category; Export CSV. |
 
+Boarding is a **fee component**, not a Boarding Management module. Students are Day or Boarding; there is no dormitory roster.
+
 Student profile **Finance** tab shows outstanding, credit, invoices, and payments for that student.
+
+---
+
+## Communication
+
+Channels and SMS provider are configured under **Setup → Communication**. Message templates support `{{parent_name}}`, `{{student_name}}`, `{{class_name}}`, and `{{school_name}}` placeholders. SMS and email deliveries are **queued locally** (offline-first outbox) and sync when the device is online; internal messages and parent inbox posts are available immediately in-app.
+
+| Screen | Path | How to use |
+|--------|------|------------|
+| Announcements | `/communication/announcements` | Create draft broadcasts to all parents, a class, or a level. Choose SMS, email, and/or in-app parent inbox. Send when ready; sent announcements cannot be edited or deleted. |
+| SMS Notifications | `/communication/sms` | Outbox of queued/sent/failed SMS and email rows. Managers compose one-off SMS (optionally linked to a student). |
+| Parent Messages | `/communication/messages` | Thread list per student; managers reply via internal inbox, SMS, or email. Teachers can view threads. |
+| Internal Notices | `/communication/notices` | Publish staff notices (all staff, teachers only, or admin/secretary). Fans out to staff in-app notifications. |
+
+**Finance integration:** Outstanding fee reminders also queue SMS/email/internal parent messages when those channels are enabled (in addition to the finance reminder log).
+
+Admin and secretary can manage all communication screens; teachers have read access to lists and threads.
+
+---
+
+## Reports & Analytics
+
+Read-only analytics over live operational data (results, attendance, fees, staff). There is no second ledger or marks register. Filters always stay inside the signed-in school. Drill-down uses existing routes where they already exist. Export is CSV plus **Print / PDF** (browser print-to-PDF — Sofia does not bundle a PDF engine).
+
+| Screen | Path | How to use |
+|--------|------|------------|
+| Academic performance | `/reports/academic-performance` | Filter year/term/department/class/subject/gender and official results vs CA vs exams. Cards: average, pass rate, students, subjects, best/lowest class. Tables: class, subject, ranking. Grade counts A–F. Click a class, subject, or student to narrow or open the student report. |
+| Student reports | `/reports/students` | Search by name or Student ID (optional class). Generate a 360° report: profile, CA/exam subject rows, attendance, billed/paid/outstanding, previous terms, promotion runs. Print/CSV. |
+| Financial reports | `/reports/financial` | Aggregates Finance & Fees: billed, collected, outstanding, expenses, net, collection rate; revenue by term/class/fee type/method; aging current / 30+ / 60+ / 90+; expenses; bank deposits vs cash collected; budget utilization. Teachers do not see this screen. Daily recording remains under Finance. |
+| Attendance analytics | `/reports/attendance` | Overall rate, present/absent/late, class rates, daily/monthly trend, at-risk list (default 75%, configurable). Staff attendance summary from existing staff registers. |
+| School insights | `/reports/school-insights` | Enrolment, academic, finance (if permitted), attendance, staff — plus generated insights only when calculations show decline, arrears growth, attendance risk, or budget pressure. |
+
+Operational reports under Academic Management (`/academic/reports`) and Finance (`/finance/reports`) are unchanged.
+
+---
+
+## Documents
+
+Official letter/certificate generation from existing Sofia records. There is **one** template engine (`document_templates` + `issued_documents`). Student, academic, and payment data are never copied into a parallel store.
+
+Print / PDF uses the same browser print-to-PDF path as receipts and ID cards (A4 CSS). Restart the app after first load so numbering tables migrate.
+
+| Screen | Path | How to use |
+|--------|------|------------|
+| Admission letters | `/documents/admission-letters` | Filter year/class/department/status/date. Generate or bulk-generate personalized letters from enrolled students. View / print / regenerate (previous copy is superseded, not deleted). |
+| Certificates | `/documents/certificates` | Tabs: issued certificates and certificate types. Create types (leaving, completion, achievement, participation, conduct, or custom). Each issued certificate gets a unique number from the school pattern (default `{SCHOOL_CODE}/{TYPE}/{YEAR}/{SEQUENCE}`). |
+| Transcripts | `/documents/transcripts` | Generate from **published or locked** result runs only. Draft terms show: “Results for {term} have not yet been finalized…”. Scope: current year, selected year/term, or full history. |
+| Receipt templates | `/documents/receipt-templates` | Appearance of **Finance & Fees → Receipts**. Set one default per school. Variables such as `{{receipt.number}}` and `{{payment.amount}}`. Do not record payments here. |
+| Official documents | `/documents/official` | Enrollment, recommendation, confirmation, transfer, withdrawal, plus custom types. |
+| Print | `/documents/print/[id]` | Preview, print, or Save as PDF. Verification ID (`SOFIA-XXXXXX`) is on the footer. |
+
+**Workflow:** Generate → (if the type requires approval) Issue → print. Void instead of deleting issued copies.
+
+Templates support logo, stamp, signature (from school profile / signatories), and only registered `{{dot.keys}}`. Unknown tokens are left as-is; script tags are stripped.
+
+---
+
+## System Administration
+
+School-scoped control centre. There is no platform super-admin. Session role `admin` (school owner) or named `system.*` permissions are required. Setup → Roles remains the wizard for first-time permission seeds.
+
+| Screen | Path | How to use |
+|--------|------|------------|
+| Overview | `/administration` | Active users, audit volume today, last backup, sync health. |
+| Users & Roles | `/administration/users` | Search/filter users. Create (temporary password, never stored in plaintext). View inherited permissions. Change role, deactivate/suspend (no delete), reset password, revoke sessions. |
+| Roles | `/administration/roles` | Create/edit/duplicate custom roles. System roles cannot be deleted. Roles with assigned users cannot be deleted. Activate/deactivate. |
+| Permissions | `/administration/permissions` | Live matrix of catalog permissions × school roles. |
+| Audit logs | `/administration/audit-logs` | Paginated union of central `audit_events` plus finance and document audit tables. Append-only — no edit/delete API. |
+| Backup & Sync | `/administration/backup-sync` | Backup now + history. Restore requires typing `RESTORE`, writes a safety backup, then queues a file replace on next launch. Sync now / retry failed / conflict keep-local or keep-remote. |
+| Settings | `/administration/settings` | Timezone (default Africa/Douala), session timeout, password/lockout policy, backup retention. School identity, academics, finance numbering, and document branding stay on their existing screens. |
 
 ---
 
@@ -297,10 +400,6 @@ Student profile **Finance** tab shows outstanding, credit, invoices, and payment
 
 Sidebar placeholders only:
 
-- **Communication** (announcements, SMS, parent messages, notices) — setup exists under Setup → Communication
-- **Reports & Analytics** (cross-cutting analytics hub)
-- **Documents** (admission letters, certificates, transcripts, …) — template setup exists under Setup → Documents
-- **System Administration** (users/roles, audit, backup UI under admin — backup setup also under Setup)
 - **Help & Support**
 
 ---
@@ -326,9 +425,14 @@ Key libs for built modules:
 
 - Students: `renderer/lib/student-mgmt.ts` → `main/ipc/student-mgmt.ts`
 - Staff: `renderer/lib/staff-mgmt.ts` → `main/ipc/staff-mgmt.ts`
-- Finance: `renderer/lib/finance-mgmt.ts` → `main/ipc/finance-mgmt.ts`
-- Academic: `renderer/lib/academic-mgmt.ts` → `main/ipc/academic-mgmt.ts`
-- School structure: `renderer/lib/academic-structure.ts`, `subjects.ts`, `departments.ts`, `academic-year.ts`
+- Finance: `renderer/lib/finance-mgmt.ts` → `main/ipc/finance-mgmt.ts`; extensions `renderer/lib/finance-ext.ts` → `main/ipc/finance-ext.ts`
+- Communication: `renderer/lib/communication-mgmt.ts` → `main/ipc/communication-mgmt.ts` (setup: `communication.ts`)
+- Academic: `renderer/lib/academic-mgmt.ts` → `main/ipc/academic-mgmt.ts`; teaching progress `renderer/lib/teaching-progress.ts` → `main/ipc/teaching-progress.ts`
+- School day schedule: `renderer/lib/day-schedule.ts` → `main/ipc/day-schedule.ts` (`day-schedule:get` / `day-schedule:save`); domain `main/domain/day-schedule.ts`; stored on `schools` + `school_day_breaks`; feeds `academic:meta` period count/times for the timetable
+- Student ID cards: `renderer/lib/student-id-cards.ts` → `main/ipc/student-id-cards.ts`
+- Reports: `renderer/lib/reports.ts` → `main/ipc/reports.ts`
+- Documents: `renderer/lib/documents-mgmt.ts` → `main/ipc/documents-mgmt.ts` (setup templates remain `renderer/lib/documents.ts`)
+- System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts`
 
 ---
 
@@ -336,6 +440,19 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-03 | Academic Structure: **School day & periods** (start/close times, period duration, breaks) under setup `/setup/academic-structure` and School `/school/classes`. Timetable grids use this for period count, clock labels, and break rows. IPC `day-schedule:*`; domain `main/domain/day-schedule.ts`. |
+| 2026-09-03 | Timetable: subjects linked to every class at a level are **common** — dropping one syncs the same day/period across those classes; teacher clashes with a different subject show a blocking alert. |
+| 2026-09-03 | Teachers are assigned per class and subject (class × subject). One teacher can teach many classes and many subjects. Timetable builder uses the assigned teacher for that pair. |
+| 2026-09-03 | Project rule: every code change must update `DOCS.md` (section + changelog) in the same change; Cursor always-apply rule `.cursor/rules/update-docs.mdc`. |
+| 2026-09-03 | CA and exam score entry: Arrow Up/Down moves between student score fields instead of changing the number. |
+| 2026-09-03 | Table row actions across modules use compact icon buttons (tooltip + `aria-label`); delete/void/revoke are red; deactivate/archive are orange. |
+| 2026-09-03 | ID Cards: visual template designer (front/back, variables, QR/barcode), versioned templates, generation jobs, issued/replace/revoke, print sheets, school-scoped numbering; routes under `/students/id-cards`. |
+| 2026-09-03 | Configurable result calculation: per-school profiles (weights, nested groups, grades, GPA, pass marks, ranking, promotion, rounding, missing-score policy), versioned snapshots on result runs, settings wizard at `/academic/results/calculation-settings`, IPC `results-calc:*`. |
+| 2026-09-02 | System Administration: users, custom roles, permission matrix, central audit (union with finance/documents), backup history + confirmed restore, sync dashboard/retry/conflicts, settings; IPC `system-admin:*`; routes under `/administration`. |
+| 2026-09-02 | Documents module: admission letters, certificates, transcripts, receipt templates (wired into Finance receipts), official documents; shared numbering/rendering; IPC `documents-mgmt:*`; sidebar unlocked. |
+| 2026-08-17 | Reports & Analytics: academic performance, student 360° reports, financial analytics (deposits + budgets), attendance analytics, school insights engine; IPC `reports:*`; sidebar unlocked. Computed from existing tables only. |
+| 2026-08-17 | Finance budgeting + spending alerts (wired to existing expenses), online payment lifecycle (stub provider), bank deposit tracking/reconciliation, boarding as a fee component + student residence, student ID cards, teaching progress/syllabus logbook; IPC `finance-ext:*`, `students:id-cards-*`, `academic:teaching-*` / `academic:syllabi-*`. |
+| 2026-08-10 | Communication module: announcements, SMS/email outbox, parent message threads, internal staff notices; schema + IPC `communication-mgmt:*`; sidebar unlocked; fee reminders queue SMS/email when channels enabled. |
 | 2026-08-06 | Seed system (`npm run seed` / `seed:dev`): Faker-based SQLite demo data (2 schools, academics, staff, 300 students, finance 40/40/20 pay mix, attendance). Login `admin@greenfield.demo` / `Sofia@Demo1`. |
 | 2026-08-06 | Unit tests (Jest): finance & staff service-layer coverage (billing, payments, expenses, outstanding, attendance, leave) + demo scenarios; shared domain helpers in `main/domain/`. Run with `npm test`. |
 | 2026-08-06 | App branding: official SOFIA logo/icon from `renderer/assets/images` used in auth, sidebar, setup, 404, and Electron window/dock icons (`resources/icon.*`). |
@@ -348,4 +465,4 @@ Key libs for built modules:
 | 2026-08-06 | Admissions list: pending/accepted/rejected filters; approve creates student; reject with optional note. Add student: guardian name/phone required; admission class picker split into level → department → specialization → class. |
 | 2026-08-05 | Initial documentation: Setup, School Management, Student Management, Academic Management (timetable through reports). Admissions list and Assignments still coming soon. |
 
-When you add a module: update the relevant section, remove it from “Coming soon” if applicable, and add a Changelog row.
+When you change the product: update the relevant section, remove the item from “Coming soon” if it is now usable, and add a Changelog row. See `.cursor/rules/update-docs.mdc`.

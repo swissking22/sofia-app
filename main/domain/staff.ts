@@ -116,3 +116,62 @@ export function summarizeMonthlyAttendance(
   }
   return out
 }
+
+export type TeachingAssignment = { class_id: string; subject_id: string }
+
+export function teachingAssignmentKey(a: TeachingAssignment): string {
+  return `${a.class_id}::${a.subject_id}`
+}
+
+export function normalizeTeachingAssignments(
+  pairs: TeachingAssignment[],
+  offeredBySubject: Map<string, string[]>
+): TeachingAssignment[] {
+  const seen = new Set<string>()
+  const out: TeachingAssignment[] = []
+  for (const pair of pairs) {
+    const class_id = pair.class_id?.trim()
+    const subject_id = pair.subject_id?.trim()
+    if (!class_id || !subject_id) continue
+    const offered = offeredBySubject.get(subject_id)
+    if (offered && offered.length > 0 && !offered.includes(class_id)) continue
+    const key = teachingAssignmentKey({ class_id, subject_id })
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ class_id, subject_id })
+  }
+  return out
+}
+
+/**
+ * Legacy independent subject + class lists become class×subject pairs.
+ * A pair is kept only when the subject is offered in that class (if offerings exist).
+ */
+export function expandLegacyTeachingAssignments(
+  subjectIds: string[],
+  classIds: string[],
+  offeredBySubject: Map<string, string[]>
+): TeachingAssignment[] {
+  const pairs: TeachingAssignment[] = []
+  for (const subject_id of subjectIds) {
+    const offered = offeredBySubject.get(subject_id) ?? []
+    const classes =
+      classIds.length > 0
+        ? classIds.filter((id) => offered.length === 0 || offered.includes(id))
+        : offered
+    for (const class_id of classes) {
+      pairs.push({ class_id, subject_id })
+    }
+  }
+  return normalizeTeachingAssignments(pairs, offeredBySubject)
+}
+
+export function formatTeachingAssignmentLabel(
+  a: TeachingAssignment,
+  className?: string | null,
+  subjectName?: string | null
+): string {
+  const subject = subjectName?.trim() || 'Subject'
+  const cls = className?.trim() || 'Class'
+  return `${subject} · ${cls}`
+}

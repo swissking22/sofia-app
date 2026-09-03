@@ -6,6 +6,7 @@ import {
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { Icon } from "../ui/Icon";
+import { TableActionGroup, TableIconButton } from "../ui/TableActions";
 
 interface SetupTabsProps {
   tabs: Array<{ id: string; label: string }>;
@@ -132,24 +133,15 @@ interface RowActionsProps {
 
 export function RowActions({ onEdit, onDelete }: RowActionsProps) {
   return (
-    <div className="flex items-center justify-end gap-1">
-      <button
-        type="button"
-        onClick={onEdit}
-        className="cursor-pointer rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-        aria-label="Edit"
-      >
-        <Icon icon={PencilEdit01Icon} size={16} />
-      </button>
-      <button
-        type="button"
+    <TableActionGroup>
+      <TableIconButton icon={PencilEdit01Icon} label="Edit" onClick={onEdit} />
+      <TableIconButton
+        icon={Delete02Icon}
+        label="Delete"
+        tone="danger"
         onClick={onDelete}
-        className="cursor-pointer rounded-lg p-2 text-slate-500 transition hover:bg-red-50 hover:text-red-600"
-        aria-label="Delete"
-      >
-        <Icon icon={Delete02Icon} size={16} />
-      </button>
-    </div>
+      />
+    </TableActionGroup>
   );
 }
 

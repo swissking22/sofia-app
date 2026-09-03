@@ -15,6 +15,7 @@ import {
 import { fetchAcademicYearSetup } from "../../lib/academic-year";
 import {
   ADMISSION_TYPE_OPTIONS,
+  RESIDENCE_TYPE_OPTIONS,
   createStudent,
   GENDER_OPTIONS,
 } from "../../lib/student-mgmt";
@@ -41,6 +42,7 @@ export default function CreateStudentPage() {
   const [classId, setClassId] = React.useState("");
   const [admissionYear, setAdmissionYear] = React.useState("");
   const [admissionType, setAdmissionType] = React.useState("new");
+  const [residenceType, setResidenceType] = React.useState("day");
   const [guardianName, setGuardianName] = React.useState("");
   const [guardianPhone, setGuardianPhone] = React.useState("");
   const [guardianEmail, setGuardianEmail] = React.useState("");
@@ -176,6 +178,7 @@ export default function CreateStudentPage() {
         email: email || null,
         address: address || null,
         admission_type: admissionType || null,
+        residence_type: residenceType === "boarding" ? "boarding" : "day",
         guardian_name: guardianName.trim(),
         guardian_phone: guardianPhone.trim(),
         guardian_email: guardianEmail || null,
@@ -369,6 +372,22 @@ export default function CreateStudentPage() {
               onChange={(e) => setAdmissionType(e.target.value)}
             >
               {ADMISSION_TYPE_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mb-4 block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">
+              Residence
+            </span>
+            <select
+              className={fieldClass}
+              value={residenceType}
+              onChange={(e) => setResidenceType(e.target.value)}
+            >
+              {RESIDENCE_TYPE_OPTIONS.map((o) => (
                 <option key={o.key} value={o.key}>
                   {o.label}
                 </option>

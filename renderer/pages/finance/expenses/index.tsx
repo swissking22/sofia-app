@@ -3,7 +3,7 @@ import { Add01Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField } from "../../../components/setup";
 import {
-  ActionDrawer,
+  FormModal,
   EmptyRow,
   FilterBar,
   FilterField,
@@ -211,7 +211,7 @@ export default function ExpensesPage() {
         )}
       </FinanceTable>
 
-      <ActionDrawer
+      <FormModal
         open={open}
         title="Add expense"
         subtitle="Record an operating cost. Salaries here is a category label only."
@@ -320,7 +320,7 @@ export default function ExpensesPage() {
             </FormField>
           ) : null}
         </form>
-      </ActionDrawer>
+      </FormModal>
     </AppShell>
   );
 }

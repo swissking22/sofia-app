@@ -1,9 +1,9 @@
 import React from "react";
 import Link from "next/link";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, UserCheck01Icon, UserIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
-  ActionDrawer,
+  FormModal,
   ConfirmModal,
   EmptyRow,
   FilterBar,
@@ -18,6 +18,7 @@ import {
   useDebouncedValue,
 } from "../../../components/students/ui";
 import { Icon } from "../../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import { fetchAcademicStructure } from "../../../lib/academic-structure";
 import {
   ADMISSION_STATUS_LABELS,
@@ -284,20 +285,23 @@ export default function AdmissionsIndexPage() {
               </td>
               <td className="px-4 py-3 text-right">
                 {r.status === "pending" ? (
-                  <button
-                    type="button"
-                    onClick={() => openDrawer(r)}
-                    className="cursor-pointer text-sm font-semibold text-(--sofia-primary) hover:underline"
-                  >
-                    Review
-                  </button>
+                  <TableActionGroup>
+                    <TableIconButton
+                      icon={UserCheck01Icon}
+                      label="Review"
+                      tone="primary"
+                      onClick={() => openDrawer(r)}
+                    />
+                  </TableActionGroup>
                 ) : r.student_id ? (
-                  <Link
-                    href={`/students/${r.student_id}`}
-                    className="text-sm font-semibold text-(--sofia-primary) hover:underline"
-                  >
-                    View student
-                  </Link>
+                  <TableActionGroup>
+                    <TableIconButton
+                      icon={UserIcon}
+                      label="View student"
+                      tone="primary"
+                      href={`/students/${r.student_id}`}
+                    />
+                  </TableActionGroup>
                 ) : (
                   <span className="text-xs text-slate-400">—</span>
                 )}
@@ -307,7 +311,7 @@ export default function AdmissionsIndexPage() {
         )}
       </StudentTable>
 
-      <ActionDrawer
+      <FormModal
         open={!!drawer}
         title="Review application"
         subtitle={drawer?.full_name}
@@ -421,7 +425,7 @@ export default function AdmissionsIndexPage() {
             </label>
           </div>
         ) : null}
-      </ActionDrawer>
+      </FormModal>
 
       <ConfirmModal
         open={confirmReject}

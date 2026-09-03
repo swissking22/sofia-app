@@ -45,9 +45,26 @@ export function registerAcademicStructureIpc(repos: Repositories): void {
     if (!schoolId) {
       return { ok: false as const, error: 'No school found.' }
     }
-    return {
-      ok: true as const,
-      data: loadStructure(repos, schoolId),
+    const school = repos.schools.findById(schoolId)
+    if (!school) {
+      return {
+        ok: false as const,
+        error: 'School not found. Sign in again.',
+      }
+    }
+    try {
+      return {
+        ok: true as const,
+        data: loadStructure(repos, schoolId),
+      }
+    } catch (err) {
+      return {
+        ok: false as const,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Could not load academic structure.',
+      }
     }
   })
 

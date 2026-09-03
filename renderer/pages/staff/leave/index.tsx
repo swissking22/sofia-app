@@ -1,4 +1,9 @@
 import React from "react";
+import {
+  Cancel01Icon,
+  Tick02Icon,
+  UnavailableIcon,
+} from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
 import {
@@ -13,6 +18,7 @@ import {
   fieldClass,
   selectClass,
 } from "../../../components/staff/ui";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   LEAVE_TYPE_LABELS,
   applyLeave,
@@ -398,38 +404,34 @@ export default function LeaveManagementPage() {
                       {r.reason || "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex flex-wrap justify-end gap-2">
+                      <TableActionGroup>
                         {canManage && r.status === "pending" ? (
                           <>
-                            <button
-                              type="button"
+                            <TableIconButton
+                              icon={Tick02Icon}
+                              label="Approve"
+                              tone="primary"
                               disabled={busy}
                               onClick={() => void onDecide(r.id, "approved")}
-                              className="cursor-pointer text-sm font-semibold text-emerald-700 hover:underline disabled:opacity-60"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
+                            />
+                            <TableIconButton
+                              icon={UnavailableIcon}
+                              label="Reject"
+                              tone="danger"
                               disabled={busy}
                               onClick={() => void onDecide(r.id, "rejected")}
-                              className="cursor-pointer text-sm font-semibold text-red-600 hover:underline disabled:opacity-60"
-                            >
-                              Reject
-                            </button>
+                            />
                           </>
                         ) : null}
                         {isOwn && r.status === "pending" ? (
-                          <button
-                            type="button"
+                          <TableIconButton
+                            icon={Cancel01Icon}
+                            label="Cancel"
                             disabled={busy}
                             onClick={() => void onDecide(r.id, "cancelled")}
-                            className="cursor-pointer text-sm font-semibold text-slate-600 hover:underline disabled:opacity-60"
-                          >
-                            Cancel
-                          </button>
+                          />
                         ) : null}
-                      </div>
+                      </TableActionGroup>
                     </td>
                   </tr>
                 );

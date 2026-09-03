@@ -1,9 +1,10 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Icon } from "../../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   fetchAcademicMeta,
   fetchReportCards,
@@ -199,12 +200,14 @@ export default function ReportCardsIndexPage() {
                         : "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/academic/report-cards/view/${card.id}`}
-                        className="font-semibold text-(--sofia-primary) hover:underline"
-                      >
-                        View
-                      </Link>
+                      <TableActionGroup>
+                        <TableIconButton
+                          icon={ViewIcon}
+                          label="View report card"
+                          tone="primary"
+                          href={`/academic/report-cards/view/${card.id}`}
+                        />
+                      </TableActionGroup>
                     </td>
                   </tr>
                 ))

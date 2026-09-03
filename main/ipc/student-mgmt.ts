@@ -44,6 +44,7 @@ export interface StudentDto {
   guardian_relationship: string | null
   status: string
   photo_url: string | null
+  residence_type: string
   created_at: string
   updated_at: string
 }
@@ -141,6 +142,7 @@ function enrichStudent(repos: Repositories, student: Student): StudentDto {
     guardian_relationship: student.guardian_relationship,
     status: student.status,
     photo_url: assetToDataUrl(student.photo_path),
+    residence_type: student.residence_type || 'day',
     created_at: student.created_at,
     updated_at: student.updated_at,
   }
@@ -302,6 +304,12 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           search: input?.search,
         })
         .map((s) => enrichStudent(repos, s))
+        .sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, {
+            sensitivity: 'base',
+            numeric: true,
+          })
+        )
 
       return {
         ok: true,
@@ -346,6 +354,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         guardian_phone?: string | null
         guardian_email?: string | null
         guardian_relationship?: string | null
+        residence_type?: 'day' | 'boarding' | null
       }
     ): Result<StudentDetailDto> => {
       const schoolId = resolveSchoolId(repos)
@@ -411,6 +420,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           guardian_email: input.guardian_email ?? null,
           guardian_relationship: input.guardian_relationship ?? null,
           status: 'active',
+          residence_type: input.residence_type === 'boarding' ? 'boarding' : 'day',
         })
 
         return { ok: true, data: enrichStudent(repos, student) }
@@ -444,6 +454,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         guardian_email?: string | null
         guardian_relationship?: string | null
         status?: string
+        residence_type?: 'day' | 'boarding' | null
       }
     ): Result<StudentDetailDto> => {
       const schoolId = resolveSchoolId(repos)
@@ -484,6 +495,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           guardian_email: input.guardian_email,
           guardian_relationship: input.guardian_relationship,
           status: input.status,
+          residence_type: input.residence_type,
           // student_code intentionally omitted — immutable
         })
         if (!updated) return { ok: false, error: 'Student not found.' }

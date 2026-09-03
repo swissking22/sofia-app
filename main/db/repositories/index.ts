@@ -20,11 +20,13 @@ import { FinanceRepository } from './finance.repository'
 import { FinanceMgmtRepository } from './finance-mgmt.repository'
 import { DocumentTemplateRepository } from './document-template.repository'
 import { CommunicationRepository } from './communication.repository'
+import { CommunicationMgmtRepository } from './communication-mgmt.repository'
 import { BackupSyncRepository } from './backup-sync.repository'
 import { AdmissionRepository } from './admission.repository'
 import { StudentTransferRepository } from './student-transfer.repository'
 import { StudentDocumentRepository } from './student-document.repository'
 import { PromotionRepository } from './promotion.repository'
+import { ResultsCalculationRepository } from './results-calculation.repository'
 import {
   AttendanceRepository,
   CaRepository,
@@ -36,9 +38,18 @@ import {
 import { StaffAttendanceRepository } from './staff-attendance.repository'
 import { LeaveRepository } from './leave.repository'
 import { StaffNotificationRepository } from './staff-notification.repository'
+import { BudgetRepository } from './budget.repository'
+import { OnlinePaymentRepository } from './online-payment.repository'
+import { BankDepositRepository } from './bank-deposit.repository'
+import { StudentIdCardRepository } from './student-id-card.repository'
+import { TeachingProgressRepository } from './teaching-progress.repository'
+import { ReportsRepository } from './reports.repository'
+import { DocumentsRepository } from './documents.repository'
+import { SystemAdminRepository } from './system-admin.repository'
 
 /** Factory that creates all repositories from a shared DB connection. */
 export function createRepositories(db: Database.Database) {
+  const financeMgmt = new FinanceMgmtRepository(db)
   return {
     schools: new SchoolRepository(db),
     users: new UserRepository(db),
@@ -58,9 +69,18 @@ export function createRepositories(db: Database.Database) {
     studentSettings: new StudentSettingsRepository(db),
     studentIdSettings: new StudentIdSettingsRepository(db),
     finance: new FinanceRepository(db),
-    financeMgmt: new FinanceMgmtRepository(db),
+    financeMgmt,
+    budgets: new BudgetRepository(db),
+    onlinePayments: new OnlinePaymentRepository(db, financeMgmt),
+    bankDeposits: new BankDepositRepository(db, financeMgmt),
+    studentIdCards: new StudentIdCardRepository(db),
+    teachingProgress: new TeachingProgressRepository(db),
+    reports: new ReportsRepository(db),
+    documents: new DocumentsRepository(db),
+    systemAdmin: new SystemAdminRepository(db),
     documentTemplates: new DocumentTemplateRepository(db),
     communication: new CommunicationRepository(db),
+    communicationMgmt: new CommunicationMgmtRepository(db),
     backupSync: new BackupSyncRepository(db),
     admissions: new AdmissionRepository(db),
     studentTransfers: new StudentTransferRepository(db),
@@ -71,6 +91,7 @@ export function createRepositories(db: Database.Database) {
     ca: new CaRepository(db),
     exams: new ExamRepository(db),
     results: new ResultsRepository(db),
+    resultCalc: new ResultsCalculationRepository(db),
     reportCards: new ReportCardRepository(db),
     staffAttendance: new StaffAttendanceRepository(db),
     leave: new LeaveRepository(db),

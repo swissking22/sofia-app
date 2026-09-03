@@ -5,11 +5,12 @@
  *   npm run seed              # writes data/sofia.seed.db
  *   npm run seed -- --dev     # seeds Electron development sofia.db
  *   npm run seed -- --dev --reset
- *   npm run seed -- --db /path/to/sofia.db --reset
+ *   npm run seed -- --dev --light-world-only   # add LWM to an existing DB
  *
  * Demo login (per school):
  *   admin@greenfield.demo / Sofia@Demo1
  *   admin@sunrise.demo    / Sofia@Demo1
+ *   admin@lightworld.demo / Sofia@Demo1
  */
 
 import { faker } from '@faker-js/faker'
@@ -21,6 +22,7 @@ import { seedFinance } from './seedFinance'
 import { seedSchools } from './seedSchools'
 import { seedStaff } from './seedStaff'
 import { seedStudents } from './seedStudents'
+import { seedLightWorld } from './seedLightWorld'
 
 function parseArgs(argv: string[]) {
   const args = argv.slice(2)
@@ -32,6 +34,7 @@ function parseArgs(argv: string[]) {
   const useDev = has('--dev')
   return {
     reset: has('--reset'),
+    lightWorldOnly: has('--light-world-only'),
     dbPath: get('--db') || resolveDefaultDbPath(useDev),
     useDev,
   }
@@ -40,7 +43,7 @@ function parseArgs(argv: string[]) {
 function main(): void {
   faker.seed(123)
 
-  const { dbPath, reset, useDev } = parseArgs(process.argv)
+  const { dbPath, reset, useDev, lightWorldOnly } = parseArgs(process.argv)
   console.log(`[sofia:seed] Database: ${dbPath}`)
   console.log(`[sofia:seed] reset=${reset} faker.seed(123)`)
 
@@ -49,6 +52,20 @@ function main(): void {
 
   const started = Date.now()
   try {
+    if (lightWorldOnly) {
+      console.log('\nSeeding Light World Mission College only…')
+      seedLightWorld(ctx)
+      seedAttendance(ctx)
+      printCounts(db)
+      console.log(`\n[sofia:seed] Done in ${((Date.now() - started) / 1000).toFixed(1)}s`)
+      console.log('\nDemo login:')
+      console.log('  admin@lightworld.demo  /  Sofia@Demo1')
+      if (useDev) {
+        console.log('\nTip: restart the Electron app to pick up the new school.')
+      }
+      return
+    }
+
     console.log('\nSeeding…')
     console.log('1) Schools / admin users')
     seedSchools(ctx)
@@ -64,6 +81,9 @@ function main(): void {
 
     console.log('5) Finance (structures, invoices, payments, receipts, expenses)')
     seedFinance(ctx)
+
+    console.log('5b) Light World Mission College (Simbock)')
+    seedLightWorld(ctx)
 
     console.log('6) Attendance (students + staff, last ~30 school days)')
     seedAttendance(ctx)

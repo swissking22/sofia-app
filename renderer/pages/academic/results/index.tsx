@@ -1,10 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import {
-  Calculator01Icon,
-  Upload04Icon,
-} from "@hugeicons/core-free-icons";
+import { Calculator01Icon, Upload04Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Icon } from "../../../components/ui/Icon";
 import {
@@ -20,6 +17,7 @@ function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     draft: "bg-slate-100 text-slate-600",
     computed: "bg-amber-50 text-amber-700",
+    approved: "bg-sky-50 text-sky-700",
     published: "bg-emerald-50 text-emerald-700",
     locked: "bg-indigo-50 text-indigo-700",
   };
@@ -161,6 +159,12 @@ export default function ResultsIndexPage() {
 
         <div className="flex flex-wrap gap-2">
           <Link
+            href="/academic/results/calculation-settings"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+          >
+            Calculation settings
+          </Link>
+          <Link
             href={`/academic/results/process?${query}`}
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
           >
@@ -180,7 +184,9 @@ export default function ResultsIndexPage() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : !classId ? (
-        <p className="text-sm text-slate-500">Select a class to view results.</p>
+        <p className="text-sm text-slate-500">
+          Select a class to view results.
+        </p>
       ) : (
         <>
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
@@ -222,7 +228,8 @@ export default function ResultsIndexPage() {
                       colSpan={5}
                       className="px-4 py-8 text-center text-slate-500"
                     >
-                      No summaries for this class and term. Process results first.
+                      No summaries for this class and term. Process results
+                      first.
                     </td>
                   </tr>
                 ) : (

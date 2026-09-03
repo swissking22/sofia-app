@@ -19,6 +19,7 @@ import {
   type StaffMeta,
   type StaffStatus,
 } from "../../../lib/staff-mgmt";
+import { TeachingAssignmentPicker } from "../../../components/staff/TeachingAssignmentPicker";
 
 const GENDER_OPTIONS = [
   { value: "male", label: "Male" },
@@ -50,8 +51,9 @@ export default function TeacherDetailPage() {
   const [status, setStatus] = React.useState<StaffStatus>("active");
   const [address, setAddress] = React.useState("");
   const [gender, setGender] = React.useState("");
-  const [subjectIds, setSubjectIds] = React.useState<string[]>([]);
-  const [classIds, setClassIds] = React.useState<string[]>([]);
+  const [assignments, setAssignments] = React.useState<
+    Array<{ class_id: string; subject_id: string }>
+  >([]);
   const [homeroomClassIds, setHomeroomClassIds] = React.useState<string[]>([]);
 
   const load = React.useCallback(async () => {
@@ -77,8 +79,12 @@ export default function TeacherDetailPage() {
       setStatus(s.status);
       setAddress(s.address || "");
       setGender(s.gender || "");
-      setSubjectIds(s.subject_ids ?? []);
-      setClassIds(s.class_ids ?? []);
+      setAssignments(
+        (s.teaching_assignments ?? []).map((a) => ({
+          class_id: a.class_id,
+          subject_id: a.subject_id,
+        })),
+      );
       setHomeroomClassIds(s.homeroom_class_ids ?? []);
     } else {
       setError(staffRes.error);
@@ -118,8 +124,7 @@ export default function TeacherDetailPage() {
         status,
         address: address.trim() || null,
         gender: gender || null,
-        subject_ids: subjectIds,
-        class_ids: classIds,
+        teaching_assignments: assignments,
         homeroom_class_ids: homeroomClassIds,
       });
       if (!res.ok) {
@@ -178,9 +183,13 @@ export default function TeacherDetailPage() {
 
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <StatusBadge status={staff.status} />
-        {(staff.subject_names ?? []).length > 0 ? (
+        {(staff.teaching_assignments ?? []).length > 0 ? (
           <span className="text-sm text-slate-500">
-            Subjects: {staff.subject_names.join(", ")}
+            {(staff.teaching_assignments ?? [])
+              .map((a) =>
+                [a.subject_name, a.class_name].filter(Boolean).join(" · "),
+              )
+              .join(" · ")}
           </span>
         ) : null}
       </div>
@@ -305,55 +314,17 @@ export default function TeacherDetailPage() {
 
         <FormSection
           title="Assignments"
-          description="Subjects taught, classes, and homeroom classes."
+          description="Tick each subject this teacher teaches in each class. One teacher can cover many classes and many subjects."
         >
-          <fieldset className="mb-4">
-            <legend className="mb-2 text-sm font-medium text-slate-700">
-              Subjects
-            </legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {(meta?.subjects ?? []).map((s) => (
-                <label
-                  key={s.id}
-                  className="flex items-center gap-2 text-sm text-slate-700"
-                >
-                  <input
-                    type="checkbox"
-                    checked={subjectIds.includes(s.id)}
-                    disabled={!canManage}
-                    onChange={() => setSubjectIds(toggleId(subjectIds, s.id))}
-                  />
-                  {s.name}
-                </label>
-              ))}
-            </div>
-            {(staff.subject_names ?? []).length > 0 && !canManage ? (
-              <p className="mt-2 text-sm text-slate-600">
-                {staff.subject_names.join(", ")}
-              </p>
-            ) : null}
-          </fieldset>
-          <fieldset className="mb-4">
-            <legend className="mb-2 text-sm font-medium text-slate-700">
-              Classes
-            </legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {(meta?.classes ?? []).map((c) => (
-                <label
-                  key={c.id}
-                  className="flex items-center gap-2 text-sm text-slate-700"
-                >
-                  <input
-                    type="checkbox"
-                    checked={classIds.includes(c.id)}
-                    disabled={!canManage}
-                    onChange={() => setClassIds(toggleId(classIds, c.id))}
-                  />
-                  {c.name}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <div className="mb-4">
+            <TeachingAssignmentPicker
+              classes={meta?.classes ?? []}
+              subjects={meta?.subjects ?? []}
+              value={assignments}
+              onChange={setAssignments}
+              disabled={!canManage}
+            />
+          </div>
           <fieldset className="mb-4">
             <legend className="mb-2 text-sm font-medium text-slate-700">
               Homeroom class

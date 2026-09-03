@@ -14,7 +14,10 @@ export const DEFAULT_FEE_CATEGORIES: Array<{
   { key: 'development_levy', name: 'Development Levy', sort_order: 4 },
   { key: 'uniform', name: 'Uniform', sort_order: 5 },
   { key: 'books', name: 'Books', sort_order: 6 },
-  { key: 'other', name: 'Other Fees', sort_order: 7 },
+  { key: 'transport', name: 'Transport', sort_order: 7 },
+  { key: 'boarding', name: 'Boarding', sort_order: 8 },
+  { key: 'dormitory', name: 'Dormitory', sort_order: 9 },
+  { key: 'other', name: 'Other Fees', sort_order: 10 },
 ]
 
 export const PAYMENT_METHOD_OPTIONS = [

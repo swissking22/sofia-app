@@ -6,7 +6,7 @@ import { createWindow } from './helpers/create-window'
 import { getDatabase, closeDatabase } from './db'
 import { createRepositories } from './db/repositories'
 import { registerIpcHandlers } from './ipc'
-import { getSession, needsSetup } from './auth'
+import { needsSetup, ensureValidSession } from './auth'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -17,7 +17,7 @@ if (isProd) {
 }
 
 function getStartPath(repos: ReturnType<typeof createRepositories>): string {
-  if (getSession()) return 'home'
+  if (ensureValidSession(repos)) return 'home'
   if (needsSetup(repos)) return 'register'
   return 'login'
 }

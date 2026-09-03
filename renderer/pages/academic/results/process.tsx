@@ -84,7 +84,7 @@ export default function ResultsProcessPage() {
       title="Process results"
       breadcrumb={["Academic Management", "Results", "Process"]}
       heading="Process results"
-      subtitle="Combine continuous assessment and exam scores into term results."
+      subtitle="Combine continuous assessment and exam scores using this school’s calculation profile (or the grading-system weights if no profile is active)."
     >
       {error ? (
         <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -105,19 +105,20 @@ export default function ResultsProcessPage() {
             <h3 className="font-semibold text-slate-900">How it works</h3>
             <ul className="mt-2 list-inside list-disc space-y-1 text-slate-600">
               <li>
-                Continuous assessment (CA) scores are aggregated per subject for
-                the selected term.
+                Sofia loads the active calculation profile for this class when one exists.
               </li>
               <li>
-                Exam scores are matched to the same subjects and class.
+                Continuous assessment and exam scores are the inputs. The profile decides weights, grades, ranking, and promotion.
               </li>
               <li>
-                Each subject total combines CA and exam using the school&apos;s
-                grading system weights.
+                Configure rules under{" "}
+                <Link className="font-medium text-(--sofia-primary)" href="/academic/results/calculation-settings">
+                  Calculation settings
+                </Link>
+                .
               </li>
               <li>
-                Student averages, totals, grades, and class positions are
-                calculated from subject totals.
+                Locked results keep a snapshot of the rules used. Changing settings later will not rewrite them.
               </li>
             </ul>
           </div>

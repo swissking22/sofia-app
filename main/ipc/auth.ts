@@ -46,7 +46,7 @@ export function registerAuthIpc(repos: Repositories): void {
   })
 
   ipcMain.handle('auth:logout', () => {
-    logout()
+    logout(repos)
     return { ok: true }
   })
 

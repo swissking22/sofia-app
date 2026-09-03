@@ -26,6 +26,12 @@ export interface StaffMember {
   subject_names: string[]
   class_ids: string[]
   class_names: string[]
+  teaching_assignments?: Array<{
+    class_id: string
+    subject_id: string
+    class_name?: string | null
+    subject_name?: string | null
+  }>
 }
 
 export interface StaffSetupData {
@@ -33,7 +39,7 @@ export interface StaffSetupData {
   adminStaff: StaffMember[]
   teachers: StaffMember[]
   departments: Array<{ id: string; name: string }>
-  subjects: Array<{ id: string; name: string }>
+  subjects: Array<{ id: string; name: string; class_ids: string[] }>
   classes: Array<{ id: string; name: string }>
   tempPassword: string
 }
@@ -84,6 +90,7 @@ export async function upsertTeacher(input: {
   department_id?: string | null
   subject_ids?: string[]
   class_ids?: string[]
+  teaching_assignments?: Array<{ class_id: string; subject_id: string }>
   status?: StaffStatus
 }): Promise<Result<StaffSetupData>> {
   return (await window.ipc.invoke(

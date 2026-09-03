@@ -1,10 +1,10 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { Upload04Icon } from "@hugeicons/core-free-icons";
+import { Upload04Icon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../components/layout/AppShell";
 import {
-  ActionDrawer,
+  FormModal,
   EmptyRow,
   PageAlert,
   PrimaryButton,
@@ -13,6 +13,7 @@ import {
   StudentTable,
 } from "../../components/students/ui";
 import { Icon } from "../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../components/ui/TableActions";
 import {
   DOCUMENT_TYPE_OPTIONS,
   fetchStudent,
@@ -67,7 +68,7 @@ export default function StudentDetailPage() {
   const [transfers, setTransfers] = React.useState<TransferDto[]>([]);
   const [statusOpen, setStatusOpen] = React.useState(false);
   const [finance, setFinance] = React.useState<StudentFinanceSummary | null>(
-    null
+    null,
   );
   const [currency, setCurrency] = React.useState("");
 
@@ -238,6 +239,12 @@ export default function StudentDetailPage() {
               <InfoRow label="Admission year" value={student.admission_year} />
               <InfoRow label="Admission type" value={student.admission_type} />
               <InfoRow
+                label="Residence"
+                value={
+                  student.residence_type === "boarding" ? "Boarding" : "Day"
+                }
+              />
+              <InfoRow
                 label="Status"
                 value={
                   <StatusBadge
@@ -344,14 +351,15 @@ export default function StudentDetailPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     {d.file_url ? (
-                      <a
-                        href={d.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-semibold text-(--sofia-primary) hover:underline"
-                      >
-                        Open
-                      </a>
+                      <TableActionGroup>
+                        <TableIconButton
+                          icon={ViewIcon}
+                          label="Open"
+                          tone="primary"
+                          href={d.file_url}
+                          external
+                        />
+                      </TableActionGroup>
                     ) : (
                       <span className="text-xs text-slate-400">—</span>
                     )}
@@ -473,7 +481,7 @@ export default function StudentDetailPage() {
         </div>
       ) : null}
 
-      <ActionDrawer
+      <FormModal
         open={statusOpen}
         title="Update status"
         subtitle={student.name}
@@ -509,7 +517,7 @@ export default function StudentDetailPage() {
             </button>
           ))}
         </div>
-      </ActionDrawer>
+      </FormModal>
     </AppShell>
   );
 }

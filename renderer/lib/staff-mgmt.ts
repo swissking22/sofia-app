@@ -42,13 +42,19 @@ export interface StaffDto {
   subject_names: string[]
   class_ids: string[]
   class_names: string[]
+  teaching_assignments: Array<{
+    class_id: string
+    subject_id: string
+    class_name: string | null
+    subject_name: string | null
+  }>
   homeroom_class_ids: string[]
   homeroom_class_names: string[]
 }
 
 export interface StaffMeta {
   departments: Array<{ id: string; name: string }>
-  subjects: Array<{ id: string; name: string }>
+  subjects: Array<{ id: string; name: string; class_ids: string[] }>
   classes: Array<{
     id: string
     name: string

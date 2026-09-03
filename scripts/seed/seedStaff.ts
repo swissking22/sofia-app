@@ -54,10 +54,10 @@ export function seedStaff(ctx: SeedContext): void {
 
     const staffSubjectInsert = db.prepare(`
       INSERT INTO staff_subjects (
-        id, staff_id, subject_id,
+        id, staff_id, subject_id, class_id,
         created_at, updated_at, deleted_at, sync_status, version
       ) VALUES (
-        @id, @staff_id, @subject_id,
+        @id, @staff_id, @subject_id, @class_id,
         @created_at, @updated_at, @deleted_at, @sync_status, @version
       )
     `)
@@ -196,11 +196,14 @@ export function seedStaff(ctx: SeedContext): void {
             Math.min(2, teachers.length)
           )
           for (const staff_id of assignees) {
-            staffSubjectInsert.run({
-              ...baseFields(now),
-              staff_id,
-              subject_id: sid,
-            })
+            for (const cls of schoolClasses) {
+              staffSubjectInsert.run({
+                ...baseFields(now),
+                staff_id,
+                subject_id: sid,
+                class_id: cls.id,
+              })
+            }
           }
         }
       }

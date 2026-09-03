@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
+  approveResults,
   fetchAcademicMeta,
   fetchResults,
   publishResults,
@@ -16,6 +17,7 @@ function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     draft: "bg-slate-100 text-slate-600",
     computed: "bg-amber-50 text-amber-700",
+    approved: "bg-sky-50 text-sky-700",
     published: "bg-emerald-50 text-emerald-700",
     locked: "bg-indigo-50 text-indigo-700",
   };
@@ -119,10 +121,37 @@ export default function ResultsPublishPage() {
     }
   }
 
+  async function handleApprove() {
+    if (!classId) {
+      setError("Select a class first.");
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setPublishing(true);
+    try {
+      const res = await approveResults({
+        class_id: classId,
+        term_id: termId || null,
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setSuccess("Results approved. They can now be published.");
+      await loadStatus();
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   const isLocked = run?.status === "locked";
+  const canApprove = run && run.status === "computed" && !isLocked;
   const canPublish =
     run &&
-    (run.status === "computed" || run.status === "published") &&
+    (run.status === "computed" ||
+      run.status === "approved" ||
+      run.status === "published") &&
     !isLocked;
 
   const viewQuery = new URLSearchParams({
@@ -193,7 +222,9 @@ export default function ResultsPublishPage() {
 
           <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 text-sm">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="font-medium text-slate-700">Current status:</span>
+              <span className="font-medium text-slate-700">
+                Current status:
+              </span>
               {run ? (
                 <>
                   <StatusBadge status={run.status} />
@@ -215,6 +246,14 @@ export default function ResultsPublishPage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={publishing || !canApprove}
+              onClick={() => void handleApprove()}
+              className="cursor-pointer rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-60"
+            >
+              Approve
+            </button>
             <button
               type="button"
               disabled={publishing || !canPublish}

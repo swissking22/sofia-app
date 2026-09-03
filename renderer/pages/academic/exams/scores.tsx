@@ -8,6 +8,7 @@ import {
   saveExamScores,
   type ExamPaperDto,
 } from "../../../lib/academic-mgmt";
+import { handleScoreGridKeyDown } from "../../../lib/score-entry";
 
 const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -27,9 +28,7 @@ export default function ExamScoresPage() {
   const queryPaperId =
     typeof router.query.paper_id === "string" ? router.query.paper_id : "";
   const querySessionId =
-    typeof router.query.session_id === "string"
-      ? router.query.session_id
-      : "";
+    typeof router.query.session_id === "string" ? router.query.session_id : "";
 
   const [loadingPapers, setLoadingPapers] = React.useState(true);
   const [loadingScores, setLoadingScores] = React.useState(false);
@@ -48,6 +47,7 @@ export default function ExamScoresPage() {
       score: number | null;
     }>
   >([]);
+  const scoreInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
 
   React.useEffect(() => {
     if (!router.isReady) return;
@@ -78,10 +78,7 @@ export default function ExamScoresPage() {
     const res = await fetchExamScores(id);
     if (res.ok) {
       setMaxScore(res.data.paper.max_score);
-      const title = [
-        res.data.paper.subject_name,
-        res.data.paper.class_name,
-      ]
+      const title = [res.data.paper.subject_name, res.data.paper.class_name]
         .filter(Boolean)
         .join(" — ");
       setPaperTitle(title || "Exam paper");
@@ -127,9 +124,7 @@ export default function ExamScoresPage() {
 
     for (const s of scores) {
       if (s.score !== null && (s.score < 0 || s.score > maxScore)) {
-        setError(
-          `Score for ${s.name} must be between 0 and ${maxScore}.`,
-        );
+        setError(`Score for ${s.name} must be between 0 and ${maxScore}.`);
         return;
       }
     }
@@ -260,7 +255,7 @@ export default function ExamScoresPage() {
                   </td>
                 </tr>
               ) : (
-                scores.map((s) => (
+                scores.map((s, index) => (
                   <tr key={s.id} className="hover:bg-slate-50/80">
                     <td className="px-4 py-3 font-mono text-xs text-slate-600">
                       {s.student_code || "—"}
@@ -270,6 +265,9 @@ export default function ExamScoresPage() {
                     </td>
                     <td className="px-4 py-3">
                       <input
+                        ref={(el) => {
+                          scoreInputRefs.current[index] = el;
+                        }}
                         type="number"
                         min={0}
                         max={maxScore}
@@ -277,6 +275,9 @@ export default function ExamScoresPage() {
                         className={inputClass}
                         value={s.score ?? ""}
                         onChange={(e) => updateScore(s.id, e.target.value)}
+                        onKeyDown={(e) =>
+                          handleScoreGridKeyDown(e, index, scoreInputRefs)
+                        }
                         placeholder="—"
                       />
                     </td>

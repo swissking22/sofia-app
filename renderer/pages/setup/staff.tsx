@@ -1,8 +1,6 @@
 import React from "react";
 import { useRouter } from "next/router";
-import {
-  Upload01Icon,
-} from "@hugeicons/core-free-icons";
+import { Upload01Icon } from "@hugeicons/core-free-icons";
 import { FormField, FormSection, SetupFooter } from "../../components/setup";
 import {
   SetupShell,
@@ -30,6 +28,7 @@ import {
   type StaffSetupData,
   type StaffStatus,
 } from "../../lib/staff";
+import { TeachingAssignmentPicker } from "../../components/staff/TeachingAssignmentPicker";
 import {
   completeSetupStep,
   getNextSetupHref,
@@ -50,7 +49,9 @@ export default function StaffSetupPage() {
 function StaffAside() {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-      <h3 className="text-sm font-semibold text-slate-900">What this creates</h3>
+      <h3 className="text-sm font-semibold text-slate-900">
+        What this creates
+      </h3>
       <p className="mt-1 text-xs text-slate-500">
         Staff records are stored locally and user accounts are prepared for
         login.
@@ -95,8 +96,9 @@ function StaffSetupForm() {
   const [phone, setPhone] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [departmentId, setDepartmentId] = React.useState("");
-  const [subjectIds, setSubjectIds] = React.useState<string[]>([]);
-  const [classIds, setClassIds] = React.useState<string[]>([]);
+  const [assignments, setAssignments] = React.useState<
+    Array<{ class_id: string; subject_id: string }>
+  >([]);
   const [status, setStatus] = React.useState<StaffStatus>("active");
   const [modalBusy, setModalBusy] = React.useState(false);
   const [modalError, setModalError] = React.useState("");
@@ -157,8 +159,7 @@ function StaffSetupForm() {
     setPhone("");
     setEmail("");
     setDepartmentId("");
-    setSubjectIds([]);
-    setClassIds([]);
+    setAssignments([]);
     setStatus("active");
     setModalError("");
     setTeacherModalOpen(true);
@@ -171,8 +172,12 @@ function StaffSetupForm() {
     setPhone(teacher.phone ?? "");
     setEmail(teacher.email ?? "");
     setDepartmentId(teacher.department_id ?? "");
-    setSubjectIds(teacher.subject_ids);
-    setClassIds(teacher.class_ids);
+    setAssignments(
+      (teacher.teaching_assignments ?? []).map((a) => ({
+        class_id: a.class_id,
+        subject_id: a.subject_id,
+      })),
+    );
     setStatus(teacher.status);
     setModalError("");
     setTeacherModalOpen(true);
@@ -189,8 +194,7 @@ function StaffSetupForm() {
         phone: phone || null,
         email: email || null,
         department_id: departmentId || null,
-        subject_ids: subjectIds,
-        class_ids: classIds,
+        teaching_assignments: assignments,
         status,
       });
       if (!result.ok) {
@@ -220,7 +224,9 @@ function StaffSetupForm() {
   async function handleSaveAdmin(role: StaffAdminRole) {
     const draft = adminDrafts[role];
     if (!draft.full_name.trim()) {
-      setError(`Enter a name for ${ADMIN_ROLE_OPTIONS.find((r) => r.role === role)?.label}.`);
+      setError(
+        `Enter a name for ${ADMIN_ROLE_OPTIONS.find((r) => r.role === role)?.label}.`,
+      );
       return;
     }
     setError("");
@@ -414,7 +420,10 @@ function StaffSetupForm() {
                   onChange={(e) =>
                     setAdminDrafts((prev) => ({
                       ...prev,
-                      [opt.role]: { ...prev[opt.role], full_name: e.target.value },
+                      [opt.role]: {
+                        ...prev[opt.role],
+                        full_name: e.target.value,
+                      },
                     }))
                   }
                   placeholder={`e.g. ${opt.label} name`}
@@ -458,7 +467,7 @@ function StaffSetupForm() {
 
       <FormSection
         title="2. Teaching Staff"
-        description="Add teachers, assign departments, subjects, and classes."
+        description="Add teachers and assign each to subjects in specific classes. One teacher can teach many classes and many subjects."
         layout="stack"
       >
         <div className="mb-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -624,73 +633,21 @@ function StaffSetupForm() {
             ))}
           </select>
         </label>
-        <fieldset className="mb-4">
-          <legend className="mb-1.5 text-sm font-medium text-slate-700">
-            Assigned subjects
-          </legend>
-          {data.subjects.length === 0 ? (
-            <p className="text-xs text-slate-400">
-              No subjects yet — you can assign them later.
-            </p>
-          ) : (
-            <div className="max-h-32 space-y-1.5 overflow-y-auto rounded-lg border border-slate-200 p-2">
-              {data.subjects.map((s) => (
-                <label
-                  key={s.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50"
-                >
-                  <input
-                    type="checkbox"
-                    checked={subjectIds.includes(s.id)}
-                    onChange={() =>
-                      setSubjectIds((prev) =>
-                        prev.includes(s.id)
-                          ? prev.filter((id) => id !== s.id)
-                          : [...prev, s.id],
-                      )
-                    }
-                    className="h-4 w-4 rounded border-slate-300 text-(--sofia-primary)"
-                  />
-                  {s.name}
-                </label>
-              ))}
-            </div>
-          )}
-        </fieldset>
-        <fieldset className="mb-4">
-          <legend className="mb-1.5 text-sm font-medium text-slate-700">
-            Assigned classes
-          </legend>
-          {data.classes.length === 0 ? (
-            <p className="text-xs text-slate-400">
-              No classes yet — complete Academic Structure first, or assign
-              later.
-            </p>
-          ) : (
-            <div className="max-h-32 space-y-1.5 overflow-y-auto rounded-lg border border-slate-200 p-2">
-              {data.classes.map((c) => (
-                <label
-                  key={c.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-50"
-                >
-                  <input
-                    type="checkbox"
-                    checked={classIds.includes(c.id)}
-                    onChange={() =>
-                      setClassIds((prev) =>
-                        prev.includes(c.id)
-                          ? prev.filter((id) => id !== c.id)
-                          : [...prev, c.id],
-                      )
-                    }
-                    className="h-4 w-4 rounded border-slate-300 text-(--sofia-primary)"
-                  />
-                  {c.name}
-                </label>
-              ))}
-            </div>
-          )}
-        </fieldset>
+        <div className="mb-4 max-h-64 overflow-y-auto">
+          <p className="mb-1.5 text-sm font-medium text-slate-700">
+            Teaching assignments
+          </p>
+          <p className="mb-2 text-xs text-slate-500">
+            Assign this teacher to a subject in a specific class. They can teach
+            several classes and several subjects.
+          </p>
+          <TeachingAssignmentPicker
+            classes={data.classes}
+            subjects={data.subjects}
+            value={assignments}
+            onChange={setAssignments}
+          />
+        </div>
         <label className="mb-4 block">
           <span className="mb-1.5 block text-sm font-medium text-slate-700">
             Status

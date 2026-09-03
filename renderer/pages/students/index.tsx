@@ -1,9 +1,9 @@
 import React from "react";
 import Link from "next/link";
-import { Add01Icon, Upload04Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, MoreHorizontalIcon, Upload04Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../components/layout/AppShell";
 import {
-  ActionDrawer,
+  FormModal,
   ConfirmModal,
   EmptyRow,
   FilterBar,
@@ -17,6 +17,7 @@ import {
   useDebouncedValue,
 } from "../../components/students/ui";
 import { Icon } from "../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../components/ui/TableActions";
 import {
   bulkUpdateStudentStatus,
   deleteStudent,
@@ -259,13 +260,13 @@ export default function StudentsIndexPage() {
                 />
               </td>
               <td className="px-4 py-3 text-right">
-                <button
-                  type="button"
-                  onClick={() => setRowAction(s)}
-                  className="cursor-pointer text-sm font-semibold text-(--sofia-primary) hover:underline"
-                >
-                  Actions
-                </button>
+                <TableActionGroup>
+                  <TableIconButton
+                    icon={MoreHorizontalIcon}
+                    label="Actions"
+                    onClick={() => setRowAction(s)}
+                  />
+                </TableActionGroup>
               </td>
             </tr>
           ))
@@ -283,7 +284,7 @@ export default function StudentsIndexPage() {
         </div>
       ) : null}
 
-      <ActionDrawer
+      <FormModal
         open={bulkOpen}
         title="Bulk actions"
         subtitle={`${selected.length} student(s) selected`}
@@ -317,9 +318,9 @@ export default function StudentsIndexPage() {
         <p className="text-sm text-slate-600">
           Choose an action to apply to every selected student.
         </p>
-      </ActionDrawer>
+      </FormModal>
 
-      <ActionDrawer
+      <FormModal
         open={!!rowAction}
         title="Quick actions"
         subtitle={rowAction?.name}
@@ -379,7 +380,7 @@ export default function StudentsIndexPage() {
             </dd>
           </div>
         </dl>
-      </ActionDrawer>
+      </FormModal>
 
       <ConfirmModal
         open={confirmDelete}

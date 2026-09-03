@@ -1,6 +1,6 @@
 /** Re-export shared list/filter UI used across Staff Management pages. */
 export {
-  ActionDrawer,
+  FormModal,
   ConfirmModal,
   EmptyRow,
   FilterBar,

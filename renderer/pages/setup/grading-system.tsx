@@ -7,6 +7,7 @@ import {
   useSetupProgress,
 } from "../../components/setup/SetupShell";
 import { Icon } from "../../components/ui/Icon";
+import { TableIconButton } from "../../components/ui/TableActions";
 import {
   DEFAULT_ASSESSMENT_TYPES,
   DEFAULT_GRADE_BANDS,
@@ -281,19 +282,17 @@ function GradingSystemForm() {
                   placeholder="e.g. Continuous Assessment"
                 />
               </div>
-              <button
-                type="button"
+              <TableIconButton
+                icon={Delete02Icon}
+                label="Remove assessment type"
+                tone="danger"
                 disabled={assessments.length <= 1}
                 onClick={() =>
                   setAssessments((prev) =>
                     prev.filter((a) => a.localId !== item.localId),
                   )
                 }
-                className="mb-4 inline-flex h-[42px] cursor-pointer items-center justify-center rounded-lg p-2 text-slate-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                aria-label="Remove assessment type"
-              >
-                <Icon icon={Delete02Icon} size={16} />
-              </button>
+              />
             </div>
           ))}
         </div>
@@ -403,7 +402,7 @@ function GradingSystemForm() {
                           ),
                         )
                       }
-                      className={`${inputClass} max-w-[5rem] text-center font-semibold`}
+                      className={`${inputClass} max-w-20 text-center font-semibold`}
                       maxLength={3}
                     />
                   </td>
@@ -444,19 +443,17 @@ function GradingSystemForm() {
                     />
                   </td>
                   <td className="px-4 py-2 text-right">
-                    <button
-                      type="button"
+                    <TableIconButton
+                      icon={Delete02Icon}
+                      label="Remove grade"
+                      tone="danger"
                       disabled={bands.length <= 1}
                       onClick={() =>
                         setBands((prev) =>
                           prev.filter((b) => b.localId !== band.localId),
                         )
                       }
-                      className="cursor-pointer rounded-lg p-2 text-slate-500 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label="Remove grade"
-                    >
-                      <Icon icon={Delete02Icon} size={16} />
-                    </button>
+                    />
                   </td>
                 </tr>
               ))}

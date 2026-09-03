@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
+  buildTimetableRows,
   clearTimetableSlot,
   fetchAcademicMeta,
   fetchTimetable,
@@ -38,11 +39,13 @@ export default function TimetableCreatePage() {
       if (res.ok) {
         setMeta(res.data);
         const qClass =
-          typeof router.query.class_id === "string" ? router.query.class_id : "";
+          typeof router.query.class_id === "string"
+            ? router.query.class_id
+            : "";
         const initial =
           qClass && res.data.classes.some((c) => c.id === qClass)
             ? qClass
-            : res.data.classes[0]?.id ?? "";
+            : (res.data.classes[0]?.id ?? "");
         setClassId(initial);
       } else {
         setError(res.error);
@@ -74,6 +77,31 @@ export default function TimetableCreatePage() {
     return meta.subjects.filter((s) => s.class_ids.includes(classId));
   }, [meta, classId]);
 
+  function teacherForSubject(subjectId: string) {
+    return meta?.teachers.find((t) =>
+      t.assignments?.some(
+        (a) => a.class_id === classId && a.subject_id === subjectId,
+      ),
+    );
+  }
+
+  function isCommonSubject(subjectId: string): boolean {
+    const subject = meta?.subjects.find((s) => s.id === subjectId);
+    if (!subject) return false;
+    if (typeof subject.is_common === "boolean") return subject.is_common;
+    const levelId = meta?.classes.find(
+      (c) => c.id === classId,
+    )?.academic_level_id;
+    if (!levelId) return false;
+    const levelClasses = meta!.classes.filter(
+      (c) => c.academic_level_id === levelId,
+    );
+    return (
+      levelClasses.length >= 2 &&
+      levelClasses.every((c) => subject.class_ids.includes(c.id))
+    );
+  }
+
   const slotMap = React.useMemo(() => {
     const map = new Map<string, TimetableSlotDto>();
     for (const slot of slots) {
@@ -104,11 +132,12 @@ export default function TimetableCreatePage() {
     setError("");
     setSuccess("");
     const existing = slotMap.get(slotKey(day, period));
+    const assigned = teacherForSubject(subjectId);
     const res = await saveTimetableSlot({
       id: existing?.id ?? null,
       class_id: classId,
       subject_id: subjectId,
-      staff_id: defaultStaffId || existing?.staff_id || null,
+      staff_id: assigned?.id || defaultStaffId || existing?.staff_id || null,
       day_of_week: day,
       period_number: period,
     });
@@ -118,9 +147,20 @@ export default function TimetableCreatePage() {
       return;
     }
     const subject = classSubjects.find((s) => s.id === subjectId);
-    setSuccess(
-      `Saved ${subject?.name ?? "subject"} — Period ${period}, ${meta?.days.find((d) => d.day === day)?.label ?? `Day ${day}`}.`,
-    );
+    const dayLabel =
+      meta?.days.find((d) => d.day === day)?.label ?? `Day ${day}`;
+    if (res.data.is_common && res.data.synced_class_ids.length > 1) {
+      const names = res.data.synced_class_ids
+        .map((id) => meta?.classes.find((c) => c.id === id)?.name || id)
+        .join(", ");
+      setSuccess(
+        `Saved ${subject?.name ?? "subject"} for Period ${period} on ${dayLabel} across all classes at this level (${names}). Shared teacher — same slot everywhere.`,
+      );
+    } else {
+      setSuccess(
+        `Saved ${subject?.name ?? "subject"} — Period ${period}, ${dayLabel}.`,
+      );
+    }
     await loadSlots(classId);
   }
 
@@ -141,23 +181,40 @@ export default function TimetableCreatePage() {
       setError(res.error);
       return;
     }
-    setSuccess("Slot cleared.");
+    const synced = res.data.synced_class_ids?.length ?? 1;
+    setSuccess(
+      synced > 1
+        ? `Cleared this common subject from ${synced} classes at this level.`
+        : "Slot cleared.",
+    );
     await loadSlots(classId);
   }
 
   const periods = meta?.periods ?? 8;
   const days = meta?.days ?? [];
+  const rows = meta
+    ? buildTimetableRows(meta)
+    : Array.from({ length: periods }, (_, i) => ({
+        kind: "period" as const,
+        period: i + 1,
+        label: `Period ${i + 1}`,
+        timeLabel: "",
+      }));
 
   return (
     <AppShell
       title="Build timetable"
       breadcrumb={["Academic Management", "Timetable", "Build"]}
       heading="Build timetable"
-      subtitle="Drag subjects onto the grid. Double-click a cell to clear it."
+      subtitle="Drag subjects onto the grid. Period times and breaks come from Academic Structure → School day & periods. Common subjects fill the same period across classes at this level; teacher clashes are blocked."
     >
       {error ? (
-        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          <p className="font-semibold">Timetable clash</p>
+          <p className="mt-1">{error}</p>
         </div>
       ) : null}
       {success ? (
@@ -175,6 +232,7 @@ export default function TimetableCreatePage() {
             onChange={(e) => {
               setClassId(e.target.value);
               setSuccess("");
+              setError("");
             }}
           >
             <option value="">Select class…</option>
@@ -193,11 +251,17 @@ export default function TimetableCreatePage() {
             onChange={(e) => setDefaultStaffId(e.target.value)}
           >
             <option value="">None (assign per slot later)</option>
-            {(meta?.teachers ?? []).map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.full_name}
-              </option>
-            ))}
+            {(meta?.teachers ?? [])
+              .filter(
+                (t) =>
+                  !classId ||
+                  t.assignments?.some((a) => a.class_id === classId),
+              )
+              .map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.full_name}
+                </option>
+              ))}
           </select>
         </label>
         {saving ? (
@@ -214,23 +278,45 @@ export default function TimetableCreatePage() {
               Subjects
             </h3>
             <p className="mt-1 mb-3 text-xs text-slate-400">
-              Drag onto a period cell.
+              Drag onto a period cell. Common = all classes at this level.
             </p>
             {classSubjects.length === 0 ? (
-              <p className="text-sm text-slate-500">No subjects for this class.</p>
+              <p className="text-sm text-slate-500">
+                No subjects for this class.
+              </p>
             ) : (
               <ul className="space-y-2">
-                {classSubjects.map((s) => (
-                  <li key={s.id}>
-                    <div
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, s.id)}
-                      className="cursor-grab rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 active:cursor-grabbing hover:border-(--sofia-primary)/40 hover:bg-white"
-                    >
-                      {s.name}
-                    </div>
-                  </li>
-                ))}
+                {classSubjects.map((s) => {
+                  const teacher = teacherForSubject(s.id);
+                  const common = isCommonSubject(s.id);
+                  return (
+                    <li key={s.id}>
+                      <div
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, s.id)}
+                        className="cursor-grab rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 active:cursor-grabbing hover:border-(--sofia-primary)/40 hover:bg-white"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {s.name}
+                          {common ? (
+                            <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-800">
+                              Common
+                            </span>
+                          ) : null}
+                        </span>
+                        {teacher ? (
+                          <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                            {teacher.full_name}
+                          </span>
+                        ) : (
+                          <span className="mt-0.5 block text-xs font-normal text-amber-700">
+                            No teacher assigned
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </aside>
@@ -252,24 +338,48 @@ export default function TimetableCreatePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {Array.from({ length: periods }, (_, i) => i + 1).map(
-                      (period) => (
-                        <tr key={period}>
+                    {rows.map((row) =>
+                      row.kind === "break" ? (
+                        <tr key={`break-${row.name}-${row.timeLabel}`}>
+                          <td
+                            colSpan={days.length + 1}
+                            className="bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-900"
+                          >
+                            {row.name}
+                            {row.timeLabel ? (
+                              <span className="ml-2 font-normal text-amber-800/80">
+                                {row.timeLabel}
+                              </span>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ) : (
+                        <tr key={row.period}>
                           <td className="px-3 py-3 font-medium text-slate-500">
-                            {period}
+                            <span className="block">{row.period}</span>
+                            {row.timeLabel ? (
+                              <span className="mt-0.5 block text-[11px] font-normal normal-case tracking-normal text-slate-400">
+                                {row.timeLabel}
+                              </span>
+                            ) : null}
                           </td>
                           {days.map((d) => {
-                            const key = slotKey(d.day, period);
+                            const key = slotKey(d.day, row.period);
                             const slot = slotMap.get(key);
                             const isOver = dragOver === key;
+                            const commonSlot = slot?.subject_id
+                              ? isCommonSubject(slot.subject_id)
+                              : false;
                             return (
                               <td key={d.day} className="px-2 py-2 align-top">
                                 <div
                                   onDragOver={(e) => handleDragOverCell(e, key)}
                                   onDragLeave={() => setDragOver(null)}
-                                  onDrop={(e) => void handleDrop(e, d.day, period)}
+                                  onDrop={(e) =>
+                                    void handleDrop(e, d.day, row.period)
+                                  }
                                   onDoubleClick={() =>
-                                    void handleClearCell(d.day, period)
+                                    void handleClearCell(d.day, row.period)
                                   }
                                   className={`min-h-16 rounded-lg border px-2 py-1.5 transition ${
                                     isOver
@@ -284,6 +394,11 @@ export default function TimetableCreatePage() {
                                     <>
                                       <p className="text-xs font-semibold text-slate-800">
                                         {slot.subject_name}
+                                        {commonSlot ? (
+                                          <span className="ml-1 text-[10px] font-semibold uppercase text-sky-700">
+                                            Common
+                                          </span>
+                                        ) : null}
                                       </p>
                                       {slot.staff_name ? (
                                         <p className="mt-0.5 text-xs text-slate-500">

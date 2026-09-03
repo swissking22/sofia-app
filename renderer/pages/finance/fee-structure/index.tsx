@@ -1,9 +1,14 @@
 import React from "react";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import {
+  Add01Icon,
+  Delete02Icon,
+  PauseIcon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
 import {
-  ActionDrawer,
+  FormModal,
   ConfirmModal,
   EmptyRow,
   FilterBar,
@@ -16,6 +21,10 @@ import {
   selectClass,
 } from "../../../components/finance/ui";
 import { Icon } from "../../../components/ui/Icon";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import {
   FREQUENCY_LABELS,
   createStructure,
@@ -70,16 +79,19 @@ export default function FeeStructurePage() {
   const [levelId, setLevelId] = React.useState("");
   const [classId, setClassId] = React.useState("");
   const [notes, setNotes] = React.useState("");
+  const [appliesTo, setAppliesTo] = React.useState<"all" | "day" | "boarding">(
+    "all",
+  );
   const [lines, setLines] = React.useState<LineDraft[]>([emptyLine()]);
 
   const canManage = meta?.can_manage ?? false;
   const currency = meta?.currency ?? "";
 
   const termsForYear = (meta?.terms ?? []).filter(
-    (t) => t.academic_year_id === yearId
+    (t) => t.academic_year_id === yearId,
   );
   const classesForLevel = (meta?.classes ?? []).filter(
-    (c) => !levelId || c.academic_level_id === levelId
+    (c) => !levelId || c.academic_level_id === levelId,
   );
 
   const load = React.useCallback(async () => {
@@ -110,6 +122,7 @@ export default function FeeStructurePage() {
     setLevelId("");
     setClassId("");
     setNotes("");
+    setAppliesTo("all");
     setLines([emptyLine()]);
     const current = meta?.years.find((y) => y.is_current);
     setYearId(current?.id ?? meta?.years[0]?.id ?? "");
@@ -122,12 +135,12 @@ export default function FeeStructurePage() {
         const next = { ...l, ...patch };
         if (patch.fee_category_id !== undefined) {
           const cat = meta?.categories.find(
-            (c) => c.id === patch.fee_category_id
+            (c) => c.id === patch.fee_category_id,
           );
           if (cat && !next.name.trim()) next.name = cat.name;
         }
         return next;
-      })
+      }),
     );
   }
 
@@ -142,7 +155,8 @@ export default function FeeStructurePage() {
     const parsed = lines
       .map((l) => ({
         fee_category_id: l.fee_category_id || null,
-        name: l.name.trim() ||
+        name:
+          l.name.trim() ||
           meta?.categories.find((c) => c.id === l.fee_category_id)?.name ||
           "",
         amount: Number(l.amount),
@@ -165,6 +179,7 @@ export default function FeeStructurePage() {
         academic_level_id: levelId || null,
         class_id: classId || null,
         notes: notes.trim() || null,
+        applies_to_residence: appliesTo,
         lines: parsed,
       });
       if (!res.ok) {
@@ -195,7 +210,7 @@ export default function FeeStructurePage() {
       setSuccess(
         row.is_active
           ? `“${row.name}” deactivated.`
-          : `“${row.name}” activated.`
+          : `“${row.name}” activated.`,
       );
       await load();
     } finally {
@@ -232,7 +247,11 @@ export default function FeeStructurePage() {
       {success ? <PageAlert tone="success">{success}</PageAlert> : null}
 
       <FilterBar
-        filters={<span className="text-sm text-slate-500">{rows.length} structures</span>}
+        filters={
+          <span className="text-sm text-slate-500">
+            {rows.length} structures
+          </span>
+        }
         actions={
           canManage ? (
             <PrimaryButton
@@ -274,6 +293,14 @@ export default function FeeStructurePage() {
               <td className="px-4 py-3 text-slate-600">
                 {[row.level_name, row.class_name].filter(Boolean).join(" · ") ||
                   "All"}
+                {row.applies_to_residence &&
+                row.applies_to_residence !== "all" ? (
+                  <div className="text-xs text-slate-500">
+                    {row.applies_to_residence === "boarding"
+                      ? "Boarding students"
+                      : "Day students"}
+                  </div>
+                ) : null}
               </td>
               <td className="px-4 py-3 font-medium text-slate-800">
                 {formatMoney(row.total, currency)}
@@ -287,14 +314,20 @@ export default function FeeStructurePage() {
               </td>
               <td className="px-4 py-3">
                 {canManage ? (
-                  <div className="flex flex-wrap gap-2">
-                    <SecondaryButton onClick={() => void toggleActive(row)}>
-                      {row.is_active ? "Deactivate" : "Activate"}
-                    </SecondaryButton>
-                    <SecondaryButton onClick={() => setDeleteId(row.id)}>
-                      Delete
-                    </SecondaryButton>
-                  </div>
+                  <TableActionGroup>
+                    <TableIconButton
+                      icon={row.is_active ? PauseIcon : Tick02Icon}
+                      label={row.is_active ? "Deactivate" : "Activate"}
+                      tone={row.is_active ? "warning" : "primary"}
+                      onClick={() => void toggleActive(row)}
+                    />
+                    <TableIconButton
+                      icon={Delete02Icon}
+                      label="Delete"
+                      tone="danger"
+                      onClick={() => setDeleteId(row.id)}
+                    />
+                  </TableActionGroup>
                 ) : (
                   <span className="text-xs text-slate-400">View only</span>
                 )}
@@ -304,37 +337,42 @@ export default function FeeStructurePage() {
         )}
       </FinanceTable>
 
-      <ActionDrawer
+      <FormModal
         open={createOpen}
         title="New fee structure"
         subtitle="Add named fee lines with amounts and frequency."
+        size="xl"
         onClose={() => setCreateOpen(false)}
         footer={
-          <div className="flex gap-2">
-            <SecondaryButton
-              onClick={() => setCreateOpen(false)}
-              className="flex-1"
-            >
+          <div className="flex justify-end gap-2">
+            <SecondaryButton onClick={() => setCreateOpen(false)}>
               Cancel
             </SecondaryButton>
             <PrimaryButton
               type="submit"
               form="fee-structure-form"
               disabled={busy}
-              className="flex-1"
             >
-              {busy ? "Saving…" : "Create"}
+              {busy ? "Saving…" : "Create structure"}
             </PrimaryButton>
           </div>
         }
       >
-        <form id="fee-structure-form" onSubmit={handleCreate} className="space-y-4">
-          <FormSection title="Details">
-            <FormField label="Name" required>
+        <form
+          id="fee-structure-form"
+          onSubmit={handleCreate}
+          className="space-y-5"
+        >
+          <FormSection
+            title="Details"
+            description="Scope this package to a year, term, level, or class."
+          >
+            <FormField label="Name" required fullWidth>
               <input
                 className={fieldClass}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Form 1 Term 1 fees"
                 required
               />
             </FormField>
@@ -401,34 +439,52 @@ export default function FeeStructurePage() {
                 ))}
               </select>
             </FormField>
-            <FormField label="Notes">
+            <FormField label="Applies to">
+              <select
+                className={selectClass}
+                value={appliesTo}
+                onChange={(e) =>
+                  setAppliesTo(e.target.value as "all" | "day" | "boarding")
+                }
+              >
+                <option value="all">All students</option>
+                <option value="day">Day students only</option>
+                <option value="boarding">Boarding students only</option>
+              </select>
+            </FormField>
+            <FormField label="Notes" fullWidth>
               <textarea
                 className={fieldClass}
                 rows={2}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
+                placeholder="Optional notes for this structure"
               />
             </FormField>
           </FormSection>
 
-          <FormSection title="Fee lines">
-            <div className="space-y-4">
+          <FormSection
+            title="Fee lines"
+            description="Break the package into individual charges."
+            layout="stack"
+          >
+            <div className="space-y-3">
               {lines.map((line, idx) => (
                 <div
                   key={line.key}
-                  className="space-y-2 rounded-xl border border-slate-100 p-3"
+                  className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-500">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-slate-800">
                       Line {idx + 1}
                     </span>
                     {lines.length > 1 ? (
                       <button
                         type="button"
-                        className="text-xs text-red-600"
+                        className="cursor-pointer text-xs font-medium text-red-600 hover:text-red-700"
                         onClick={() =>
                           setLines((prev) =>
-                            prev.filter((l) => l.key !== line.key)
+                            prev.filter((l) => l.key !== line.key),
                           )
                         }
                       >
@@ -436,113 +492,133 @@ export default function FeeStructurePage() {
                       </button>
                     ) : null}
                   </div>
-                  <FormField label="Category">
-                    <select
-                      className={selectClass}
-                      value={line.fee_category_id}
-                      onChange={(e) =>
-                        updateLine(line.key, {
-                          fee_category_id: e.target.value,
-                        })
-                      }
-                    >
-                      <option value="">Custom / other</option>
-                      {(meta?.categories ?? []).map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </FormField>
-                  <FormField label="Name">
-                    <input
-                      className={fieldClass}
-                      value={line.name}
-                      onChange={(e) =>
-                        updateLine(line.key, { name: e.target.value })
-                      }
-                      placeholder="Fee name"
-                    />
-                  </FormField>
-                  <div className="grid grid-cols-2 gap-2">
-                    <FormField label="Amount">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        className={fieldClass}
-                        value={line.amount}
-                        onChange={(e) =>
-                          updateLine(line.key, { amount: e.target.value })
-                        }
-                      />
-                    </FormField>
-                    <FormField label="Frequency">
-                      <select
-                        className={selectClass}
-                        value={line.frequency}
-                        onChange={(e) =>
-                          updateLine(line.key, {
-                            frequency: e.target.value as FeeFrequency,
-                          })
-                        }
-                      >
-                        {(
-                          Object.keys(FREQUENCY_LABELS) as FeeFrequency[]
-                        ).map((f) => (
-                          <option key={f} value={f}>
-                            {FREQUENCY_LABELS[f]}
-                          </option>
-                        ))}
-                      </select>
-                    </FormField>
-                  </div>
-                  <label className="flex items-center gap-2 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={line.is_mandatory}
-                      onChange={(e) =>
-                        updateLine(line.key, {
-                          is_mandatory: e.target.checked,
-                        })
-                      }
-                    />
-                    Mandatory
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <FormField label="Late fee">
-                      <select
-                        className={selectClass}
-                        value={line.late_fee_mode}
-                        onChange={(e) =>
-                          updateLine(line.key, {
-                            late_fee_mode: e.target.value as LateFeeMode,
-                          })
-                        }
-                      >
-                        <option value="none">None</option>
-                        <option value="fixed">Fixed</option>
-                        <option value="percent">Percent</option>
-                      </select>
-                    </FormField>
-                    <FormField label="Late fee value">
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        className={fieldClass}
-                        disabled={line.late_fee_mode === "none"}
-                        value={line.late_fee_value}
-                        onChange={(e) =>
-                          updateLine(line.key, {
-                            late_fee_value: e.target.value,
-                          })
-                        }
-                      />
-                    </FormField>
+
+                  <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-6">
+                    <div className="sm:col-span-2">
+                      <FormField label="Category">
+                        <select
+                          className={selectClass}
+                          value={line.fee_category_id}
+                          onChange={(e) =>
+                            updateLine(line.key, {
+                              fee_category_id: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="">Custom / other</option>
+                          {(meta?.categories ?? []).map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </FormField>
+                    </div>
+                    <div className="sm:col-span-4">
+                      <FormField label="Name">
+                        <input
+                          className={fieldClass}
+                          value={line.name}
+                          onChange={(e) =>
+                            updateLine(line.key, { name: e.target.value })
+                          }
+                          placeholder="Tuition, PTA, sports…"
+                        />
+                      </FormField>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <FormField label="Amount">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          className={fieldClass}
+                          value={line.amount}
+                          onChange={(e) =>
+                            updateLine(line.key, { amount: e.target.value })
+                          }
+                          placeholder="0.00"
+                        />
+                      </FormField>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <FormField label="Frequency">
+                        <select
+                          className={selectClass}
+                          value={line.frequency}
+                          onChange={(e) =>
+                            updateLine(line.key, {
+                              frequency: e.target.value as FeeFrequency,
+                            })
+                          }
+                        >
+                          {(
+                            Object.keys(FREQUENCY_LABELS) as FeeFrequency[]
+                          ).map((f) => (
+                            <option key={f} value={f}>
+                              {FREQUENCY_LABELS[f]}
+                            </option>
+                          ))}
+                        </select>
+                      </FormField>
+                    </div>
+                    <div className="mb-4 flex items-end sm:col-span-2">
+                      <label className="flex h-10.5 w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={line.is_mandatory}
+                          onChange={(e) =>
+                            updateLine(line.key, {
+                              is_mandatory: e.target.checked,
+                            })
+                          }
+                        />
+                        Mandatory
+                      </label>
+                    </div>
+
+                    <div className="sm:col-span-3">
+                      <FormField label="Late fee">
+                        <select
+                          className={selectClass}
+                          value={line.late_fee_mode}
+                          onChange={(e) =>
+                            updateLine(line.key, {
+                              late_fee_mode: e.target.value as LateFeeMode,
+                            })
+                          }
+                        >
+                          <option value="none">None</option>
+                          <option value="fixed">Fixed amount</option>
+                          <option value="percent">Percent</option>
+                        </select>
+                      </FormField>
+                    </div>
+                    <div className="sm:col-span-3">
+                      <FormField label="Late fee value">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          className={fieldClass}
+                          disabled={line.late_fee_mode === "none"}
+                          value={line.late_fee_value}
+                          onChange={(e) =>
+                            updateLine(line.key, {
+                              late_fee_value: e.target.value,
+                            })
+                          }
+                          placeholder={
+                            line.late_fee_mode === "percent" ? "%" : "0.00"
+                          }
+                        />
+                      </FormField>
+                    </div>
                   </div>
                 </div>
               ))}
+
               <SecondaryButton
                 onClick={() => setLines((prev) => [...prev, emptyLine()])}
               >
@@ -551,7 +627,7 @@ export default function FeeStructurePage() {
             </div>
           </FormSection>
         </form>
-      </ActionDrawer>
+      </FormModal>
 
       <ConfirmModal
         open={!!deleteId}

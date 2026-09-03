@@ -6,6 +6,23 @@ import type {
   ExamSessionStatus,
   ResultRunStatus,
 } from '../db/types'
+import { hasPermission, profileLabel } from '../domain/results-calculation'
+import {
+  describeTeacherClash,
+  fanOutClassIds,
+  findTeacherClashes,
+  isCommonSubjectAtLevel,
+} from '../domain/timetable'
+import { calculateClass } from '../services/results/calculation-engine'
+import { collectClassScores } from './results-calculation'
+
+const DAY_LABELS: Record<number, string> = {
+  1: 'Monday',
+  2: 'Tuesday',
+  3: 'Wednesday',
+  4: 'Thursday',
+  5: 'Friday',
+}
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -41,41 +58,114 @@ function assessmentWeights(repos: Repositories, schoolId: string) {
 
 export function registerAcademicMgmtIpc(repos: Repositories): void {
   ipcMain.handle('academic:meta', (): Result<{
-    classes: Array<{ id: string; name: string }>
-    subjects: Array<{ id: string; name: string; class_ids: string[] }>
-    teachers: Array<{ id: string; full_name: string }>
+    classes: Array<{
+      id: string
+      name: string
+      academic_level_id: string | null
+    }>
+    subjects: Array<{
+      id: string
+      name: string
+      class_ids: string[]
+      is_common: boolean
+      level_class_ids: string[]
+    }>
+    teachers: Array<{
+      id: string
+      full_name: string
+      assignments: Array<{ class_id: string; subject_id: string }>
+    }>
     terms: Array<{ id: string; name: string; term_number: number }>
     academic_year: { id: string; name: string } | null
     periods: number
+    period_times: Array<{
+      period_number: number
+      label: string
+      start_time: string
+      end_time: string
+    }>
+    breaks: Array<{
+      name: string
+      after_period: number
+      start_time: string
+      end_time: string
+      duration_minutes: number
+    }>
+    day_start_time: string
+    day_end_time: string
+    period_duration_minutes: number
     days: Array<{ day: number; label: string }>
   }> => {
     const schoolId = resolveSchoolId(repos)
     if (!schoolId) return { ok: false, error: 'No school found.' }
 
     const yearSetup = repos.academicYears.getSetupDto(schoolId)
-    const subjects = repos.subjects.findBySchoolWithClasses(schoolId).map((s) => ({
-      id: s.id,
-      name: s.name,
-      class_ids: s.class_ids,
+    const classRows = repos.classes
+      .findStructureClasses(schoolId)
+      .filter((c) => c.is_active === 1)
+    const classRefs = classRows.map((c) => ({
+      id: c.id,
+      academic_level_id: c.academic_level_id,
     }))
+
+    const subjects = repos.subjects.findBySchoolWithClasses(schoolId).map((s) => {
+      const anchor = s.class_ids[0] ?? ''
+      const is_common = anchor
+        ? isCommonSubjectAtLevel(
+            { id: s.id, class_ids: s.class_ids },
+            anchor,
+            classRefs
+          )
+        : false
+      const level_class_ids = is_common
+        ? fanOutClassIds({ id: s.id, class_ids: s.class_ids }, anchor, classRefs)
+        : s.class_ids
+      return {
+        id: s.id,
+        name: s.name,
+        class_ids: s.class_ids,
+        is_common,
+        level_class_ids,
+      }
+    })
+
+    const daySchedule = repos.schools.getDayScheduleDto(schoolId)
 
     return {
       ok: true,
       data: {
-        classes: repos.classes
-          .findStructureClasses(schoolId)
-          .filter((c) => c.is_active === 1)
-          .map((c) => ({ id: c.id, name: c.name })),
+        classes: classRows.map((c) => ({
+          id: c.id,
+          name: c.name,
+          academic_level_id: c.academic_level_id,
+        })),
         subjects,
         teachers: repos.staff
           .findBySchool(schoolId)
           .filter((s) => s.staff_type === 'teaching' && s.status === 'active')
-          .map((s) => ({ id: s.id, full_name: s.full_name })),
+          .map((s) => ({
+            id: s.id,
+            full_name: s.full_name,
+            assignments: repos.staff.findAssignments(s.id),
+          })),
         terms: yearSetup?.terms ?? [],
         academic_year: yearSetup
           ? { id: yearSetup.id, name: yearSetup.name }
           : null,
-        periods: 8,
+        periods: daySchedule.periods_per_day,
+        period_times: daySchedule.periods,
+        breaks: daySchedule.blocks
+          .filter((b) => b.kind === 'break')
+          .map((b) => ({
+            name: b.name,
+            after_period: b.after_period,
+            start_time: b.start_time,
+            end_time: b.end_time,
+            duration_minutes: b.duration_minutes,
+          })),
+        day_start_time: daySchedule.day_start_time,
+        day_end_time: daySchedule.day_end_time,
+        period_duration_minutes: daySchedule.period_duration_minutes,
         days: [
           { day: 1, label: 'Monday' },
           { day: 2, label: 'Tuesday' },
@@ -154,7 +244,11 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         period_number: number
         room?: string | null
       }
-    ): Result<unknown> => {
+    ): Result<{
+      slots: unknown[]
+      synced_class_ids: string[]
+      is_common: boolean
+    }> => {
       const schoolId = resolveSchoolId(repos)
       if (!schoolId) return { ok: false, error: 'No school found.' }
       if (!input?.class_id) return { ok: false, error: 'Class is required.' }
@@ -169,17 +263,104 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         return { ok: false, error: 'Period is required.' }
       }
 
-      const slot = repos.timetable.upsertSlot({
-        id: input.id,
-        school_id: schoolId,
-        class_id: input.class_id,
-        subject_id: input.subject_id ?? null,
-        staff_id: input.staff_id ?? null,
-        day_of_week: input.day_of_week,
-        period_number: input.period_number,
-        room: input.room ?? null,
-      })
-      return { ok: true, data: slot }
+      const maxPeriods =
+        repos.schools.getDayScheduleConfig(schoolId).periods_per_day
+      if (input.period_number > maxPeriods) {
+        return {
+          ok: false,
+          error: `Period must be between 1 and ${maxPeriods}.`,
+        }
+      }
+
+      const classRefs = repos.classes
+        .findStructureClasses(schoolId)
+        .filter((c) => c.is_active === 1)
+        .map((c) => ({
+          id: c.id,
+          academic_level_id: c.academic_level_id,
+        }))
+
+      const subjectRow = input.subject_id
+        ? repos.subjects.findBySchoolWithClasses(schoolId).find(
+            (s) => s.id === input.subject_id
+          )
+        : null
+      const subjectRef = subjectRow
+        ? { id: subjectRow.id, class_ids: subjectRow.class_ids }
+        : null
+
+      const targetClassIds =
+        subjectRef && input.subject_id
+          ? fanOutClassIds(subjectRef, input.class_id, classRefs)
+          : [input.class_id]
+      const is_common = subjectRef
+        ? isCommonSubjectAtLevel(subjectRef, input.class_id, classRefs)
+        : false
+
+      const existingSlots = repos.timetable.findBySchool(schoolId)
+      const staffByClass = new Map<string, string | null>()
+      for (const classId of targetClassIds) {
+        const assigned = input.subject_id
+          ? repos.staff.findStaffIdForClassSubject(classId, input.subject_id)
+          : null
+        const staffId =
+          (classId === input.class_id ? input.staff_id : null) || assigned
+        staffByClass.set(classId, staffId)
+      }
+
+      for (const [classId, staffId] of staffByClass) {
+        if (!staffId) continue
+        const clashes = findTeacherClashes({
+          staffId,
+          day_of_week: input.day_of_week,
+          period_number: input.period_number,
+          subject_id: input.subject_id ?? null,
+          target_class_ids: targetClassIds,
+          existing: existingSlots,
+        })
+        if (clashes.length > 0) {
+          const clash = clashes[0]
+          const teacher = repos.staff.findById(staffId)?.full_name
+          const otherClass = repos.classes.findById(clash.class_id)?.name
+          const otherSubject = clash.subject_id
+            ? repos.subjects.findById(clash.subject_id)?.name
+            : null
+          return {
+            ok: false,
+            error: describeTeacherClash(clash, {
+              teacher,
+              class_name: otherClass,
+              subject_name: otherSubject,
+              day_label: DAY_LABELS[clash.day_of_week],
+            }),
+          }
+        }
+        void classId
+      }
+
+      const saved = []
+      for (const classId of targetClassIds) {
+        const slot = repos.timetable.upsertSlot({
+          id: classId === input.class_id ? input.id : null,
+          school_id: schoolId,
+          class_id: classId,
+          subject_id: input.subject_id ?? null,
+          staff_id: staffByClass.get(classId) ?? null,
+          day_of_week: input.day_of_week,
+          period_number: input.period_number,
+          room: input.room ?? null,
+        })
+        saved.push(slot)
+      }
+
+      return {
+        ok: true,
+        data: {
+          slots: saved,
+          synced_class_ids: targetClassIds,
+          is_common,
+        },
+      }
     }
   )
 
@@ -188,14 +369,63 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
     (
       _e,
       input: { class_id: string; day_of_week: number; period_number: number }
-    ): Result<{ cleared: boolean }> => {
+    ): Result<{ cleared: boolean; synced_class_ids: string[] }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
       if (!input?.class_id) return { ok: false, error: 'Class is required.' }
-      repos.timetable.clearCell(
-        input.class_id,
-        input.day_of_week,
-        input.period_number
-      )
-      return { ok: true, data: { cleared: true } }
+
+      const cell = repos.timetable
+        .findByClass(input.class_id)
+        .find(
+          (s) =>
+            s.day_of_week === input.day_of_week &&
+            s.period_number === input.period_number
+        )
+
+      let targetClassIds = [input.class_id]
+      if (cell?.subject_id) {
+        const subjectRow = repos.subjects
+          .findBySchoolWithClasses(schoolId)
+          .find((s) => s.id === cell.subject_id)
+        if (subjectRow) {
+          const classRefs = repos.classes
+            .findStructureClasses(schoolId)
+            .filter((c) => c.is_active === 1)
+            .map((c) => ({
+              id: c.id,
+              academic_level_id: c.academic_level_id,
+            }))
+          targetClassIds = fanOutClassIds(
+            { id: subjectRow.id, class_ids: subjectRow.class_ids },
+            input.class_id,
+            classRefs
+          )
+          // Only clear other classes when they hold the same subject in that slot.
+          targetClassIds = targetClassIds.filter((classId) => {
+            if (classId === input.class_id) return true
+            const other = repos.timetable
+              .findByClass(classId)
+              .find(
+                (s) =>
+                  s.day_of_week === input.day_of_week &&
+                  s.period_number === input.period_number
+              )
+            return other?.subject_id === cell.subject_id
+          })
+        }
+      }
+
+      for (const classId of targetClassIds) {
+        repos.timetable.clearCell(
+          classId,
+          input.day_of_week,
+          input.period_number
+        )
+      }
+      return {
+        ok: true,
+        data: { cleared: true, synced_class_ids: targetClassIds },
+      }
     }
   )
 
@@ -831,13 +1061,34 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
     (
       _e,
       input: { class_id: string; term_id?: string | null }
-    ): Result<{ run_id: string; students: number; subjects: number }> => {
+    ): Result<{ run_id: string; students: number; subjects: number; profile?: string }> => {
       const schoolId = resolveSchoolId(repos)
       if (!schoolId) return { ok: false, error: 'No school found.' }
       if (!input?.class_id) return { ok: false, error: 'Class is required.' }
+      const session = getSession()
+      const names = session
+        ? (() => {
+            try {
+              return repos.roles.getPermissionNamesForUser(session.userId)
+            } catch {
+              return [] as string[]
+            }
+          })()
+        : []
+      const isAdmin = session?.role === 'admin'
+      if (
+        session &&
+        !hasPermission(
+          names,
+          ['results.calculate', 'results.enter', 'results.update'],
+          isAdmin
+        )
+      ) {
+        return { ok: false, error: 'Access denied.' }
+      }
 
-      const weights = assessmentWeights(repos, schoolId)
       const year = repos.academicYears.getSetupDto(schoolId)
+      const classRow = repos.classes.findById(input.class_id)
       const students = repos.students
         .findByClassId(input.class_id)
         .filter((s) => s.status === 'active')
@@ -856,6 +1107,16 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
       if (run?.status === 'locked') {
         return { ok: false, error: 'Results are locked and cannot be recomputed.' }
       }
+      if (
+        run &&
+        (run.status === 'computed' ||
+          run.status === 'approved' ||
+          run.status === 'published') &&
+        session &&
+        !hasPermission(names, ['results.recalculate', 'results.calculate'], isAdmin)
+      ) {
+        return { ok: false, error: 'Access denied to recalculate existing results.' }
+      }
       if (!run) {
         run = repos.results.createRun({
           school_id: schoolId,
@@ -868,6 +1129,98 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         repos.results.softDeleteRows(run.id)
       }
 
+      const profile = repos.resultCalc.resolveForClass(
+        schoolId,
+        input.class_id,
+        classRow?.academic_level_id ?? null,
+        year?.id ?? null
+      )
+
+      if (profile) {
+        const packed = collectClassScores(
+          repos,
+          input.class_id,
+          input.term_id ?? null,
+          students,
+          subjects
+        )
+        const out = calculateClass(
+          profile.config,
+          students,
+          subjects,
+          packed
+        )
+        for (const row of out.subject_rows) {
+          repos.results.insertSubjectRow({
+            result_run_id: run.id,
+            student_id: row.student_id,
+            subject_id: row.subject_id,
+            ca_score: row.ca_score,
+            exam_score: row.exam_score,
+            total: row.total,
+            grade: row.grade,
+          })
+        }
+        for (const row of out.summaries) {
+          repos.results.insertSummary({
+            result_run_id: run.id,
+            student_id: row.student_id,
+            average: row.average,
+            total: row.total,
+            grade: row.grade,
+            position: row.position,
+            remark: row.remark,
+            promotion_outcome: row.promotion_outcome,
+            gpa: row.gpa,
+            failed_subjects: row.failed_subjects,
+          })
+        }
+        repos.results.attachCalculationSnapshot(run.id, {
+          calculation_profile_id: profile.profile.id,
+          calculation_version: profile.version_number,
+          calculation_hash: out.hash,
+          snapshot_json: JSON.stringify({
+            label: profileLabel(
+              profile.profile.name,
+              year?.name ?? null,
+              profile.version_number
+            ),
+            config: profile.config,
+          }),
+          calculated_by: session?.userId ?? null,
+        })
+        repos.results.updateStatus(run.id, 'computed', {
+          computed_at: new Date().toISOString(),
+        })
+        try {
+          repos.systemAdmin.writeAudit({
+            school_id: schoolId,
+            actor_user_id: session?.userId ?? null,
+            action: 'results.calculate',
+            module_key: 'results',
+            entity_type: 'result_run',
+            entity_id: run.id,
+            description: 'Calculated class results from configuration profile',
+          })
+        } catch {
+          /* ignore */
+        }
+        return {
+          ok: true,
+          data: {
+            run_id: run.id,
+            students: students.length,
+            subjects: subjects.length,
+            profile: profileLabel(
+              profile.profile.name,
+              year?.name ?? null,
+              profile.version_number
+            ),
+          },
+        }
+      }
+
+      const weights = assessmentWeights(repos, schoolId)
       const caAssessments = repos.ca.findScoresForClassTerm(
         input.class_id,
         input.term_id ?? null
@@ -883,9 +1236,6 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
           if (sc.score == null) continue
           const key = `${sc.student_id}:${a.subject_id}`
           const pct = (sc.score / (a.max_score || 100)) * 100
-          const prev = caByStudentSubject.get(key) ?? []
-          // accumulate as array via string hack — use weighted avg
-          void prev
           const existing = caByStudentSubject.get(key)
           if (existing == null) caByStudentSubject.set(key, pct)
           else caByStudentSubject.set(key, (existing + pct) / 2)
@@ -980,14 +1330,80 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
       if (run.status === 'locked') {
         return { ok: false, error: 'Results are already locked.' }
       }
-      if (run.status !== 'computed' && run.status !== 'published') {
+      if (
+        run.status !== 'computed' &&
+        run.status !== 'approved' &&
+        run.status !== 'published'
+      ) {
         return { ok: false, error: 'Process results before publishing.' }
+      }
+      const session = getSession()
+      if (session) {
+        const names = (() => {
+          try {
+            return repos.roles.getPermissionNamesForUser(session.userId)
+          } catch {
+            return [] as string[]
+          }
+        })()
+        const need = input.lock ? ['results.lock'] : ['results.publish']
+        if (!hasPermission(names, need, session.role === 'admin')) {
+          return { ok: false, error: 'Access denied.' }
+        }
       }
       const status: ResultRunStatus = input.lock ? 'locked' : 'published'
       repos.results.updateStatus(run.id, status, {
         published_at: new Date().toISOString(),
       })
       return { ok: true, data: { status } }
+    }
+  )
+
+  ipcMain.handle(
+    'results:approve',
+    (
+      _e,
+      input: { class_id: string; term_id?: string | null }
+    ): Result<{ status: ResultRunStatus }> => {
+      const session = getSession()
+      if (!session) return { ok: false, error: 'Access denied.' }
+      const names = (() => {
+        try {
+          return repos.roles.getPermissionNamesForUser(session.userId)
+        } catch {
+          return [] as string[]
+        }
+      })()
+      if (!hasPermission(names, ['results.approve', 'results.review'], session.role === 'admin')) {
+        return { ok: false, error: 'Access denied.' }
+      }
+      if (!input?.class_id) return { ok: false, error: 'Class is required.' }
+      const run = repos.results.findByClassTerm(
+        input.class_id,
+        input.term_id ?? null
+      )
+      if (!run) return { ok: false, error: 'No computed results to approve.' }
+      if (run.status === 'locked') {
+        return { ok: false, error: 'Results are locked.' }
+      }
+      if (run.status !== 'computed' && run.status !== 'approved') {
+        return { ok: false, error: 'Process results before approving.' }
+      }
+      repos.results.updateStatus(run.id, 'approved')
+      try {
+        repos.systemAdmin.writeAudit({
+          school_id: run.school_id,
+          actor_user_id: session.userId,
+          action: 'results.approve',
+          module_key: 'results',
+          entity_type: 'result_run',
+          entity_id: run.id,
+          description: 'Approved class results',
+        })
+      } catch {
+        /* ignore */
+      }
+      return { ok: true, data: { status: 'approved' } }
     }
   )
 

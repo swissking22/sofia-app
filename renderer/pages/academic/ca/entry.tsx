@@ -2,10 +2,8 @@ import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
-import {
-  fetchCaScores,
-  saveCaScores,
-} from "../../../lib/academic-mgmt";
+import { fetchCaScores, saveCaScores } from "../../../lib/academic-mgmt";
+import { handleScoreGridKeyDown } from "../../../lib/score-entry";
 
 const inputClass =
   "w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -32,6 +30,7 @@ export default function CaEntryPage() {
       score: number | null;
     }>
   >([]);
+  const scoreInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
 
   const load = React.useCallback(async () => {
     if (!assessmentId) {
@@ -81,9 +80,7 @@ export default function CaEntryPage() {
 
     for (const s of scores) {
       if (s.score !== null && (s.score < 0 || s.score > maxScore)) {
-        setError(
-          `Score for ${s.name} must be between 0 and ${maxScore}.`,
-        );
+        setError(`Score for ${s.name} must be between 0 and ${maxScore}.`);
         return;
       }
     }
@@ -218,7 +215,7 @@ export default function CaEntryPage() {
                   </td>
                 </tr>
               ) : (
-                scores.map((s) => (
+                scores.map((s, index) => (
                   <tr key={s.id} className="hover:bg-slate-50/80">
                     <td className="px-4 py-3 font-mono text-xs text-slate-600">
                       {s.student_code || "—"}
@@ -228,6 +225,9 @@ export default function CaEntryPage() {
                     </td>
                     <td className="px-4 py-3">
                       <input
+                        ref={(el) => {
+                          scoreInputRefs.current[index] = el;
+                        }}
                         type="number"
                         min={0}
                         max={maxScore}
@@ -235,6 +235,9 @@ export default function CaEntryPage() {
                         className={inputClass}
                         value={s.score ?? ""}
                         onChange={(e) => updateScore(s.id, e.target.value)}
+                        onKeyDown={(e) =>
+                          handleScoreGridKeyDown(e, index, scoreInputRefs)
+                        }
                         placeholder="—"
                       />
                     </td>

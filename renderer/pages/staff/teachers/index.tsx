@@ -1,9 +1,9 @@
 import React from "react";
 import Link from "next/link";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, MoreHorizontalIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
-  ActionDrawer,
+  FormModal,
   ConfirmModal,
   EmptyRow,
   FilterBar,
@@ -17,6 +17,7 @@ import {
   useDebouncedValue,
 } from "../../../components/staff/ui";
 import { Icon } from "../../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   JOB_ROLE_LABELS,
   deleteStaff,
@@ -209,20 +210,20 @@ export default function TeachersIndexPage() {
                 <StatusBadge status={t.status} />
               </td>
               <td className="px-4 py-3 text-right">
-                <button
-                  type="button"
-                  onClick={() => setRowAction(t)}
-                  className="cursor-pointer text-sm font-semibold text-(--sofia-primary) hover:underline"
-                >
-                  Actions
-                </button>
+                <TableActionGroup>
+                  <TableIconButton
+                    icon={MoreHorizontalIcon}
+                    label="Actions"
+                    onClick={() => setRowAction(t)}
+                  />
+                </TableActionGroup>
               </td>
             </tr>
           ))
         )}
       </StaffTable>
 
-      <ActionDrawer
+      <FormModal
         open={!!rowAction}
         title="Quick actions"
         subtitle={rowAction?.full_name}
@@ -278,7 +279,7 @@ export default function TeachersIndexPage() {
             </dd>
           </div>
         </dl>
-      </ActionDrawer>
+      </FormModal>
 
       <ConfirmModal
         open={confirmDelete}

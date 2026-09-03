@@ -7,6 +7,7 @@ import {
   SpecList,
   StructureTree,
 } from "../setup/structure";
+import { DayScheduleSection } from "./DayScheduleSection";
 import {
   createLevel,
   createSection,
@@ -324,6 +325,23 @@ export function AcademicStructureManager({
             setError("");
           }}
           onDeleteClass={handleDeleteClass}
+        />
+      </FormSection>
+
+      <FormSection
+        title="6. School day & periods"
+        description="When classes start and close, how long each period is, and break times. The timetable builder uses this schedule for period count and clock labels."
+        layout="stack"
+      >
+        <DayScheduleSection
+          onFlash={(message) => {
+            setError("");
+            flash(message);
+          }}
+          onError={(message) => {
+            setSuccess("");
+            setError(message);
+          }}
         />
       </FormSection>
 

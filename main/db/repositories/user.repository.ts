@@ -18,13 +18,28 @@ export class UserRepository extends BaseRepository<User> {
       password_hash: input.password_hash,
       role: input.role,
       role_id: input.role_id ?? null,
+      first_name: input.first_name ?? '',
+      last_name: input.last_name ?? '',
+      phone: input.phone ?? null,
+      status: input.status ?? 'active',
+      last_login_at: input.last_login_at ?? null,
+      staff_id: input.staff_id ?? null,
+      failed_login_count: input.failed_login_count ?? 0,
+      locked_until: input.locked_until ?? null,
+      must_change_password: input.must_change_password ?? 0,
     }
 
     const tx = this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO users (id, school_id, email, password_hash, role, role_id, created_at, updated_at, deleted_at, sync_status, version)
-           VALUES (@id, @school_id, @email, @password_hash, @role, @role_id, @created_at, @updated_at, @deleted_at, @sync_status, @version)`
+          `INSERT INTO users (id, school_id, email, password_hash, role, role_id,
+            first_name, last_name, phone, status, last_login_at, staff_id,
+            failed_login_count, locked_until, must_change_password,
+            created_at, updated_at, deleted_at, sync_status, version)
+           VALUES (@id, @school_id, @email, @password_hash, @role, @role_id,
+            @first_name, @last_name, @phone, @status, @last_login_at, @staff_id,
+            @failed_login_count, @locked_until, @must_change_password,
+            @created_at, @updated_at, @deleted_at, @sync_status, @version)`
         )
         .run(record)
 
@@ -54,6 +69,15 @@ export class UserRepository extends BaseRepository<User> {
                password_hash = @password_hash,
                role = @role,
                role_id = @role_id,
+               first_name = @first_name,
+               last_name = @last_name,
+               phone = @phone,
+               status = @status,
+               last_login_at = @last_login_at,
+               staff_id = @staff_id,
+               failed_login_count = @failed_login_count,
+               locked_until = @locked_until,
+               must_change_password = @must_change_password,
                updated_at = @updated_at,
                version = @version,
                sync_status = @sync_status

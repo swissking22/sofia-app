@@ -83,6 +83,16 @@ export default function ReceiptPrintPage() {
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
+      ) : data?.rendered_html ? (
+        <div className="overflow-auto rounded-xl border border-slate-200 bg-white p-6 print:border-0 print:p-0">
+          {data.print_css ? <style>{data.print_css}</style> : null}
+          <div dangerouslySetInnerHTML={{ __html: data.rendered_html }} />
+          {data.receipt.reprint_count > 0 ? (
+            <p className="mt-4 text-xs text-slate-400 print:hidden">
+              Reprint #{data.receipt.reprint_count}
+            </p>
+          ) : null}
+        </div>
       ) : data ? (
         <article className="mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-8 print:border-0 print:p-0">
           {data.template?.header_text ? (

@@ -25,9 +25,10 @@ function loadSetup(repos: Repositories, schoolId: string): StaffSetupData {
     id: d.id,
     name: d.name,
   }))
-  const subjects = repos.subjects.findBySchool(schoolId).map((s) => ({
+  const subjects = repos.subjects.findBySchoolWithClasses(schoolId).map((s) => ({
     id: s.id,
     name: s.name,
+    class_ids: s.class_ids,
   }))
   const classes = repos.classes.findStructureClasses(schoolId).map((c) => ({
     id: c.id,

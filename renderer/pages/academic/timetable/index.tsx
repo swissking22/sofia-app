@@ -4,6 +4,7 @@ import { Add01Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Icon } from "../../../components/ui/Icon";
 import {
+  buildTimetableRows,
   clearTimetableSlot,
   fetchAcademicMeta,
   fetchTimetable,
@@ -100,6 +101,14 @@ export default function TimetableIndexPage() {
   const periods = meta?.periods ?? 8;
   const days = meta?.days ?? [];
   const editClassId = view === "class" ? classId : "";
+  const rows = meta
+    ? buildTimetableRows(meta)
+    : Array.from({ length: periods }, (_, i) => ({
+        kind: "period" as const,
+        period: i + 1,
+        label: `Period ${i + 1}`,
+        timeLabel: "",
+      }));
 
   return (
     <AppShell
@@ -222,57 +231,80 @@ export default function TimetableIndexPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {Array.from({ length: periods }, (_, i) => i + 1).map((period) => (
-                <tr key={period}>
-                  <td className="px-3 py-3 font-medium text-slate-500">
-                    {period}
-                  </td>
-                  {days.map((d) => {
-                    const slot = slotMap.get(slotKey(d.day, period));
-                    const filled = Boolean(slot?.subject_name);
-                    return (
-                      <td
-                        key={d.day}
-                        className={`px-2 py-2 align-top ${
-                          filled ? "cursor-pointer hover:bg-slate-50/80" : ""
-                        }`}
-                        title={filled ? "Double-click to clear" : undefined}
-                        onDoubleClick={() =>
-                          filled ? void handleClearSlot(d.day, period) : undefined
-                        }
-                      >
-                        <div
-                          className={`min-h-14 rounded-lg border px-2 py-1.5 ${
-                            filled
-                              ? "border-(--sofia-primary)/20 bg-(--sofia-primary)/5"
-                              : "border-dashed border-slate-200 bg-slate-50/50"
+              {rows.map((row) =>
+                row.kind === "break" ? (
+                  <tr key={`break-${row.name}-${row.timeLabel}`}>
+                    <td
+                      colSpan={days.length + 1}
+                      className="bg-amber-50/80 px-3 py-2 text-xs font-medium text-amber-900"
+                    >
+                      {row.name}
+                      {row.timeLabel ? (
+                        <span className="ml-2 font-normal text-amber-800/80">
+                          {row.timeLabel}
+                        </span>
+                      ) : null}
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={row.period}>
+                    <td className="px-3 py-3 font-medium text-slate-500">
+                      <span className="block">{row.period}</span>
+                      {row.timeLabel ? (
+                        <span className="mt-0.5 block text-[11px] font-normal normal-case tracking-normal text-slate-400">
+                          {row.timeLabel}
+                        </span>
+                      ) : null}
+                    </td>
+                    {days.map((d) => {
+                      const slot = slotMap.get(slotKey(d.day, row.period));
+                      const filled = Boolean(slot?.subject_name);
+                      return (
+                        <td
+                          key={d.day}
+                          className={`px-2 py-2 align-top ${
+                            filled ? "cursor-pointer hover:bg-slate-50/80" : ""
                           }`}
+                          title={filled ? "Double-click to clear" : undefined}
+                          onDoubleClick={() =>
+                            filled
+                              ? void handleClearSlot(d.day, row.period)
+                              : undefined
+                          }
                         >
-                          {filled ? (
-                            <>
-                              <p className="text-xs font-semibold text-slate-800">
-                                {slot?.subject_name}
-                              </p>
-                              {slot?.staff_name ? (
-                                <p className="mt-0.5 text-xs text-slate-500">
-                                  {slot.staff_name}
+                          <div
+                            className={`min-h-14 rounded-lg border px-2 py-1.5 ${
+                              filled
+                                ? "border-(--sofia-primary)/20 bg-(--sofia-primary)/5"
+                                : "border-dashed border-slate-200 bg-slate-50/50"
+                            }`}
+                          >
+                            {filled ? (
+                              <>
+                                <p className="text-xs font-semibold text-slate-800">
+                                  {slot?.subject_name}
                                 </p>
-                              ) : null}
-                              {view === "teacher" && slot?.class_name ? (
-                                <p className="mt-0.5 text-xs text-slate-400">
-                                  {slot.class_name}
-                                </p>
-                              ) : null}
-                            </>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+                                {slot?.staff_name ? (
+                                  <p className="mt-0.5 text-xs text-slate-500">
+                                    {slot.staff_name}
+                                  </p>
+                                ) : null}
+                                {view === "teacher" && slot?.class_name ? (
+                                  <p className="mt-0.5 text-xs text-slate-400">
+                                    {slot.class_name}
+                                  </p>
+                                ) : null}
+                              </>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ),
+              )}
             </tbody>
           </table>
         </div>

@@ -1,6 +1,6 @@
 /** Re-export shared list/filter UI used across Finance & Fees pages. */
 export {
-  ActionDrawer,
+  FormModal,
   ConfirmModal,
   EmptyRow,
   FilterBar,

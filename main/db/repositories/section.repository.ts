@@ -20,6 +20,13 @@ export class SectionRepository extends BaseRepository<Section> {
   }
 
   ensureDefaults(schoolId: string): Section[] {
+    const school = this.db
+      .prepare(
+        `SELECT id FROM schools WHERE id = ? AND deleted_at IS NULL`
+      )
+      .get(schoolId) as { id: string } | undefined
+    if (!school) return []
+
     const existing = this.findBySchool(schoolId)
     if (existing.length > 0) return existing
 

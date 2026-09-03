@@ -1,8 +1,9 @@
 import React from "react";
 import Link from "next/link";
-import { Add01Icon, ChartLineData01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, ChartLineData01Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Icon } from "../../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   fetchAcademicMeta,
   fetchAttendanceSessions,
@@ -177,12 +178,14 @@ export default function AttendanceIndexPage() {
                       {s.total}
                     </td>
                     <td className="px-4 py-3">
-                      <Link
-                        href={`/academic/attendance/take?class_id=${encodeURIComponent(s.class_id)}&date=${encodeURIComponent(s.session_date)}`}
-                        className="text-sm font-medium text-(--sofia-primary) hover:underline"
-                      >
-                        Edit
-                      </Link>
+                      <TableActionGroup>
+                        <TableIconButton
+                          icon={PencilEdit01Icon}
+                          label="Edit attendance"
+                          tone="primary"
+                          href={`/academic/attendance/take?class_id=${encodeURIComponent(s.class_id)}&date=${encodeURIComponent(s.session_date)}`}
+                        />
+                      </TableActionGroup>
                     </td>
                   </tr>
                 ))

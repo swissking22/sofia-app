@@ -2,7 +2,7 @@ import React from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField } from "../../../components/setup";
 import {
-  ActionDrawer,
+  FormModal,
   EmptyRow,
   FilterBar,
   FilterField,
@@ -283,7 +283,7 @@ export default function OutstandingPage() {
         </FinanceTable>
       )}
 
-      <ActionDrawer
+      <FormModal
         open={remindOpen}
         title="Send reminders"
         subtitle={`${selected.size} student(s) — logged in-app only.`}
@@ -317,7 +317,7 @@ export default function OutstandingPage() {
             />
           </FormField>
         </form>
-      </ActionDrawer>
+      </FormModal>
     </AppShell>
   );
 }

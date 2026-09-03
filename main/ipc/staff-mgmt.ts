@@ -35,8 +35,8 @@ function lookups(repos: Repositories, schoolId: string) {
       .findBySchool(schoolId)
       .map((d) => ({ id: d.id, name: d.name })),
     subjects: repos.subjects
-      .findBySchool(schoolId)
-      .map((s) => ({ id: s.id, name: s.name })),
+      .findBySchoolWithClasses(schoolId)
+      .map((s) => ({ id: s.id, name: s.name, class_ids: s.class_ids })),
     classes: repos.classes
       .findBySchool(schoolId)
       .map((c) => ({ id: c.id, name: c.name })),
@@ -101,7 +101,7 @@ function notifyAdmins(
 export function registerStaffMgmtIpc(repos: Repositories): void {
   ipcMain.handle('staff-mgmt:meta', (): Result<{
     departments: Array<{ id: string; name: string }>
-    subjects: Array<{ id: string; name: string }>
+    subjects: Array<{ id: string; name: string; class_ids: string[] }>
     classes: Array<{ id: string; name: string; class_teacher_id: string | null }>
     max_teacher_periods: number
     leave_types: LeaveType[]
@@ -283,6 +283,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         subject_ids?: string[]
         class_ids?: string[]
         homeroom_class_ids?: string[]
+        teaching_assignments?: Array<{ class_id: string; subject_id: string }>
         staff_type?: StaffType
       }
     ): Result<StaffDto> => {
@@ -332,8 +333,11 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         })
 
         if (staff_type === 'teaching') {
-          repos.staff.setSubjects(staff.id, input.subject_ids ?? [])
-          repos.staff.setClasses(staff.id, input.class_ids ?? [])
+          repos.staff.setTeachingAssignments(staff.id, {
+            teaching_assignments: input.teaching_assignments,
+            subject_ids: input.subject_ids,
+            class_ids: input.class_ids,
+          })
           for (const classId of input.homeroom_class_ids ?? []) {
             const cls = repos.classes.findById(classId)
             if (cls && (cls.school_id === schoolId || !cls.school_id)) {
@@ -373,6 +377,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         subject_ids?: string[]
         class_ids?: string[]
         homeroom_class_ids?: string[]
+        teaching_assignments?: Array<{ class_id: string; subject_id: string }>
       }
     ): Result<StaffDto> => {
       const session = requireSession()
@@ -424,11 +429,16 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         })
 
         if (existing.staff_type === 'teaching') {
-          if (input.subject_ids) {
-            repos.staff.setSubjects(input.id, input.subject_ids)
-          }
-          if (input.class_ids) {
-            repos.staff.setClasses(input.id, input.class_ids)
+          if (
+            input.teaching_assignments !== undefined ||
+            input.subject_ids !== undefined ||
+            input.class_ids !== undefined
+          ) {
+            repos.staff.setTeachingAssignments(input.id, {
+              teaching_assignments: input.teaching_assignments,
+              subject_ids: input.subject_ids,
+              class_ids: input.class_ids,
+            })
           }
           if (input.homeroom_class_ids) {
             const all = repos.classes.findBySchool(schoolId)

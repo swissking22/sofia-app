@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { Upload04Icon } from "@hugeicons/core-free-icons";
+import { Upload04Icon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
   EmptyRow,
@@ -13,6 +13,7 @@ import {
   useDebouncedValue,
 } from "../../../components/students/ui";
 import { Icon } from "../../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   DOCUMENT_TYPE_OPTIONS,
   fetchDocuments,
@@ -126,14 +127,15 @@ export default function StudentDocumentsPage() {
               </td>
               <td className="px-4 py-3 text-right">
                 {d.file_url ? (
-                  <a
-                    href={d.file_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-semibold text-(--sofia-primary) hover:underline"
-                  >
-                    Open
-                  </a>
+                  <TableActionGroup>
+                    <TableIconButton
+                      icon={ViewIcon}
+                      label="Open"
+                      tone="primary"
+                      href={d.file_url}
+                      external
+                    />
+                  </TableActionGroup>
                 ) : (
                   <span className="text-xs text-slate-400">—</span>
                 )}

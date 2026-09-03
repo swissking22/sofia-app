@@ -61,3 +61,30 @@ export function markFailed(db: Database.Database, id: string): void {
      WHERE id = ?`
   ).run(new Date().toISOString(), id)
 }
+
+/** Mark failed items as pending so they can be retried. */
+export function retryFailed(db: Database.Database, ids?: string[]): number {
+  if (ids?.length) {
+    const placeholders = ids.map(() => '?').join(',')
+    const result = db
+      .prepare(
+        `UPDATE sync_queue SET status = 'pending' WHERE status = 'failed' AND id IN (${placeholders})`
+      )
+      .run(...ids)
+    return result.changes
+  }
+  const result = db
+    .prepare(`UPDATE sync_queue SET status = 'pending' WHERE status = 'failed'`)
+    .run()
+  return result.changes
+}
+
+export function countByStatus(
+  db: Database.Database,
+  status: string
+): number {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS n FROM sync_queue WHERE status = ?`)
+    .get(status) as { n: number }
+  return row.n
+}

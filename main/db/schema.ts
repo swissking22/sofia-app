@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
 
 /**
@@ -273,13 +274,15 @@ export function createSchema(db: Database.Database): void {
       id TEXT PRIMARY KEY NOT NULL,
       staff_id TEXT NOT NULL,
       subject_id TEXT NOT NULL,
+      class_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT,
       sync_status TEXT NOT NULL DEFAULT 'pending',
       version INTEGER NOT NULL DEFAULT 1,
       FOREIGN KEY (staff_id) REFERENCES staff(id),
-      FOREIGN KEY (subject_id) REFERENCES subjects(id)
+      FOREIGN KEY (subject_id) REFERENCES subjects(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
     );
 
     CREATE TABLE IF NOT EXISTS staff_classes (
@@ -368,6 +371,17 @@ export function createSchema(db: Database.Database): void {
       show_signature INTEGER NOT NULL DEFAULT 1,
       signature_label TEXT NOT NULL DEFAULT 'Principal',
       is_enabled INTEGER NOT NULL DEFAULT 1,
+      body_text TEXT NOT NULL DEFAULT '',
+      document_family TEXT NOT NULL DEFAULT 'official',
+      type_code TEXT NOT NULL DEFAULT 'DOC',
+      category TEXT NOT NULL DEFAULT 'administrative',
+      description TEXT NOT NULL DEFAULT '',
+      required_fields TEXT NOT NULL DEFAULT '[]',
+      number_pattern TEXT NOT NULL DEFAULT '{SCHOOL_CODE}/{TYPE}/{YEAR}/{SEQUENCE}',
+      signatory_role TEXT NOT NULL DEFAULT 'principal',
+      is_default INTEGER NOT NULL DEFAULT 0,
+      requires_approval INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT,
@@ -590,7 +604,15 @@ export function createSchema(db: Database.Database): void {
   migrateStudentManagementTables(db)
   migrateAcademicManagementTables(db)
   migrateStaffManagementTables(db)
+  migrateTeachingAssignments(db)
   migrateFinanceManagementTables(db)
+  migrateCommunicationManagementTables(db)
+  migrateMvpFeatureTables(db)
+  migrateReportsTables(db)
+  migrateOfficialDocumentsTables(db)
+  migrateSystemAdministrationTables(db)
+  migrateResultsCalculationTables(db)
+  migrateIdCardDesignerTables(db)
 }
 
 /** Add missing columns to schools without wiping existing data. */
@@ -640,6 +662,22 @@ function migrateSchoolsColumns(db: Database.Database): void {
       name: 'max_teacher_periods',
       sql: `ALTER TABLE schools ADD COLUMN max_teacher_periods INTEGER`,
     },
+    {
+      name: 'day_start_time',
+      sql: `ALTER TABLE schools ADD COLUMN day_start_time TEXT`,
+    },
+    {
+      name: 'day_end_time',
+      sql: `ALTER TABLE schools ADD COLUMN day_end_time TEXT`,
+    },
+    {
+      name: 'period_duration_minutes',
+      sql: `ALTER TABLE schools ADD COLUMN period_duration_minutes INTEGER`,
+    },
+    {
+      name: 'periods_per_day',
+      sql: `ALTER TABLE schools ADD COLUMN periods_per_day INTEGER`,
+    },
   ]
 
   for (const col of additions) {
@@ -647,6 +685,25 @@ function migrateSchoolsColumns(db: Database.Database): void {
       db.exec(col.sql)
     }
   }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS school_day_breaks (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      after_period INTEGER NOT NULL,
+      duration_minutes INTEGER NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_school_day_breaks_school
+      ON school_day_breaks(school_id);
+  `)
 }
 
 /** Migrate classes + ensure structure hierarchy tables. */
@@ -892,13 +949,15 @@ function migrateStaffTables(db: Database.Database): void {
       id TEXT PRIMARY KEY NOT NULL,
       staff_id TEXT NOT NULL,
       subject_id TEXT NOT NULL,
+      class_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT,
       sync_status TEXT NOT NULL DEFAULT 'pending',
       version INTEGER NOT NULL DEFAULT 1,
       FOREIGN KEY (staff_id) REFERENCES staff(id),
-      FOREIGN KEY (subject_id) REFERENCES subjects(id)
+      FOREIGN KEY (subject_id) REFERENCES subjects(id),
+      FOREIGN KEY (class_id) REFERENCES classes(id)
     );
 
     CREATE TABLE IF NOT EXISTS staff_classes (
@@ -917,6 +976,101 @@ function migrateStaffTables(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_staff_school ON staff(school_id);
     CREATE INDEX IF NOT EXISTS idx_staff_subjects_staff ON staff_subjects(staff_id);
     CREATE INDEX IF NOT EXISTS idx_staff_classes_staff ON staff_classes(staff_id);
+  `)
+}
+
+/** Class+subject teaching assignments (a teacher teaches a subject in a specific class). */
+function migrateTeachingAssignments(db: Database.Database): void {
+  const cols = (
+    db.prepare(`PRAGMA table_info(staff_subjects)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (!cols.includes('class_id')) {
+    db.exec(`ALTER TABLE staff_subjects ADD COLUMN class_id TEXT`)
+  }
+
+  const legacy = db
+    .prepare(
+      `SELECT * FROM staff_subjects
+       WHERE deleted_at IS NULL AND (class_id IS NULL OR class_id = '')`
+    )
+    .all() as Array<{
+    id: string
+    staff_id: string
+    subject_id: string
+    created_at: string
+    updated_at: string
+    deleted_at: string | null
+    sync_status: string
+    version: number
+  }>
+
+  const staffClassesStmt = db.prepare(
+    `SELECT class_id FROM staff_classes WHERE staff_id = ? AND deleted_at IS NULL`
+  )
+  const subjectClassesStmt = db.prepare(
+    `SELECT class_id FROM subject_classes WHERE subject_id = ? AND deleted_at IS NULL`
+  )
+  const updateClass = db.prepare(
+    `UPDATE staff_subjects SET class_id = ?, updated_at = ? WHERE id = ?`
+  )
+  const insertRow = db.prepare(
+    `INSERT INTO staff_subjects (
+       id, staff_id, subject_id, class_id,
+       created_at, updated_at, deleted_at, sync_status, version
+     ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'pending', 1)`
+  )
+  const seen = new Set<string>()
+  const existingKeyed = db
+    .prepare(
+      `SELECT staff_id, class_id, subject_id FROM staff_subjects
+       WHERE deleted_at IS NULL AND class_id IS NOT NULL AND class_id != ''`
+    )
+    .all() as Array<{ staff_id: string; class_id: string; subject_id: string }>
+  for (const row of existingKeyed) {
+    seen.add(`${row.staff_id}::${row.class_id}::${row.subject_id}`)
+  }
+
+  const now = new Date().toISOString()
+  for (const row of legacy) {
+    const fromStaff = (
+      staffClassesStmt.all(row.staff_id) as Array<{ class_id: string }>
+    ).map((r) => r.class_id)
+    const fromSubject = (
+      subjectClassesStmt.all(row.subject_id) as Array<{ class_id: string }>
+    ).map((r) => r.class_id)
+    const targets =
+      fromStaff.length && fromSubject.length
+        ? fromStaff.filter((id) => fromSubject.includes(id))
+        : fromStaff.length
+          ? fromStaff
+          : fromSubject
+    if (!targets.length) continue
+    let first = true
+    for (const class_id of targets) {
+      const key = `${row.staff_id}::${class_id}::${row.subject_id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      if (first) {
+        updateClass.run(class_id, now, row.id)
+        first = false
+      } else {
+        insertRow.run(
+          randomUUID(),
+          row.staff_id,
+          row.subject_id,
+          class_id,
+          now,
+          now
+        )
+      }
+    }
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_staff_subjects_class ON staff_subjects(class_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_subjects_assignment
+      ON staff_subjects(staff_id, class_id, subject_id)
+      WHERE deleted_at IS NULL AND class_id IS NOT NULL;
   `)
 }
 
@@ -2054,4 +2208,1054 @@ function migrateFinanceManagementTables(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_finance_audit_school ON finance_audit_log(school_id, created_at);
   `)
 }
+
+/** Operational Communication: announcements, deliveries, parent threads, internal notices. */
+function migrateCommunicationManagementTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      audience_type TEXT NOT NULL DEFAULT 'all',
+      class_id TEXT,
+      academic_level_id TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      channels_json TEXT NOT NULL DEFAULT '[]',
+      recipient_count INTEGER NOT NULL DEFAULT 0,
+      sent_at TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS communication_deliveries (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      announcement_id TEXT,
+      student_id TEXT,
+      thread_id TEXT,
+      channel TEXT NOT NULL,
+      recipient_name TEXT,
+      recipient_contact TEXT,
+      subject TEXT,
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      sent_at TEXT,
+      error_message TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS parent_message_threads (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      guardian_name TEXT,
+      guardian_phone TEXT,
+      guardian_email TEXT,
+      last_message_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS parent_messages (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'outbound',
+      channel TEXT NOT NULL DEFAULT 'internal',
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      sent_at TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (thread_id) REFERENCES parent_message_threads(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS internal_notices (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      audience TEXT NOT NULL DEFAULT 'all',
+      priority TEXT NOT NULL DEFAULT 'normal',
+      expires_at TEXT,
+      sent_at TEXT,
+      recipient_count INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_announcements_school
+      ON announcements(school_id, status);
+    CREATE INDEX IF NOT EXISTS idx_communication_deliveries_school
+      ON communication_deliveries(school_id, channel, created_at);
+    CREATE INDEX IF NOT EXISTS idx_parent_message_threads_school
+      ON parent_message_threads(school_id, last_message_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_parent_message_threads_student
+      ON parent_message_threads(school_id, student_id)
+      WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_parent_messages_thread
+      ON parent_messages(thread_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_internal_notices_school
+      ON internal_notices(school_id, sent_at);
+  `)
+}
+
+/**
+ * MVP extensions: budgeting, online payments, bank deposits, boarding
+ * residence, student ID cards, teaching progress. Additive only.
+ */
+function migrateMvpFeatureTables(db: Database.Database): void {
+  const studentCols = (
+    db.prepare(`PRAGMA table_info(students)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (!studentCols.includes('residence_type')) {
+    db.exec(
+      `ALTER TABLE students ADD COLUMN residence_type TEXT NOT NULL DEFAULT 'day'`
+    )
+  }
+
+  const structCols = (
+    db.prepare(`PRAGMA table_info(fee_structures)`).all() as Array<{
+      name: string
+    }>
+  ).map((c) => c.name)
+  if (!structCols.includes('applies_to_residence')) {
+    db.exec(
+      `ALTER TABLE fee_structures ADD COLUMN applies_to_residence TEXT NOT NULL DEFAULT 'all'`
+    )
+  }
+
+  const settingsCols = (
+    db.prepare(`PRAGMA table_info(finance_settings)`).all() as Array<{
+      name: string
+    }>
+  ).map((c) => c.name)
+  const settingsAdditions: Array<{ name: string; sql: string }> = [
+    {
+      name: 'budget_alert_pct',
+      sql: `ALTER TABLE finance_settings ADD COLUMN budget_alert_pct REAL NOT NULL DEFAULT 70`,
+    },
+    {
+      name: 'budget_warning_pct',
+      sql: `ALTER TABLE finance_settings ADD COLUMN budget_warning_pct REAL NOT NULL DEFAULT 85`,
+    },
+    {
+      name: 'budget_critical_pct',
+      sql: `ALTER TABLE finance_settings ADD COLUMN budget_critical_pct REAL NOT NULL DEFAULT 100`,
+    },
+    {
+      name: 'require_full_deposit_reconciliation',
+      sql: `ALTER TABLE finance_settings ADD COLUMN require_full_deposit_reconciliation INTEGER NOT NULL DEFAULT 1`,
+    },
+  ]
+  for (const col of settingsAdditions) {
+    if (!settingsCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS budget_categories (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      category_key TEXT NOT NULL,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS budgets (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      academic_year_id TEXT NOT NULL,
+      budget_category_id TEXT NOT NULL,
+      period_type TEXT NOT NULL DEFAULT 'annual',
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      allocated_amount REAL NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      alert_pct REAL,
+      warning_pct REAL,
+      critical_pct REAL,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (academic_year_id) REFERENCES academic_years(id),
+      FOREIGN KEY (budget_category_id) REFERENCES budget_categories(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS budget_alerts (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      budget_id TEXT NOT NULL,
+      level TEXT NOT NULL,
+      utilization REAL NOT NULL,
+      spent REAL NOT NULL,
+      allocated REAL NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (budget_id) REFERENCES budgets(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS online_payment_transactions (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      invoice_id TEXT NOT NULL,
+      payment_id TEXT,
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'XAF',
+      status TEXT NOT NULL DEFAULT 'pending',
+      provider_key TEXT NOT NULL DEFAULT 'stub',
+      provider_reference TEXT,
+      idempotency_key TEXT,
+      failure_reason TEXT,
+      initiated_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (student_id) REFERENCES students(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS bank_deposits (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      deposit_number TEXT NOT NULL,
+      amount REAL NOT NULL,
+      collection_source TEXT,
+      collection_date TEXT,
+      deposit_date TEXT NOT NULL,
+      bank_name TEXT NOT NULL,
+      bank_account TEXT,
+      deposit_reference TEXT,
+      deposited_by TEXT,
+      notes TEXT,
+      document_path TEXT,
+      status TEXT NOT NULL DEFAULT 'pending_verification',
+      verified_by TEXT,
+      verified_at TEXT,
+      posted_at TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS bank_deposit_allocations (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      bank_deposit_id TEXT NOT NULL,
+      payment_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (bank_deposit_id) REFERENCES bank_deposits(id),
+      FOREIGN KEY (payment_id) REFERENCES payments(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_id_card_templates (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      front_layout TEXT NOT NULL DEFAULT 'classic',
+      back_layout TEXT NOT NULL DEFAULT 'info',
+      show_photo INTEGER NOT NULL DEFAULT 1,
+      validity_months INTEGER NOT NULL DEFAULT 12,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_id_cards (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      student_code TEXT NOT NULL,
+      academic_year_id TEXT NOT NULL,
+      template_id TEXT,
+      class_id TEXT,
+      class_name TEXT,
+      student_name TEXT NOT NULL,
+      valid_from TEXT NOT NULL,
+      valid_to TEXT NOT NULL,
+      generated_at TEXT NOT NULL,
+      generated_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS teaching_syllabi (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      academic_year_id TEXT NOT NULL,
+      academic_level_id TEXT,
+      class_id TEXT,
+      title TEXT NOT NULL,
+      term_weeks INTEGER NOT NULL DEFAULT 12,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (subject_id) REFERENCES subjects(id),
+      FOREIGN KEY (academic_year_id) REFERENCES academic_years(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS syllabus_topics (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      syllabus_id TEXT NOT NULL,
+      parent_id TEXT,
+      title TEXT NOT NULL,
+      sequence INTEGER NOT NULL DEFAULT 0,
+      objectives TEXT,
+      coverage_status TEXT NOT NULL DEFAULT 'not_started',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (syllabus_id) REFERENCES teaching_syllabi(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS teaching_logs (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      syllabus_id TEXT,
+      topic_id TEXT,
+      staff_id TEXT NOT NULL,
+      class_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      academic_year_id TEXT,
+      academic_term_id TEXT,
+      lesson_date TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'taught',
+      progress_percent REAL,
+      remarks TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_budget_categories_school
+      ON budget_categories(school_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_categories_key
+      ON budget_categories(school_id, category_key)
+      WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_budgets_school
+      ON budgets(school_id, status);
+    CREATE INDEX IF NOT EXISTS idx_budget_alerts_budget
+      ON budget_alerts(budget_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_online_payments_school
+      ON online_payment_transactions(school_id, status);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_online_payments_idempotency
+      ON online_payment_transactions(school_id, idempotency_key)
+      WHERE deleted_at IS NULL AND idempotency_key IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_bank_deposits_school
+      ON bank_deposits(school_id, status);
+    CREATE INDEX IF NOT EXISTS idx_bank_deposit_allocs
+      ON bank_deposit_allocations(bank_deposit_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_student_id_cards_year
+      ON student_id_cards(school_id, student_id, academic_year_id)
+      WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_teaching_syllabi_school
+      ON teaching_syllabi(school_id, academic_year_id);
+    CREATE INDEX IF NOT EXISTS idx_syllabus_topics_syllabus
+      ON syllabus_topics(syllabus_id, sequence);
+    CREATE INDEX IF NOT EXISTS idx_teaching_logs_school
+      ON teaching_logs(school_id, lesson_date);
+  `)
+}
+
+/** Reporting settings only — analytics themselves are computed from operational tables. */
+function migrateReportsTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS report_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      attendance_risk_pct REAL NOT NULL DEFAULT 75,
+      pass_mark REAL NOT NULL DEFAULT 40,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_report_settings_school
+      ON report_settings(school_id) WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_result_runs_school_year
+      ON result_runs(school_id, academic_year_id, term_id, status);
+    CREATE INDEX IF NOT EXISTS idx_result_subject_rows_run
+      ON result_subject_rows(result_run_id, subject_id);
+    CREATE INDEX IF NOT EXISTS idx_attendance_records_student
+      ON attendance_records(student_id);
+  `)
+}
+
+const SYNC_TAIL = `
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1`
+
+/** Official generated documents, numbering, signatories — not a second student/result store. */
+function migrateOfficialDocumentsTables(db: Database.Database): void {
+  const tplCols = (
+    db.prepare(`PRAGMA table_info(document_templates)`).all() as Array<{
+      name: string
+    }>
+  ).map((c) => c.name)
+  const additions: Array<{ name: string; sql: string }> = [
+    { name: 'body_text', sql: `ALTER TABLE document_templates ADD COLUMN body_text TEXT NOT NULL DEFAULT ''` },
+    {
+      name: 'document_family',
+      sql: `ALTER TABLE document_templates ADD COLUMN document_family TEXT NOT NULL DEFAULT 'official'`,
+    },
+    { name: 'type_code', sql: `ALTER TABLE document_templates ADD COLUMN type_code TEXT NOT NULL DEFAULT 'DOC'` },
+    {
+      name: 'category',
+      sql: `ALTER TABLE document_templates ADD COLUMN category TEXT NOT NULL DEFAULT 'administrative'`,
+    },
+    {
+      name: 'description',
+      sql: `ALTER TABLE document_templates ADD COLUMN description TEXT NOT NULL DEFAULT ''`,
+    },
+    {
+      name: 'required_fields',
+      sql: `ALTER TABLE document_templates ADD COLUMN required_fields TEXT NOT NULL DEFAULT '[]'`,
+    },
+    {
+      name: 'number_pattern',
+      sql: `ALTER TABLE document_templates ADD COLUMN number_pattern TEXT NOT NULL DEFAULT '{SCHOOL_CODE}/{TYPE}/{YEAR}/{SEQUENCE}'`,
+    },
+    {
+      name: 'signatory_role',
+      sql: `ALTER TABLE document_templates ADD COLUMN signatory_role TEXT NOT NULL DEFAULT 'principal'`,
+    },
+    { name: 'is_default', sql: `ALTER TABLE document_templates ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0` },
+    {
+      name: 'requires_approval',
+      sql: `ALTER TABLE document_templates ADD COLUMN requires_approval INTEGER NOT NULL DEFAULT 0`,
+    },
+    { name: 'created_by', sql: `ALTER TABLE document_templates ADD COLUMN created_by TEXT` },
+  ]
+  for (const col of additions) {
+    if (!tplCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS document_number_sequences (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      type_code TEXT NOT NULL,
+      year_key TEXT NOT NULL,
+      next_number INTEGER NOT NULL DEFAULT 1,
+      ${SYNC_TAIL},
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_sequences_scope
+      ON document_number_sequences(school_id, type_code, year_key)
+      WHERE deleted_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS document_signatories (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      role_key TEXT NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      signature_path TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      ${SYNC_TAIL},
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_signatories_role
+      ON document_signatories(school_id, role_key)
+      WHERE deleted_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS issued_documents (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      document_family TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      template_key TEXT NOT NULL DEFAULT '',
+      document_number TEXT NOT NULL,
+      verification_code TEXT NOT NULL,
+      student_id TEXT,
+      academic_year_id TEXT,
+      term_id TEXT,
+      status TEXT NOT NULL DEFAULT 'generated',
+      version_number INTEGER NOT NULL DEFAULT 1,
+      supersedes_id TEXT,
+      generated_by TEXT,
+      issued_at TEXT,
+      issued_by TEXT,
+      voided_at TEXT,
+      rendered_html TEXT NOT NULL DEFAULT '',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      ${SYNC_TAIL},
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_issued_docs_school_family
+      ON issued_documents(school_id, document_family, created_at);
+    CREATE INDEX IF NOT EXISTS idx_issued_docs_student
+      ON issued_documents(school_id, student_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_issued_docs_number
+      ON issued_documents(school_id, document_number)
+      WHERE deleted_at IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_issued_docs_verify
+      ON issued_documents(school_id, verification_code)
+      WHERE deleted_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS issued_document_versions (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      issued_document_id TEXT NOT NULL,
+      version_number INTEGER NOT NULL,
+      rendered_html TEXT NOT NULL DEFAULT '',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_by TEXT,
+      ${SYNC_TAIL},
+      FOREIGN KEY (issued_document_id) REFERENCES issued_documents(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_issued_doc_versions
+      ON issued_document_versions(issued_document_id, version_number);
+
+    CREATE TABLE IF NOT EXISTS document_audit_log (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      user_id TEXT,
+      payload_json TEXT,
+      ${SYNC_TAIL},
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_doc_audit_school
+      ON document_audit_log(school_id, created_at);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_document_templates_default
+      ON document_templates(school_id, document_family)
+      WHERE is_default = 1 AND deleted_at IS NULL;
+  `)
+}
+
+/** Users extras, central audit, backup history, sync runs/conflicts, system settings. */
+function migrateSystemAdministrationTables(db: Database.Database): void {
+  const userCols = (
+    db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  const userAdds: Array<{ name: string; sql: string }> = [
+    { name: 'first_name', sql: `ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''` },
+    { name: 'last_name', sql: `ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''` },
+    { name: 'phone', sql: `ALTER TABLE users ADD COLUMN phone TEXT` },
+    { name: 'status', sql: `ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'` },
+    { name: 'last_login_at', sql: `ALTER TABLE users ADD COLUMN last_login_at TEXT` },
+    { name: 'staff_id', sql: `ALTER TABLE users ADD COLUMN staff_id TEXT` },
+    { name: 'failed_login_count', sql: `ALTER TABLE users ADD COLUMN failed_login_count INTEGER NOT NULL DEFAULT 0` },
+    { name: 'locked_until', sql: `ALTER TABLE users ADD COLUMN locked_until TEXT` },
+    { name: 'must_change_password', sql: `ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0` },
+  ]
+  for (const col of userAdds) {
+    if (!userCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  const roleCols = (
+    db.prepare(`PRAGMA table_info(roles)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (!roleCols.includes('is_enabled')) {
+    db.exec(`ALTER TABLE roles ADD COLUMN is_enabled INTEGER NOT NULL DEFAULT 1`)
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      revoked_at TEXT,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(school_id, user_id);
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      actor_user_id TEXT,
+      action TEXT NOT NULL,
+      module_key TEXT NOT NULL DEFAULT 'system',
+      entity_type TEXT NOT NULL DEFAULT '',
+      entity_id TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      result TEXT NOT NULL DEFAULT 'success',
+      before_json TEXT,
+      after_json TEXT,
+      payload_json TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_events_school_created
+      ON audit_events(school_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_action
+      ON audit_events(school_id, action);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_actor
+      ON audit_events(school_id, actor_user_id);
+
+    CREATE TABLE IF NOT EXISTS backup_records (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_size INTEGER NOT NULL DEFAULT 0,
+      backup_type TEXT NOT NULL DEFAULT 'manual',
+      status TEXT NOT NULL DEFAULT 'successful',
+      verification_status TEXT NOT NULL DEFAULT 'unverified',
+      created_by TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_backup_records_school
+      ON backup_records(school_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS sync_runs (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'upload',
+      processed INTEGER NOT NULL DEFAULT 0,
+      successful INTEGER NOT NULL DEFAULT 0,
+      failed INTEGER NOT NULL DEFAULT 0,
+      conflicts INTEGER NOT NULL DEFAULT 0,
+      duration_ms INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'successful',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_runs_school ON sync_runs(school_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS sync_conflicts (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      table_name TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      local_json TEXT,
+      remote_json TEXT,
+      local_updated_at TEXT,
+      remote_updated_at TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      resolution TEXT,
+      resolved_by TEXT,
+      resolved_at TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_conflicts_school
+      ON sync_conflicts(school_id, status);
+
+    CREATE TABLE IF NOT EXISTS system_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      timezone TEXT NOT NULL DEFAULT 'Africa/Douala',
+      session_timeout_minutes INTEGER NOT NULL DEFAULT 480,
+      password_min_length INTEGER NOT NULL DEFAULT 8,
+      password_require_upper INTEGER NOT NULL DEFAULT 1,
+      password_require_digit INTEGER NOT NULL DEFAULT 1,
+      lockout_attempts INTEGER NOT NULL DEFAULT 5,
+      lockout_minutes INTEGER NOT NULL DEFAULT 15,
+      auto_sync INTEGER NOT NULL DEFAULT 0,
+      sync_interval_minutes INTEGER NOT NULL DEFAULT 30,
+      backup_retention_days INTEGER NOT NULL DEFAULT 30,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+  `)
+}
+
+function migrateResultsCalculationTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS result_calculation_profiles (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      academic_year_id TEXT,
+      period_mode TEXT NOT NULL DEFAULT 'term',
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS result_calculation_profile_versions (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      version_number INTEGER NOT NULL,
+      config_json TEXT NOT NULL,
+      config_hash TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (profile_id) REFERENCES result_calculation_profiles(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS result_calculation_class_assignments (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      profile_id TEXT NOT NULL,
+      class_id TEXT,
+      academic_level_id TEXT,
+      department_id TEXT,
+      allow_overlap INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (profile_id) REFERENCES result_calculation_profiles(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_rcp_school
+      ON result_calculation_profiles(school_id, status);
+    CREATE INDEX IF NOT EXISTS idx_rcp_versions_profile
+      ON result_calculation_profile_versions(profile_id, version_number);
+    CREATE INDEX IF NOT EXISTS idx_rcp_assign_school
+      ON result_calculation_class_assignments(school_id, profile_id);
+  `)
+
+  const runCols = (
+    db.prepare(`PRAGMA table_info(result_runs)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  const runAdds: Array<{ name: string; sql: string }> = [
+    {
+      name: 'calculation_profile_id',
+      sql: `ALTER TABLE result_runs ADD COLUMN calculation_profile_id TEXT`,
+    },
+    {
+      name: 'calculation_version',
+      sql: `ALTER TABLE result_runs ADD COLUMN calculation_version INTEGER`,
+    },
+    {
+      name: 'calculation_hash',
+      sql: `ALTER TABLE result_runs ADD COLUMN calculation_hash TEXT`,
+    },
+    {
+      name: 'snapshot_json',
+      sql: `ALTER TABLE result_runs ADD COLUMN snapshot_json TEXT`,
+    },
+    {
+      name: 'calculated_by',
+      sql: `ALTER TABLE result_runs ADD COLUMN calculated_by TEXT`,
+    },
+    {
+      name: 'approved_at',
+      sql: `ALTER TABLE result_runs ADD COLUMN approved_at TEXT`,
+    },
+    {
+      name: 'approved_by',
+      sql: `ALTER TABLE result_runs ADD COLUMN approved_by TEXT`,
+    },
+  ]
+  for (const col of runAdds) {
+    if (!runCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  const sumCols = (
+    db.prepare(`PRAGMA table_info(result_student_summaries)`).all() as Array<{
+      name: string
+    }>
+  ).map((c) => c.name)
+  const sumAdds: Array<{ name: string; sql: string }> = [
+    {
+      name: 'promotion_outcome',
+      sql: `ALTER TABLE result_student_summaries ADD COLUMN promotion_outcome TEXT`,
+    },
+    {
+      name: 'gpa',
+      sql: `ALTER TABLE result_student_summaries ADD COLUMN gpa REAL`,
+    },
+    {
+      name: 'failed_subjects',
+      sql: `ALTER TABLE result_student_summaries ADD COLUMN failed_subjects INTEGER NOT NULL DEFAULT 0`,
+    },
+  ]
+  for (const col of sumAdds) {
+    if (!sumCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  const caCols = (
+    db.prepare(`PRAGMA table_info(ca_scores)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (!caCols.includes('score_status')) {
+    db.exec(
+      `ALTER TABLE ca_scores ADD COLUMN score_status TEXT NOT NULL DEFAULT 'recorded'`
+    )
+  }
+  const examCols = (
+    db.prepare(`PRAGMA table_info(exam_scores)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (!examCols.includes('score_status')) {
+    db.exec(
+      `ALTER TABLE exam_scores ADD COLUMN score_status TEXT NOT NULL DEFAULT 'recorded'`
+    )
+  }
+}
+
+function migrateIdCardDesignerTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS id_card_template_versions (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      version_number INTEGER NOT NULL,
+      design_json TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (template_id) REFERENCES student_id_card_templates(id)
+    );
+    CREATE TABLE IF NOT EXISTS id_card_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      settings_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE TABLE IF NOT EXISTS id_card_sequences (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      scope_key TEXT NOT NULL,
+      next_number INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE TABLE IF NOT EXISTS id_card_generation_jobs (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      job_number TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      template_version_id TEXT NOT NULL,
+      academic_year_id TEXT,
+      card_kind TEXT NOT NULL DEFAULT 'new',
+      status TEXT NOT NULL DEFAULT 'queued',
+      total INTEGER NOT NULL DEFAULT 0,
+      processed INTEGER NOT NULL DEFAULT 0,
+      successful INTEGER NOT NULL DEFAULT 0,
+      failed INTEGER NOT NULL DEFAULT 0,
+      skipped INTEGER NOT NULL DEFAULT 0,
+      paper_size TEXT NOT NULL DEFAULT 'A4',
+      cards_per_row INTEGER NOT NULL DEFAULT 2,
+      margin_mm REAL NOT NULL DEFAULT 10,
+      gap_x_mm REAL NOT NULL DEFAULT 4,
+      gap_y_mm REAL NOT NULL DEFAULT 4,
+      crop_marks INTEGER NOT NULL DEFAULT 0,
+      missing_photo_policy TEXT NOT NULL DEFAULT 'generate_without',
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE TABLE IF NOT EXISTS id_card_generation_items (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      job_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      card_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error TEXT,
+      warning TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (job_id) REFERENCES id_card_generation_jobs(id)
+    );
+    CREATE TABLE IF NOT EXISTS id_card_print_history (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      job_id TEXT,
+      card_ids_json TEXT NOT NULL DEFAULT '[]',
+      paper_size TEXT NOT NULL DEFAULT 'A4',
+      cards_per_row INTEGER NOT NULL DEFAULT 2,
+      card_count INTEGER NOT NULL DEFAULT 0,
+      printed_at TEXT NOT NULL,
+      printed_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_id_card_versions_tpl
+      ON id_card_template_versions(template_id, version_number);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_id_card_sequences_scope
+      ON id_card_sequences(school_id, scope_key) WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_id_card_jobs_school
+      ON id_card_generation_jobs(school_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_id_card_items_job
+      ON id_card_generation_items(job_id, status);
+    CREATE INDEX IF NOT EXISTS idx_id_card_print_school
+      ON id_card_print_history(school_id, printed_at);
+  `)
+
+  const tplCols = (
+    db.prepare(`PRAGMA table_info(student_id_card_templates)`).all() as Array<{
+      name: string
+    }>
+  ).map((c) => c.name)
+  const tplAdds: Array<{ name: string; sql: string }> = [
+    { name: 'description', sql: `ALTER TABLE student_id_card_templates ADD COLUMN description TEXT NOT NULL DEFAULT ''` },
+    { name: 'card_type', sql: `ALTER TABLE student_id_card_templates ADD COLUMN card_type TEXT NOT NULL DEFAULT 'student'` },
+    { name: 'status', sql: `ALTER TABLE student_id_card_templates ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'` },
+    { name: 'orientation', sql: `ALTER TABLE student_id_card_templates ADD COLUMN orientation TEXT NOT NULL DEFAULT 'landscape'` },
+    { name: 'width_mm', sql: `ALTER TABLE student_id_card_templates ADD COLUMN width_mm REAL NOT NULL DEFAULT 85.6` },
+    { name: 'height_mm', sql: `ALTER TABLE student_id_card_templates ADD COLUMN height_mm REAL NOT NULL DEFAULT 53.98` },
+    { name: 'unit', sql: `ALTER TABLE student_id_card_templates ADD COLUMN unit TEXT NOT NULL DEFAULT 'mm'` },
+    { name: 'sample_key', sql: `ALTER TABLE student_id_card_templates ADD COLUMN sample_key TEXT` },
+    { name: 'current_version_id', sql: `ALTER TABLE student_id_card_templates ADD COLUMN current_version_id TEXT` },
+    { name: 'current_version_number', sql: `ALTER TABLE student_id_card_templates ADD COLUMN current_version_number INTEGER NOT NULL DEFAULT 1` },
+    { name: 'updated_by', sql: `ALTER TABLE student_id_card_templates ADD COLUMN updated_by TEXT` },
+  ]
+  for (const col of tplAdds) {
+    if (!tplCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  const cardCols = (
+    db.prepare(`PRAGMA table_info(student_id_cards)`).all() as Array<{
+      name: string
+    }>
+  ).map((c) => c.name)
+  const cardAdds: Array<{ name: string; sql: string }> = [
+    { name: 'template_version_id', sql: `ALTER TABLE student_id_cards ADD COLUMN template_version_id TEXT` },
+    { name: 'card_number', sql: `ALTER TABLE student_id_cards ADD COLUMN card_number TEXT` },
+    { name: 'verification_code', sql: `ALTER TABLE student_id_cards ADD COLUMN verification_code TEXT` },
+    { name: 'issue_date', sql: `ALTER TABLE student_id_cards ADD COLUMN issue_date TEXT` },
+    { name: 'expiry_date', sql: `ALTER TABLE student_id_cards ADD COLUMN expiry_date TEXT` },
+    { name: 'status', sql: `ALTER TABLE student_id_cards ADD COLUMN status TEXT NOT NULL DEFAULT 'generated'` },
+    { name: 'card_kind', sql: `ALTER TABLE student_id_cards ADD COLUMN card_kind TEXT NOT NULL DEFAULT 'new'` },
+    { name: 'replaced_card_id', sql: `ALTER TABLE student_id_cards ADD COLUMN replaced_card_id TEXT` },
+    { name: 'replacement_reason', sql: `ALTER TABLE student_id_cards ADD COLUMN replacement_reason TEXT` },
+    { name: 'printed_at', sql: `ALTER TABLE student_id_cards ADD COLUMN printed_at TEXT` },
+    { name: 'issued_at', sql: `ALTER TABLE student_id_cards ADD COLUMN issued_at TEXT` },
+    { name: 'issued_by', sql: `ALTER TABLE student_id_cards ADD COLUMN issued_by TEXT` },
+    { name: 'job_id', sql: `ALTER TABLE student_id_cards ADD COLUMN job_id TEXT` },
+    { name: 'snapshot_json', sql: `ALTER TABLE student_id_cards ADD COLUMN snapshot_json TEXT` },
+    { name: 'revoked_at', sql: `ALTER TABLE student_id_cards ADD COLUMN revoked_at TEXT` },
+    { name: 'revoked_by', sql: `ALTER TABLE student_id_cards ADD COLUMN revoked_by TEXT` },
+  ]
+  for (const col of cardAdds) {
+    if (!cardCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  db.exec(`DROP INDEX IF EXISTS idx_student_id_cards_year`)
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_id_cards_number
+      ON student_id_cards(school_id, card_number)
+      WHERE deleted_at IS NULL AND card_number IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_id_cards_verify
+      ON student_id_cards(school_id, verification_code)
+      WHERE deleted_at IS NULL AND verification_code IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_id_cards_student
+      ON student_id_cards(school_id, student_id, status);
+  `)
+}
+
 

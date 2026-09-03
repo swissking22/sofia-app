@@ -41,7 +41,7 @@ export class StudentRepository extends BaseRepository<Student> {
         .prepare(
           `SELECT * FROM students
            WHERE school_id = ? AND deleted_at IS NULL
-           ORDER BY name ASC`
+           ORDER BY name COLLATE NOCASE ASC`
         )
         .all(schoolId) as Student[]
     }
@@ -49,7 +49,7 @@ export class StudentRepository extends BaseRepository<Student> {
       .prepare(
         `SELECT * FROM students
          WHERE school_id = ? AND status = ? AND deleted_at IS NULL
-         ORDER BY name ASC`
+         ORDER BY name COLLATE NOCASE ASC`
       )
       .all(schoolId, status) as Student[]
   }
@@ -86,7 +86,7 @@ export class StudentRepository extends BaseRepository<Student> {
         `SELECT s.* FROM students s
          LEFT JOIN classes c ON c.id = s.class_id
          WHERE ${clauses.join(' AND ')}
-         ORDER BY s.name ASC`
+         ORDER BY s.name COLLATE NOCASE ASC, IFNULL(s.student_code, '') COLLATE NOCASE ASC`
       )
       .all(params) as Student[]
   }
@@ -118,6 +118,7 @@ export class StudentRepository extends BaseRepository<Student> {
       guardian_relationship?: string | null
       status?: string
       photo_path?: string | null
+      residence_type?: 'day' | 'boarding' | null
     }
   ): Student {
     const record: Student = {
@@ -141,6 +142,7 @@ export class StudentRepository extends BaseRepository<Student> {
       guardian_relationship: input.guardian_relationship ?? null,
       status: input.status ?? 'active',
       photo_path: input.photo_path ?? null,
+      residence_type: input.residence_type === 'boarding' ? 'boarding' : 'day',
     }
 
     const tx = this.db.transaction(() => {
@@ -151,14 +153,14 @@ export class StudentRepository extends BaseRepository<Student> {
              admission_year, academic_level_id, sequence_number,
              gender, date_of_birth, phone, email, address, admission_type,
              guardian_name, guardian_phone, guardian_email, guardian_relationship,
-             status, photo_path,
+             status, photo_path, residence_type,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @name, @class_id, @school_id, @student_code,
              @admission_year, @academic_level_id, @sequence_number,
              @gender, @date_of_birth, @phone, @email, @address, @admission_type,
              @guardian_name, @guardian_phone, @guardian_email, @guardian_relationship,
-             @status, @photo_path,
+             @status, @photo_path, @residence_type,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
         )
@@ -214,6 +216,7 @@ export class StudentRepository extends BaseRepository<Student> {
                guardian_relationship = @guardian_relationship,
                status = @status,
                photo_path = @photo_path,
+               residence_type = @residence_type,
                updated_at = @updated_at,
                version = @version,
                sync_status = @sync_status
@@ -237,7 +240,7 @@ export class StudentRepository extends BaseRepository<Student> {
   findByClassId(classId: string): Student[] {
     return this.db
       .prepare(
-        `SELECT * FROM students WHERE class_id = ? AND deleted_at IS NULL ORDER BY name ASC`
+        `SELECT * FROM students WHERE class_id = ? AND deleted_at IS NULL ORDER BY name COLLATE NOCASE ASC`
       )
       .all(classId) as Student[]
   }

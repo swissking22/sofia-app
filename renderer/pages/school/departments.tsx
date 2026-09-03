@@ -7,6 +7,7 @@ import {
 import { AppShell } from "../../components/layout/AppShell";
 import { FormField, FormSection } from "../../components/setup";
 import { Icon } from "../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../components/ui/TableActions";
 import {
   createDepartment,
   deleteDepartment,
@@ -172,24 +173,19 @@ export default function SchoolDepartmentsPage() {
                           {d.subject_count}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
+                          <TableActionGroup>
+                            <TableIconButton
+                              icon={PencilEdit01Icon}
+                              label={`Edit ${d.name}`}
                               onClick={() => startEdit(d)}
-                              className="cursor-pointer rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:border-(--sofia-primary) hover:text-(--sofia-primary)"
-                              aria-label={`Edit ${d.name}`}
-                            >
-                              <Icon icon={PencilEdit01Icon} size={16} />
-                            </button>
-                            <button
-                              type="button"
+                            />
+                            <TableIconButton
+                              icon={Delete02Icon}
+                              label={`Delete ${d.name}`}
+                              tone="danger"
                               onClick={() => void handleDelete(d.id)}
-                              className="cursor-pointer rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:border-red-300 hover:text-red-600"
-                              aria-label={`Delete ${d.name}`}
-                            >
-                              <Icon icon={Delete02Icon} size={16} />
-                            </button>
-                          </div>
+                            />
+                          </TableActionGroup>
                         </td>
                       </tr>
                     ))}

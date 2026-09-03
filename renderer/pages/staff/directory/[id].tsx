@@ -137,19 +137,19 @@ export default function StaffDirectoryDetailPage() {
             </h2>
             <dl>
               <InfoRow
-                label="Subjects"
+                label="Teaches"
                 value={
-                  staff.subject_names.length
-                    ? staff.subject_names.join(", ")
-                    : null
-                }
-              />
-              <InfoRow
-                label="Classes"
-                value={
-                  staff.class_names.length
-                    ? staff.class_names.join(", ")
-                    : null
+                  staff.teaching_assignments?.length
+                    ? staff.teaching_assignments
+                        .map((a) =>
+                          [a.subject_name, a.class_name]
+                            .filter(Boolean)
+                            .join(" · "),
+                        )
+                        .join("; ")
+                    : staff.subject_names.length
+                      ? staff.subject_names.join(", ")
+                      : null
                 }
               />
               <InfoRow

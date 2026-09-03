@@ -1,9 +1,9 @@
 import React from "react";
-import Link from "next/link";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField } from "../../../components/setup";
 import { Icon } from "../../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   createCaAssessment,
   fetchAcademicMeta,
@@ -259,12 +259,14 @@ export default function CaIndexPage() {
                       {formatDate(a.assessment_date)}
                     </td>
                     <td className="px-4 py-3">
-                      <Link
-                        href={`/academic/ca/entry?assessment_id=${a.id}`}
-                        className="font-semibold text-(--sofia-primary) hover:underline"
-                      >
-                        Enter scores
-                      </Link>
+                      <TableActionGroup>
+                        <TableIconButton
+                          icon={PencilEdit01Icon}
+                          label="Enter scores"
+                          tone="primary"
+                          href={`/academic/ca/entry?assessment_id=${a.id}`}
+                        />
+                      </TableActionGroup>
                     </td>
                   </tr>
                 ))

@@ -1,6 +1,12 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import {
+  Copy01Icon,
+  Delete02Icon,
+  PencilEdit01Icon,
+  ViewIcon,
+} from "@hugeicons/core-free-icons";
 import { FormSection, SetupFooter } from "../../../components/setup";
 import {
   SetupShell,
@@ -17,6 +23,7 @@ import {
   getNextSetupHref,
   saveSetupDraft,
 } from "../../../lib/setup";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 
 export default function RolesSetupPage() {
   return (
@@ -203,34 +210,32 @@ function RolesList() {
                 {role.permission_count} permission
                 {role.permission_count === 1 ? "" : "s"}
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Link
-                  href={`/setup/roles/${role.id}/edit`}
-                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-(--sofia-primary) hover:text-(--sofia-primary)"
-                >
-                  {role.is_system ? "View" : "Edit"}
-                </Link>
-                <button
-                  type="button"
-                  disabled={busyId === role.id}
-                  onClick={() => void handleDuplicate(role)}
-                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:border-(--sofia-primary) hover:text-(--sofia-primary) disabled:opacity-50"
-                >
-                  Duplicate
-                </button>
-                <button
-                  type="button"
-                  disabled={role.is_system || busyId === role.id}
-                  onClick={() => void handleDelete(role)}
-                  title={
-                    role.is_system
-                      ? "System roles cannot be deleted"
-                      : "Delete role"
-                  }
-                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:border-red-300 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Delete
-                </button>
+              <div className="mt-3">
+                <TableActionGroup align="start">
+                  <TableIconButton
+                    icon={role.is_system ? ViewIcon : PencilEdit01Icon}
+                    label={role.is_system ? "View" : "Edit"}
+                    tone="primary"
+                    href={`/setup/roles/${role.id}/edit`}
+                  />
+                  <TableIconButton
+                    icon={Copy01Icon}
+                    label="Duplicate"
+                    disabled={busyId === role.id}
+                    onClick={() => void handleDuplicate(role)}
+                  />
+                  <TableIconButton
+                    icon={Delete02Icon}
+                    label={
+                      role.is_system
+                        ? "System roles cannot be deleted"
+                        : "Delete role"
+                    }
+                    tone="danger"
+                    disabled={role.is_system || busyId === role.id}
+                    onClick={() => void handleDelete(role)}
+                  />
+                </TableActionGroup>
               </div>
             </article>
           ))}

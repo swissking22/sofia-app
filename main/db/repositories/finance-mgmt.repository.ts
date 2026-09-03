@@ -17,6 +17,7 @@ import type {
   Payment,
   PaymentMethod,
   Receipt,
+  ResidenceApplies,
   StudentCredit,
 } from '../types'
 import {
@@ -25,6 +26,7 @@ import {
   round2,
   todayIso,
 } from '../../domain/finance'
+import { structureAppliesToStudent } from '../../domain/boarding'
 import { BaseRepository } from './base'
 
 export { round2 }
@@ -234,6 +236,7 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
     academic_level_id?: string | null
     class_id?: string | null
     notes?: string | null
+    applies_to_residence?: ResidenceApplies
     lines: Array<{
       fee_category_id?: string | null
       name: string
@@ -261,6 +264,7 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
       class_id: input.class_id ?? null,
       is_active: 1,
       notes: input.notes?.trim() || null,
+      applies_to_residence: input.applies_to_residence ?? 'all',
     }
 
     const tx = this.db.transaction(() => {
@@ -268,11 +272,11 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
         .prepare(
           `INSERT INTO fee_structures (
              id, school_id, name, academic_year_id, academic_term_id,
-             academic_level_id, class_id, is_active, notes,
+             academic_level_id, class_id, is_active, notes, applies_to_residence,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @school_id, @name, @academic_year_id, @academic_term_id,
-             @academic_level_id, @class_id, @is_active, @notes,
+             @academic_level_id, @class_id, @is_active, @notes, @applies_to_residence,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
         )
@@ -601,6 +605,22 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
       throw new Error('Fee structure not found.')
     }
     if (!structure.is_active) throw new Error('Fee structure is inactive.')
+
+    const student = this.db
+      .prepare(
+        `SELECT residence_type FROM students WHERE id = ? AND deleted_at IS NULL`
+      )
+      .get(input.student_id) as { residence_type?: string } | undefined
+    if (
+      !structureAppliesToStudent(
+        structure.applies_to_residence,
+        student?.residence_type
+      )
+    ) {
+      throw new Error(
+        'This fee structure does not apply to the student residence type (day / boarding).'
+      )
+    }
 
     const lines = this.getStructureLines(structure.id).filter(
       (l) => l.is_mandatory === 1 || true

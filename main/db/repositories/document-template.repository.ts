@@ -103,6 +103,31 @@ export class DocumentTemplateRepository extends BaseRepository<DocumentTemplate>
           show_signature: 1,
           signature_label: def.signatureLabel,
           is_enabled: 1,
+          body_text: '',
+          document_family:
+            def.key === 'report_card'
+              ? 'report_card'
+              : def.key === 'admission_letter'
+                ? 'admission_letter'
+                : def.key === 'receipt'
+                  ? 'receipt'
+                  : 'certificate',
+          type_code:
+            def.key === 'admission_letter'
+              ? 'ADM'
+              : def.key === 'receipt'
+                ? 'RCP'
+                : def.key === 'report_card'
+                  ? 'RC'
+                  : 'CERT',
+          category: def.key === 'receipt' ? 'finance' : 'academic',
+          description: '',
+          required_fields: '[]',
+          number_pattern: '{SCHOOL_CODE}/{TYPE}/{YEAR}/{SEQUENCE}',
+          signatory_role: def.signatureLabel === 'Bursar' ? 'bursar' : 'principal',
+          is_default: 1,
+          requires_approval: def.key === 'certificate' ? 1 : 0,
+          created_by: null,
         }
         this.db
           .prepare(

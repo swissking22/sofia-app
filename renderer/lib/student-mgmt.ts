@@ -21,6 +21,7 @@ export interface StudentDto {
   email: string | null
   address: string | null
   admission_type: string | null
+  residence_type?: string | null
   guardian_name: string | null
   guardian_phone: string | null
   guardian_email: string | null
@@ -54,6 +55,7 @@ export interface StudentCreateInput {
   guardian_phone?: string | null
   guardian_email?: string | null
   guardian_relationship?: string | null
+  residence_type?: 'day' | 'boarding' | null
 }
 
 export interface TransferDto {
@@ -112,6 +114,11 @@ export const ADMISSION_TYPE_OPTIONS = [
   { key: 'new', label: 'New admission' },
   { key: 'returning', label: 'Returning' },
   { key: 'transfer', label: 'Transfer in' },
+] as const
+
+export const RESIDENCE_TYPE_OPTIONS = [
+  { key: 'day', label: 'Day student' },
+  { key: 'boarding', label: 'Boarding student' },
 ] as const
 
 export const DOCUMENT_TYPE_OPTIONS = [

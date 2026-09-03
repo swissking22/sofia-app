@@ -1,8 +1,9 @@
 import React from "react";
 import Link from "next/link";
-import { Add01Icon } from "@hugeicons/core-free-icons";
+import { Add01Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Icon } from "../../../components/ui/Icon";
+import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   fetchExamSessions,
   type ExamSessionDto,
@@ -129,12 +130,14 @@ export default function ExamsIndexPage() {
                       {s.paper_count}
                     </td>
                     <td className="px-4 py-3">
-                      <Link
-                        href={`/academic/exams/scores?session_id=${s.id}`}
-                        className="font-semibold text-(--sofia-primary) hover:underline"
-                      >
-                        Enter scores
-                      </Link>
+                      <TableActionGroup>
+                        <TableIconButton
+                          icon={PencilEdit01Icon}
+                          label="Enter scores"
+                          tone="primary"
+                          href={`/academic/exams/scores?session_id=${s.id}`}
+                        />
+                      </TableActionGroup>
                     </td>
                   </tr>
                 ))

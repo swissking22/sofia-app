@@ -999,17 +999,25 @@ export class ResultsRepository extends BaseRepository<ResultRun> {
     grade: string | null
     position: number | null
     remark: string | null
+    promotion_outcome?: string | null
+    gpa?: number | null
+    failed_subjects?: number
   }): ResultStudentSummary {
     const record: ResultStudentSummary = {
       ...this.buildBaseFields(),
+      promotion_outcome: input.promotion_outcome ?? null,
+      gpa: input.gpa ?? null,
+      failed_subjects: input.failed_subjects ?? 0,
       ...input,
     }
     this.db
       .prepare(
         `INSERT INTO result_student_summaries (
-          id, result_run_id, student_id, average, total, grade, position, remark, ${SYNC_COLS}
+          id, result_run_id, student_id, average, total, grade, position, remark,
+          promotion_outcome, gpa, failed_subjects, ${SYNC_COLS}
         ) VALUES (
           @id, @result_run_id, @student_id, @average, @total, @grade, @position, @remark,
+          @promotion_outcome, @gpa, @failed_subjects,
           @created_at, @updated_at, @deleted_at, @sync_status, @version
         )`
       )
@@ -1022,6 +1030,33 @@ export class ResultsRepository extends BaseRepository<ResultRun> {
       record as unknown as Record<string, unknown>
     )
     return record
+  }
+
+  attachCalculationSnapshot(
+    id: string,
+    input: {
+      calculation_profile_id: string | null
+      calculation_version: number | null
+      calculation_hash: string | null
+      snapshot_json: string | null
+      calculated_by: string | null
+    }
+  ): void {
+    const now = new Date().toISOString()
+    this.db
+      .prepare(
+        `UPDATE result_runs
+         SET calculation_profile_id = @calculation_profile_id,
+             calculation_version = @calculation_version,
+             calculation_hash = @calculation_hash,
+             snapshot_json = @snapshot_json,
+             calculated_by = @calculated_by,
+             updated_at = @now,
+             version = version + 1,
+             sync_status = 'pending'
+         WHERE id = @id`
+      )
+      .run({ ...input, id, now })
   }
 
   findSubjectRows(runId: string): ResultSubjectRow[] {

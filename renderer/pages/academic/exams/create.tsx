@@ -5,6 +5,7 @@ import { Add01Icon, Delete02Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
 import { Icon } from "../../../components/ui/Icon";
+import { TableIconButton } from "../../../components/ui/TableActions";
 import {
   createExamSession,
   fetchAcademicMeta,
@@ -220,14 +221,12 @@ export default function CreateExamSessionPage() {
                       Paper {index + 1}
                     </p>
                     {papers.length > 1 ? (
-                      <button
-                        type="button"
+                      <TableIconButton
+                        icon={Delete02Icon}
+                        label="Remove paper"
+                        tone="danger"
                         onClick={() => removePaper(paper.key)}
-                        className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-red-600 hover:underline"
-                      >
-                        <Icon icon={Delete02Icon} size={14} />
-                        Remove
-                      </button>
+                      />
                     ) : null}
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

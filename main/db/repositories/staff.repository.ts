@@ -12,6 +12,11 @@ import type {
   UserRole,
 } from '../types'
 import { BaseRepository, type CreateInput, type UpdateInput } from './base'
+import {
+  expandLegacyTeachingAssignments,
+  normalizeTeachingAssignments,
+  type TeachingAssignment,
+} from '../../domain/staff'
 
 /** Temporary password for prepared staff accounts (shown in setup UI). */
 export const STAFF_TEMP_PASSWORD = 'Sofia@Staff1'
@@ -56,6 +61,12 @@ export interface StaffDto {
   subject_names: string[]
   class_ids: string[]
   class_names: string[]
+  teaching_assignments: Array<{
+    class_id: string
+    subject_id: string
+    class_name: string | null
+    subject_name: string | null
+  }>
   homeroom_class_ids: string[]
   homeroom_class_names: string[]
 }
@@ -65,7 +76,7 @@ export interface StaffSetupData {
   adminStaff: StaffDto[]
   teachers: StaffDto[]
   departments: Array<{ id: string; name: string }>
-  subjects: Array<{ id: string; name: string }>
+  subjects: Array<{ id: string; name: string; class_ids: string[] }>
   classes: Array<{ id: string; name: string }>
   tempPassword: string
 }
@@ -87,6 +98,7 @@ export interface UpsertTeacherInput {
   department_id?: string | null
   subject_ids?: string[]
   class_ids?: string[]
+  teaching_assignments?: TeachingAssignment[]
   status?: StaffStatus
 }
 
@@ -125,7 +137,7 @@ export class StaffRepository extends BaseRepository<Staff> {
     schoolId: string,
     lookups: {
       departments: Array<{ id: string; name: string }>
-      subjects: Array<{ id: string; name: string }>
+      subjects: Array<{ id: string; name: string; class_ids?: string[] }>
       classes: Array<{ id: string; name: string }>
     }
   ): StaffSetupData {
@@ -137,7 +149,11 @@ export class StaffRepository extends BaseRepository<Staff> {
       adminStaff: all.filter((s) => s.staff_type === 'administrative'),
       teachers: all.filter((s) => s.staff_type === 'teaching'),
       departments: lookups.departments,
-      subjects: lookups.subjects,
+      subjects: lookups.subjects.map((s) => ({
+        id: s.id,
+        name: s.name,
+        class_ids: s.class_ids ?? [],
+      })),
       classes: lookups.classes,
       tempPassword: STAFF_TEMP_PASSWORD,
     }
@@ -147,12 +163,13 @@ export class StaffRepository extends BaseRepository<Staff> {
     row: Staff,
     lookups: {
       departments: Array<{ id: string; name: string }>
-      subjects: Array<{ id: string; name: string }>
+      subjects: Array<{ id: string; name: string; class_ids?: string[] }>
       classes: Array<{ id: string; name: string }>
     }
   ): StaffDto {
-    const subject_ids = this.findSubjectIds(row.id)
-    const class_ids = this.findClassIds(row.id)
+    const assignments = this.findAssignments(row.id)
+    const subject_ids = [...new Set(assignments.map((a) => a.subject_id))]
+    const class_ids = [...new Set(assignments.map((a) => a.class_id))]
     return {
       id: row.id,
       school_id: row.school_id,
@@ -180,20 +197,57 @@ export class StaffRepository extends BaseRepository<Staff> {
       class_names: class_ids
         .map((id) => lookups.classes.find((c) => c.id === id)?.name)
         .filter((n): n is string => Boolean(n)),
+      teaching_assignments: assignments.map((a) => ({
+        class_id: a.class_id,
+        subject_id: a.subject_id,
+        class_name: lookups.classes.find((c) => c.id === a.class_id)?.name ?? null,
+        subject_name:
+          lookups.subjects.find((s) => s.id === a.subject_id)?.name ?? null,
+      })),
       homeroom_class_ids: [],
       homeroom_class_names: [],
     }
   }
 
-  findSubjectIds(staffId: string): string[] {
+  findAssignments(staffId: string): TeachingAssignment[] {
     return (
       this.db
         .prepare(
-          `SELECT subject_id FROM staff_subjects
-           WHERE staff_id = ? AND deleted_at IS NULL`
+          `SELECT class_id, subject_id FROM staff_subjects
+           WHERE staff_id = ? AND deleted_at IS NULL
+             AND class_id IS NOT NULL AND class_id != ''`
         )
-        .all(staffId) as Array<{ subject_id: string }>
-    ).map((r) => r.subject_id)
+        .all(staffId) as TeachingAssignment[]
+    )
+  }
+
+  findStaffIdForClassSubject(
+    classId: string,
+    subjectId: string
+  ): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT staff_id FROM staff_subjects
+         WHERE class_id = ? AND subject_id = ? AND deleted_at IS NULL
+         LIMIT 1`
+      )
+      .get(classId, subjectId) as { staff_id: string } | undefined
+    return row?.staff_id ?? null
+  }
+
+  findSubjectIds(staffId: string): string[] {
+    return [
+      ...new Set(
+        (
+          this.db
+            .prepare(
+              `SELECT subject_id FROM staff_subjects
+               WHERE staff_id = ? AND deleted_at IS NULL`
+            )
+            .all(staffId) as Array<{ subject_id: string }>
+        ).map((r) => r.subject_id)
+      ),
+    ]
   }
 
   findClassIds(staffId: string): string[] {
@@ -473,8 +527,11 @@ export class StaffRepository extends BaseRepository<Staff> {
       })
     }
 
-    this.replaceSubjects(staff.id, input.subject_ids ?? [])
-    this.replaceClasses(staff.id, input.class_ids ?? [])
+    this.setTeachingAssignments(staff.id, {
+      teaching_assignments: input.teaching_assignments,
+      subject_ids: input.subject_ids,
+      class_ids: input.class_ids,
+    })
 
     await this.ensureUserAccount(
       userHelpers.createUser,
@@ -486,12 +543,38 @@ export class StaffRepository extends BaseRepository<Staff> {
     return this.findById(staff.id)!
   }
 
+  setTeachingAssignments(
+    staffId: string,
+    input: {
+      teaching_assignments?: TeachingAssignment[]
+      subject_ids?: string[]
+      class_ids?: string[]
+    }
+  ): void {
+    const offered = this.offeredBySubject()
+    const pairs =
+      input.teaching_assignments !== undefined
+        ? normalizeTeachingAssignments(input.teaching_assignments, offered)
+        : expandLegacyTeachingAssignments(
+            input.subject_ids ?? [],
+            input.class_ids ?? [],
+            offered
+          )
+    this.replaceAssignments(staffId, pairs)
+  }
+
   setSubjects(staffId: string, subjectIds: string[]): void {
-    this.replaceSubjects(staffId, subjectIds)
+    this.setTeachingAssignments(staffId, {
+      subject_ids: subjectIds,
+      class_ids: this.findClassIds(staffId),
+    })
   }
 
   setClasses(staffId: string, classIds: string[]): void {
-    this.replaceClasses(staffId, classIds)
+    this.setTeachingAssignments(staffId, {
+      subject_ids: this.findSubjectIds(staffId),
+      class_ids: classIds,
+    })
   }
 
   nextEmployeeCode(schoolId: string): string {
@@ -565,7 +648,25 @@ export class StaffRepository extends BaseRepository<Staff> {
     ).map((r) => r.id)
   }
 
-  private replaceSubjects(staffId: string, subjectIds: string[]): void {
+  private offeredBySubject(): Map<string, string[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT subject_id, class_id FROM subject_classes WHERE deleted_at IS NULL`
+      )
+      .all() as Array<{ subject_id: string; class_id: string }>
+    const map = new Map<string, string[]>()
+    for (const row of rows) {
+      const list = map.get(row.subject_id) ?? []
+      list.push(row.class_id)
+      map.set(row.subject_id, list)
+    }
+    return map
+  }
+
+  private replaceAssignments(
+    staffId: string,
+    pairs: TeachingAssignment[]
+  ): void {
     const existing = this.db
       .prepare(
         `SELECT * FROM staff_subjects
@@ -573,28 +674,40 @@ export class StaffRepository extends BaseRepository<Staff> {
       )
       .all(staffId) as StaffSubject[]
 
-    const keep = new Set(subjectIds)
+    const keep = new Set(
+      pairs.map((p) => `${p.class_id}::${p.subject_id}`)
+    )
     for (const row of existing) {
-      if (!keep.has(row.subject_id)) {
+      const key =
+        row.class_id && row.class_id !== ''
+          ? `${row.class_id}::${row.subject_id}`
+          : ''
+      if (!key || !keep.has(key)) {
         this.softDeleteJunction('staff_subjects', row)
       }
     }
 
-    const existingIds = new Set(existing.map((e) => e.subject_id))
-    for (const subject_id of subjectIds) {
-      if (existingIds.has(subject_id)) continue
+    const existingKeys = new Set(
+      existing
+        .filter((e) => e.class_id)
+        .map((e) => `${e.class_id}::${e.subject_id}`)
+    )
+    for (const pair of pairs) {
+      const key = `${pair.class_id}::${pair.subject_id}`
+      if (existingKeys.has(key)) continue
       const record: StaffSubject = {
         ...this.buildBaseFields(),
         staff_id: staffId,
-        subject_id,
+        subject_id: pair.subject_id,
+        class_id: pair.class_id,
       }
       this.db
         .prepare(
           `INSERT INTO staff_subjects (
-             id, staff_id, subject_id,
+             id, staff_id, subject_id, class_id,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
-             @id, @staff_id, @subject_id,
+             @id, @staff_id, @subject_id, @class_id,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
         )
@@ -607,6 +720,11 @@ export class StaffRepository extends BaseRepository<Staff> {
         record as unknown as Record<string, unknown>
       )
     }
+
+    this.replaceClasses(
+      staffId,
+      [...new Set(pairs.map((p) => p.class_id))]
+    )
   }
 
   private replaceClasses(staffId: string, classIds: string[]): void {
