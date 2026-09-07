@@ -1,0 +1,887 @@
+================================================================================
+SOFIA SCHOOL MANAGEMENT SYSTEM
+CURRENT SYNC SCHEMA & STUDENT ID REPORT
+================================================================================
+
+1. COMPLETE CREATE TABLE DEFINITIONS
+--------------------------------------------------------------------------------
+
+TABLE: students
+Source: main/db/schema.ts
+
+CREATE TABLE IF NOT EXISTS students (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  class_id TEXT NOT NULL,
+  school_id TEXT,
+  student_code TEXT,
+  admission_year INTEGER,
+  academic_level_id TEXT,
+  sequence_number INTEGER,
+  gender TEXT,
+  date_of_birth TEXT,
+  phone TEXT,
+  email TEXT,
+  address TEXT,
+  admission_type TEXT,
+  guardian_name TEXT,
+  guardian_phone TEXT,
+  guardian_email TEXT,
+  guardian_relationship TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'pending',
+  version INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY (class_id) REFERENCES classes(id),
+  FOREIGN KEY (school_id) REFERENCES schools(id),
+  FOREIGN KEY (academic_level_id) REFERENCES academic_levels(id)
+);
+
+
+TABLE: student_id_settings
+Source: main/db/schema.ts
+
+CREATE TABLE IF NOT EXISTS student_id_settings (
+  id TEXT PRIMARY KEY NOT NULL,
+  school_id TEXT NOT NULL UNIQUE,
+  pattern TEXT NOT NULL DEFAULT '{SCHOOL}-{SEQ}',
+  sequence_scope TEXT NOT NULL DEFAULT 'school',
+  next_sequence_number INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'pending',
+  version INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY (school_id) REFERENCES schools(id)
+);
+
+
+TABLE: student_settings
+Source: main/db/schema.ts
+
+CREATE TABLE IF NOT EXISTS student_settings (
+  id TEXT PRIMARY KEY NOT NULL,
+  school_id TEXT NOT NULL,
+  student_id_format TEXT NOT NULL DEFAULT 'SOF-{SEQ}',
+  field_full_name INTEGER NOT NULL DEFAULT 1,
+  field_gender INTEGER NOT NULL DEFAULT 1,
+  field_date_of_birth INTEGER NOT NULL DEFAULT 1,
+  field_place_of_birth INTEGER NOT NULL DEFAULT 1,
+  field_parent_information INTEGER NOT NULL DEFAULT 1,
+  field_emergency_contact INTEGER NOT NULL DEFAULT 1,
+  admit_new INTEGER NOT NULL DEFAULT 1,
+  admit_returning INTEGER NOT NULL DEFAULT 1,
+  admit_transfer INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'pending',
+  version INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY (school_id) REFERENCES schools(id)
+);
+
+
+TABLE: sync_queue
+Source: main/db/schema.ts
+
+CREATE TABLE IF NOT EXISTS sync_queue (
+  id TEXT PRIMARY KEY NOT NULL,
+  table_name TEXT NOT NULL,
+  record_id TEXT NOT NULL,
+  operation TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+
+================================================================================
+2. CREATE INDEX STATEMENTS RELATED TO THOSE TABLES
+--------------------------------------------------------------------------------
+
+-- Indexes on students:
+CREATE INDEX IF NOT EXISTS idx_students_class
+  ON students(class_id);
+
+CREATE INDEX IF NOT EXISTS idx_students_school_code
+  ON students(school_id, student_code);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_students_school_code_unique
+  ON students(school_id, student_code)
+  WHERE deleted_at IS NULL AND student_code IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_students_school_status
+  ON students(school_id, status);
+
+-- Indexes on student_id_settings:
+CREATE INDEX IF NOT EXISTS idx_student_id_settings_school
+  ON student_id_settings(school_id);
+
+-- Indexes on student_settings:
+CREATE INDEX IF NOT EXISTS idx_student_settings_school
+  ON student_settings(school_id);
+
+-- Indexes on sync_queue:
+CREATE INDEX IF NOT EXISTS idx_sync_queue_status
+  ON sync_queue(status);
+
+
+================================================================================
+3. ALL FOREIGN KEYS INVOLVING STUDENTS
+--------------------------------------------------------------------------------
+
+A. Foreign keys defined ON table `students`:
+   1. FOREIGN KEY (class_id) REFERENCES classes(id)
+   2. FOREIGN KEY (school_id) REFERENCES schools(id)
+   3. FOREIGN KEY (academic_level_id) REFERENCES academic_levels(id)
+
+B. Foreign keys defined ON OTHER tables referencing `students(id)`:
+   1. scores:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   2. student_transfers:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   3. student_documents:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   4. attendance_records:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   5. ca_scores:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   6. exam_scores:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   7. report_cards:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   8. student_fee_discounts:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   9. invoices:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   10. payments:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   11. receipts:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   12. student_credits:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   13. finance_reminders:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   14. communication_deliveries:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   15. parent_message_threads:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   16. online_payment_transactions:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+   17. student_id_cards:
+      FOREIGN KEY (student_id) REFERENCES students(id)
+
+
+================================================================================
+4. ALL TRIGGERS INVOLVING STUDENTS OR SYNC_QUEUE
+--------------------------------------------------------------------------------
+
+NONE.
+There are no SQLite triggers defined in the database schema for students,
+sync_queue, or any other table. All audit logging, sequence increments, and
+sync_queue operations are executed explicitly and atomically in the repository
+and service application layers.
+
+
+================================================================================
+5. ALL MIGRATIONS MODIFYING STUDENTS, STUDENT_ID_SETTINGS,
+   STUDENT_SETTINGS, OR SYNC_QUEUE
+--------------------------------------------------------------------------------
+
+Source: main/db/schema.ts
+
+--- Migration 1: migrateStudentSettingsTable(db) ---
+function migrateStudentSettingsTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS student_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id_format TEXT NOT NULL DEFAULT 'SOF-{SEQ}',
+      field_full_name INTEGER NOT NULL DEFAULT 1,
+      field_gender INTEGER NOT NULL DEFAULT 1,
+      field_date_of_birth INTEGER NOT NULL DEFAULT 1,
+      field_place_of_birth INTEGER NOT NULL DEFAULT 1,
+      field_parent_information INTEGER NOT NULL DEFAULT 1,
+      field_emergency_contact INTEGER NOT NULL DEFAULT 1,
+      admit_new INTEGER NOT NULL DEFAULT 1,
+      admit_returning INTEGER NOT NULL DEFAULT 1,
+      admit_transfer INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_student_settings_school ON student_settings(school_id);
+
+    UPDATE student_settings
+    SET student_id_format = 'SOF-{SEQ}',
+        updated_at = datetime('now'),
+        version = version + 1,
+        sync_status = 'pending'
+    WHERE student_id_format = 'SOF-{YEAR}-{SEQ}';
+  `)
+}
+
+--- Migration 2: migrateStudentIdSystem(db) ---
+function migrateStudentIdSystem(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS student_id_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL UNIQUE,
+      pattern TEXT NOT NULL DEFAULT '{SCHOOL}-{SEQ}',
+      sequence_scope TEXT NOT NULL DEFAULT 'school',
+      next_sequence_number INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_student_id_settings_school ON student_id_settings(school_id);
+  `)
+
+  const studentCols = (
+    db.prepare(`PRAGMA table_info(students)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  const additions = [
+    { name: 'school_id', sql: `ALTER TABLE students ADD COLUMN school_id TEXT` },
+    {
+      name: 'student_code',
+      sql: `ALTER TABLE students ADD COLUMN student_code TEXT`,
+    },
+    {
+      name: 'admission_year',
+      sql: `ALTER TABLE students ADD COLUMN admission_year INTEGER`,
+    },
+    {
+      name: 'academic_level_id',
+      sql: `ALTER TABLE students ADD COLUMN academic_level_id TEXT`,
+    },
+    {
+      name: 'sequence_number',
+      sql: `ALTER TABLE students ADD COLUMN sequence_number INTEGER`,
+    },
+  ]
+  for (const col of additions) {
+    if (!studentCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  // Safe migration for existing student_id_settings:
+  // 1. Migrate default pattern from {SCHOOL}-{YEAR}-{SEQ} to {SCHOOL}-{SEQ}
+  // 2. Migrate sequence_scope from 'year' to 'school'
+  // 3. Preserve all existing student records, IDs, and student codes unchanged
+  db.exec(`
+    UPDATE student_id_settings
+    SET pattern = '{SCHOOL}-{SEQ}',
+        updated_at = datetime('now'),
+        version = version + 1,
+        sync_status = 'pending'
+    WHERE pattern = '{SCHOOL}-{YEAR}-{SEQ}';
+
+    UPDATE student_id_settings
+    SET sequence_scope = 'school',
+        updated_at = datetime('now'),
+        version = version + 1,
+        sync_status = 'pending'
+    WHERE sequence_scope = 'year';
+  `)
+
+  // Report existing students with missing student_code (do not silently regenerate)
+  try {
+    const missingCodes = db
+      .prepare(
+        `SELECT count(*) as count FROM students WHERE (student_code IS NULL OR TRIM(student_code) = '') AND deleted_at IS NULL`
+      )
+      .get() as { count: number } | undefined
+    if (missingCodes && missingCodes.count > 0) {
+      console.warn(
+        `[sofia] Note: Found ${missingCodes.count} student(s) with missing student_code. Leaving existing records unchanged.`
+      )
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Advance next_sequence_number if existing students have higher sequence numbers
+  try {
+    const settingsList = db
+      .prepare(
+        `SELECT id, school_id, next_sequence_number FROM student_id_settings WHERE deleted_at IS NULL`
+      )
+      .all() as Array<{ id: string; school_id: string; next_sequence_number: number }>
+
+    for (const setting of settingsList) {
+      const maxRow = db
+        .prepare(
+          `SELECT MAX(sequence_number) as max_seq FROM students WHERE school_id = ? AND deleted_at IS NULL`
+        )
+        .get(setting.school_id) as { max_seq: number | null } | undefined
+
+      if (maxRow?.max_seq != null && maxRow.max_seq >= setting.next_sequence_number) {
+        db.prepare(
+          `UPDATE student_id_settings
+           SET next_sequence_number = ?,
+               updated_at = datetime('now'),
+               version = version + 1,
+               sync_status = 'pending'
+           WHERE id = ?`
+        ).run(maxRow.max_seq + 1, setting.id)
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_students_school_code ON students(school_id, student_code);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_students_school_code_unique
+      ON students(school_id, student_code)
+      WHERE deleted_at IS NULL AND student_code IS NOT NULL;
+  `)
+}
+
+--- Migration 3: migrateStudentManagementTables(db) ---
+function migrateStudentManagementTables(db: Database.Database): void {
+  const studentCols = (
+    db.prepare(`PRAGMA table_info(students)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+
+  const studentAdditions: Array<{ name: string; sql: string }> = [
+    { name: 'gender', sql: `ALTER TABLE students ADD COLUMN gender TEXT` },
+    {
+      name: 'date_of_birth',
+      sql: `ALTER TABLE students ADD COLUMN date_of_birth TEXT`,
+    },
+    { name: 'phone', sql: `ALTER TABLE students ADD COLUMN phone TEXT` },
+    { name: 'email', sql: `ALTER TABLE students ADD COLUMN email TEXT` },
+    { name: 'address', sql: `ALTER TABLE students ADD COLUMN address TEXT` },
+    {
+      name: 'admission_type',
+      sql: `ALTER TABLE students ADD COLUMN admission_type TEXT`,
+    },
+    {
+      name: 'guardian_name',
+      sql: `ALTER TABLE students ADD COLUMN guardian_name TEXT`,
+    },
+    {
+      name: 'guardian_phone',
+      sql: `ALTER TABLE students ADD COLUMN guardian_phone TEXT`,
+    },
+    {
+      name: 'guardian_email',
+      sql: `ALTER TABLE students ADD COLUMN guardian_email TEXT`,
+    },
+    {
+      name: 'guardian_relationship',
+      sql: `ALTER TABLE students ADD COLUMN guardian_relationship TEXT`,
+    },
+    {
+      name: 'status',
+      sql: `ALTER TABLE students ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
+    },
+    {
+      name: 'photo_path',
+      sql: `ALTER TABLE students ADD COLUMN photo_path TEXT`,
+    },
+  ]
+
+  for (const col of studentAdditions) {
+    if (!studentCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  // (Creates admissions, student_transfers, student_documents, promotion tables)
+  // And creates status index on students:
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_students_school_status ON students(school_id, status);
+  `)
+}
+
+--- Migration 4: migrateMvpFeatureTables(db) ---
+function migrateMvpFeatureTables(db: Database.Database): void {
+  const studentCols = (
+    db.prepare(`PRAGMA table_info(students)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (!studentCols.includes('residence_type')) {
+    db.exec(
+      `ALTER TABLE students ADD COLUMN residence_type TEXT NOT NULL DEFAULT 'day'`
+    )
+  }
+}
+
+--- Migration 5: sync_queue ---
+No migration modifies sync_queue. It has remained identical to its initial
+definition created in createSchema.
+
+
+================================================================================
+6. CURRENT TYPESCRIPT INTERFACES / TYPES
+--------------------------------------------------------------------------------
+
+Source: main/db/types.ts
+
+--- Base Record ---
+export type SyncStatus = 'pending' | 'synced'
+
+export interface BaseRecord {
+  id: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  sync_status: SyncStatus
+  version: number
+}
+
+--- Student Interface ---
+export type ResidenceType = 'day' | 'boarding'
+
+export interface Student extends BaseRecord {
+  name: string
+  class_id: string
+  school_id: string | null
+  /** Immutable human-readable ID once assigned */
+  student_code: string | null
+  admission_year: number | null
+  academic_level_id: string | null
+  sequence_number: number | null
+  gender: string | null
+  date_of_birth: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  admission_type: string | null
+  guardian_name: string | null
+  guardian_phone: string | null
+  guardian_email: string | null
+  guardian_relationship: string | null
+  /** Passport / 4×4 photo stored under userData */
+  photo_path: string | null
+  /** day | boarding — boarding/dormitory fee targeting, not a boarding module */
+  residence_type: ResidenceType
+  /** active | alumni | transferred */
+  status: string
+}
+
+--- Student ID Settings Interfaces ---
+export type SequenceScope = 'school' | 'year' | 'year_level'
+
+/** Per-school student ID generation settings. */
+export interface StudentIdSettings extends BaseRecord {
+  school_id: string
+  pattern: string
+  sequence_scope: SequenceScope
+  next_sequence_number: number
+}
+
+/** Legacy / per-school student form settings (field toggles & ID format). */
+export interface StudentSettings extends BaseRecord {
+  school_id: string
+  /** Pattern e.g. SOF-{YEAR}-{SEQ} → SOF-2026-0001 */
+  student_id_format: string
+  field_full_name: number
+  field_gender: number
+  field_date_of_birth: number
+  field_place_of_birth: number
+  field_parent_information: number
+  field_emergency_contact: number
+  admit_new: number
+  admit_returning: number
+  admit_transfer: number
+}
+
+--- Sync / Outbox Operations ---
+export type SyncOperation = 'INSERT' | 'UPDATE' | 'DELETE'
+
+export type SyncQueueStatus = 'pending' | 'synced' | 'failed'
+
+export interface SyncQueueItem {
+  id: string
+  table_name: string
+  record_id: string
+  operation: SyncOperation
+  payload: string
+  status: SyncQueueStatus
+  retry_count: number
+  last_attempt_at: string | null
+  created_at: string
+}
+
+
+================================================================================
+7. CODE/FUNCTIONS RESPONSIBLE FOR CREATING A STUDENT & GENERATING student_code
+================================================================================
+
+Function A: generateStudentCode
+Source: main/services/student-id.ts
+
+export interface GenerateStudentCodeOptions {
+  sequence?: number
+  admissionYear?: number
+  academicLevelId?: string | null
+  sectionName?: string | null
+  specializationAbbr?: string | null
+}
+
+export function generateStudentCode(
+  db: Database.Database,
+  schoolId: string,
+  options?: GenerateStudentCodeOptions
+): {
+  student_code: string
+  sequence_number: number
+  pattern: string
+} {
+  // 1. Load the school's student_id_settings
+  let settings = db
+    .prepare(
+      `SELECT * FROM student_id_settings WHERE school_id = ? AND deleted_at IS NULL LIMIT 1`
+    )
+    .get(schoolId) as StudentIdSettings | undefined
+
+  if (!settings) {
+    let initialSeq = 1
+    try {
+      const maxRow = db
+        .prepare(
+          `SELECT MAX(sequence_number) as max_seq FROM students WHERE school_id = ? AND deleted_at IS NULL`
+        )
+        .get(schoolId) as { max_seq: number | null } | undefined
+      if (maxRow?.max_seq != null && maxRow.max_seq > 0) {
+        initialSeq = maxRow.max_seq + 1
+      }
+    } catch {
+      /* ignore */
+    }
+
+    settings = {
+      id: '',
+      school_id: schoolId,
+      pattern: DEFAULT_STUDENT_ID_PATTERN,
+      sequence_scope: 'school',
+      next_sequence_number: initialSeq,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      deleted_at: null,
+      sync_status: 'pending',
+      version: 1,
+    }
+  }
+
+  // 2. Load the school's short_code
+  const school = db
+    .prepare(
+      `SELECT id, name, short_code, school_code FROM schools WHERE id = ? AND deleted_at IS NULL LIMIT 1`
+    )
+    .get(schoolId) as School | undefined
+
+  let schoolShortCode = school?.short_code?.trim() || ''
+  if (!schoolShortCode) {
+    schoolShortCode = school?.name ? normalizeShortCode(school.name) : 'SCH'
+  }
+
+  // 3. Read sequence number
+  const sequence = options?.sequence ?? settings.next_sequence_number
+
+  // 4. Resolve level short name if needed by custom patterns
+  let levelShort = ''
+  if (options?.academicLevelId) {
+    try {
+      const level = db
+        .prepare(
+          `SELECT name, short_name FROM academic_levels WHERE id = ? AND deleted_at IS NULL LIMIT 1`
+        )
+        .get(options.academicLevelId) as
+        | { name: string; short_name: string | null }
+        | undefined
+      if (level) {
+        levelShort =
+          level.short_name?.trim() || deriveLevelShortName(level.name)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 5. Generate the student code from the configured pattern
+  const pattern = settings.pattern || DEFAULT_STUDENT_ID_PATTERN
+  const student_code = buildStudentId(pattern, {
+    SCHOOL: schoolShortCode,
+    YEAR: options?.admissionYear ?? new Date().getFullYear(),
+    LEVEL: levelShort,
+    SECTION: options?.sectionName?.trim() || '',
+    SPECIALIZATION: options?.specializationAbbr?.trim() || '',
+    SEQ: padSequence(sequence, 4),
+  })
+
+  return {
+    student_code,
+    sequence_number: sequence,
+    pattern,
+  }
+}
+
+
+Function B: StudentRepository.create
+Source: main/db/repositories/student.repository.ts
+
+  create(input: CreateStudentInput): Student {
+    const tx = this.db.transaction(() => {
+      // 1. Resolve school_id and academic_level_id if omitted but class_id provided
+      let schoolId = input.school_id ?? null
+      let academicLevelId = input.academic_level_id ?? null
+      if (input.class_id && (!schoolId || !academicLevelId)) {
+        const cls = this.db
+          .prepare(
+            `SELECT school_id, academic_level_id FROM classes WHERE id = ? AND deleted_at IS NULL`
+          )
+          .get(input.class_id) as
+          | { school_id: string; academic_level_id: string | null }
+          | undefined
+        if (cls) {
+          if (!schoolId && cls.school_id) schoolId = cls.school_id
+          if (!academicLevelId && cls.academic_level_id) {
+            academicLevelId = cls.academic_level_id
+          }
+        }
+      }
+
+      const admissionYear =
+        input.admission_year ?? new Date().getFullYear()
+
+      let student_code: string | null = input.student_code?.trim() || null
+      let sequence_number: number | null = input.sequence_number ?? null
+
+      // 2. Generate permanent student_code atomically if not already supplied
+      if (!student_code) {
+        if (!schoolId) {
+          throw new Error('school_id is required to generate student code.')
+        }
+
+        // Read student_id_settings
+        let settings = this.db
+          .prepare(
+            `SELECT * FROM student_id_settings WHERE school_id = ? AND deleted_at IS NULL LIMIT 1`
+          )
+          .get(schoolId) as StudentIdSettings | undefined
+
+        if (!settings) {
+          const maxRow = this.db
+            .prepare(
+              `SELECT MAX(sequence_number) as max_seq FROM students WHERE school_id = ? AND deleted_at IS NULL`
+            )
+            .get(schoolId) as { max_seq: number | null } | undefined
+          const initialSeq =
+            maxRow?.max_seq != null && maxRow.max_seq > 0
+              ? maxRow.max_seq + 1
+              : 1
+
+          const now = new Date().toISOString()
+          settings = {
+            id: randomUUID(),
+            school_id: schoolId,
+            pattern: DEFAULT_STUDENT_ID_PATTERN,
+            sequence_scope: 'school',
+            next_sequence_number: initialSeq,
+            created_at: now,
+            updated_at: now,
+            deleted_at: null,
+            sync_status: 'pending',
+            version: 1,
+          }
+          this.db
+            .prepare(
+              `INSERT INTO student_id_settings (
+                 id, school_id, pattern, sequence_scope, next_sequence_number,
+                 created_at, updated_at, deleted_at, sync_status, version
+               ) VALUES (
+                 @id, @school_id, @pattern, @sequence_scope, @next_sequence_number,
+                 @created_at, @updated_at, @deleted_at, @sync_status, @version
+               )`
+            )
+            .run(settings)
+
+          enqueueSync(
+            this.db,
+            'student_id_settings',
+            settings.id,
+            'INSERT',
+            settings as unknown as Record<string, unknown>
+          )
+        }
+
+        const sequence = settings.next_sequence_number
+
+        const generated = generateStudentCode(this.db, schoolId, {
+          sequence,
+          admissionYear,
+          academicLevelId,
+          sectionName: input.section_name ?? null,
+          specializationAbbr: input.specialization_abbr ?? null,
+        })
+        student_code = generated.student_code
+        sequence_number = generated.sequence_number
+
+        // Collision check
+        const clash = this.db
+          .prepare(
+            `SELECT id FROM students WHERE school_id = ? AND student_code = ? AND deleted_at IS NULL LIMIT 1`
+          )
+          .get(schoolId, student_code) as { id: string } | undefined
+        if (clash) {
+          throw new Error(
+            `Generated student ID “${student_code}” already exists. Adjust the pattern or sequence.`
+          )
+        }
+
+        // Increment sequence in student_id_settings atomically
+        const now = new Date().toISOString()
+        const updatedSettings: StudentIdSettings = {
+          ...settings,
+          next_sequence_number: sequence + 1,
+          updated_at: now,
+          version: settings.version + 1,
+          sync_status: 'pending',
+        }
+        this.db
+          .prepare(
+            `UPDATE student_id_settings
+             SET next_sequence_number = @next_sequence_number,
+                 updated_at = @updated_at,
+                 version = @version,
+                 sync_status = @sync_status
+             WHERE id = @id`
+          )
+          .run(updatedSettings)
+
+        enqueueSync(
+          this.db,
+          'student_id_settings',
+          updatedSettings.id,
+          'UPDATE',
+          updatedSettings as unknown as Record<string, unknown>
+        )
+      } else if (schoolId) {
+        // When student_code is explicitly provided, verify collision
+        const clash = this.db
+          .prepare(
+            `SELECT id FROM students WHERE school_id = ? AND student_code = ? AND deleted_at IS NULL LIMIT 1`
+          )
+          .get(schoolId, student_code) as { id: string } | undefined
+        if (clash) {
+          throw new Error(`Student ID “${student_code}” already exists.`)
+        }
+      }
+
+      // 3. Build student record with local UUID
+      const base = this.buildBaseFields()
+      const record: Student = {
+        ...base,
+        id: input.id || base.id,
+        name: input.name.trim(),
+        class_id: input.class_id,
+        school_id: schoolId,
+        student_code,
+        admission_year: admissionYear,
+        academic_level_id: academicLevelId,
+        sequence_number,
+        gender: input.gender ?? null,
+        date_of_birth: input.date_of_birth ?? null,
+        phone: input.phone ?? null,
+        email: input.email ?? null,
+        address: input.address ?? null,
+        admission_type: input.admission_type ?? null,
+        guardian_name: input.guardian_name ?? null,
+        guardian_phone: input.guardian_phone ?? null,
+        guardian_email: input.guardian_email ?? null,
+        guardian_relationship: input.guardian_relationship ?? null,
+        status: input.status ?? 'active',
+        photo_path: input.photo_path ?? null,
+        residence_type: input.residence_type === 'boarding' ? 'boarding' : 'day',
+      }
+
+      // 4. Insert student
+      this.db
+        .prepare(
+          `INSERT INTO students (
+             id, name, class_id, school_id, student_code,
+             admission_year, academic_level_id, sequence_number,
+             gender, date_of_birth, phone, email, address, admission_type,
+             guardian_name, guardian_phone, guardian_email, guardian_relationship,
+             status, photo_path, residence_type,
+             created_at, updated_at, deleted_at, sync_status, version
+           ) VALUES (
+             @id, @name, @class_id, @school_id, @student_code,
+             @admission_year, @academic_level_id, @sequence_number,
+             @gender, @date_of_birth, @phone, @email, @address, @admission_type,
+             @guardian_name, @guardian_phone, @guardian_email, @guardian_relationship,
+             @status, @photo_path, @residence_type,
+             @created_at, @updated_at, @deleted_at, @sync_status, @version
+           )`
+        )
+        .run(record)
+
+      // 5. Enqueue sync outbox entry
+      enqueueSync(
+        this.db,
+        this.tableName,
+        record.id,
+        'INSERT',
+        record as unknown as Record<string, unknown>
+      )
+
+      return record
+    })
+
+    return tx()
+  }
+
+
+================================================================================
+8. CODE/FUNCTION RESPONSIBLE FOR ADDING AN OPERATION TO SYNC QUEUE / OUTBOX
+================================================================================
+
+Function: enqueueSync
+Source: main/sync/queue.ts
+
+import { randomUUID } from 'crypto'
+import type Database from 'better-sqlite3'
+import type { SyncOperation } from '../db/types'
+
+/**
+ * Enqueue a full-record snapshot for future sync.
+ * MUST be called on every create / update / soft-delete.
+ */
+export function enqueueSync(
+  db: Database.Database,
+  tableName: string,
+  recordId: string,
+  operation: SyncOperation,
+  payload: Record<string, unknown>
+): void {
+  // Payload must include id + updated_at (full record snapshot)
+  const stmt = db.prepare(`
+    INSERT INTO sync_queue (
+      id, table_name, record_id, operation, payload, status, retry_count, last_attempt_at, created_at
+    ) VALUES (
+      @id, @table_name, @record_id, @operation, @payload, 'pending', 0, NULL, @created_at
+    )
+  `)
+
+  stmt.run({
+    id: randomUUID(),
+    table_name: tableName,
+    record_id: recordId,
+    operation,
+    payload: JSON.stringify(payload),
+    created_at: new Date().toISOString(),
+  })
+}
+================================================================================
