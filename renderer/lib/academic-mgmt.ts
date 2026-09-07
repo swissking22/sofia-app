@@ -392,6 +392,7 @@ export async function fetchResults(input: {
       status: string
       computed_at: string | null
       published_at: string | null
+      calculation_version?: number | null
     } | null
     summaries: Array<{
       student_id: string
@@ -402,6 +403,10 @@ export async function fetchResults(input: {
       grade: string | null
       position: number | null
       remark: string | null
+      total_coefficients?: number | null
+      total_weighted_marks?: number | null
+      passed_subjects?: number | null
+      status?: string | null
     }>
     subject_rows: Array<{
       student_id: string
@@ -411,7 +416,42 @@ export async function fetchResults(input: {
       exam_score: number
       total: number
       grade: string | null
+      ca_average?: number | null
+      subject_mark?: number | null
+      coefficient?: number
+      weighted_mark?: number
+      sequence_scores?: Array<{
+        name: string
+        raw: number | null
+        max: number
+        normalized: number | null
+        status: string
+        included: boolean
+      }>
+      remark?: string | null
     }>
+    class_summary?: {
+      total_students: number
+      processed_students: number
+      incomplete_students: number
+      passed_students: number
+      failed_students: number
+      class_average: number | null
+      highest_average: number | null
+      lowest_average: number | null
+    } | null
+    calculation_profile?: {
+      id: string
+      name: string
+      version: number
+      ca_weight: number
+      exam_weight: number
+      pass_mark: number
+      sequence_method: string
+      rounding_places: number | string
+      scale: number
+      status: string
+    } | null
   }>
 }
 
@@ -444,6 +484,13 @@ export async function publishResults(input: {
     'results:publish',
     input
   )) as Result<{ status: string }>
+}
+
+export async function lockResults(input: {
+  class_id: string
+  term_id?: string | null
+}) {
+  return publishResults({ ...input, lock: true })
 }
 
 export async function fetchReportCards(input?: {

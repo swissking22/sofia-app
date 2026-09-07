@@ -2,15 +2,20 @@ import { ipcMain } from 'electron'
 import { getSession, type SessionData } from '../auth'
 import type { Repositories } from '../db/repositories'
 import {
+  cameroonStandardSecondary20,
   canActivateProfile,
-  demoStandard4060,
   emptyDraftConfig,
   hasPermission,
   profileLabel,
   type CalculationConfig,
+  type ScoreInput,
 } from '../domain/results-calculation'
 import { calculateClass, previewSubject } from '../services/results/calculation-engine'
 import { mapComponentInputs } from '../domain/results-calculation'
+import {
+  calculateSubjectResult,
+  validateClassCalculation,
+} from '../services/results/result-calculation.service'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -228,7 +233,7 @@ export function registerResultsCalculationIpc(repos: Repositories): void {
   ipcMain.handle('results-calc:defaults', (): Result<unknown> => {
     const s = session()
     if (!s) return { ok: false, error: 'Access denied.' }
-    return { ok: true, data: { config: demoStandard4060() } }
+    return { ok: true, data: { config: cameroonStandardSecondary20() } }
   })
 
   ipcMain.handle(
@@ -257,7 +262,7 @@ export function registerResultsCalculationIpc(repos: Repositories): void {
           config = dto.config
         }
         if (!config) throw new Error('No calculation profile selected.')
-        let scores = input.scores ?? []
+        let scores: ScoreInput[] = input.scores ?? []
         if (input.class_id && input.subject_id && input.student_id) {
           const ca = repos.ca
             .findScoresForClassTerm(input.class_id, null)
@@ -340,6 +345,397 @@ export function registerResultsCalculationIpc(repos: Repositories): void {
         ok: true,
         data: profileLabel(dto.profile.name, year?.name ?? null, dto.version_number),
       }
+    }
+  )
+
+  ipcMain.handle(
+    'results-calc:coefficients-list',
+    (
+      _e,
+      input?: { class_id?: string | null; academic_year_id?: string | null }
+    ): Result<unknown> => {
+      const s = session()
+      if (
+        !s ||
+        !allow(repos, s, [
+          'results.coefficients.view',
+          'results.calculation.view',
+          'academic.manage',
+          'results.read',
+        ])
+      ) {
+        return { ok: false, error: 'Access denied.' }
+      }
+      const schoolId = sid(repos, s)
+      return wrap(() => {
+        return repos.subjectCoefficients.listSubjectCoefficientsTable(
+          schoolId,
+          input?.class_id,
+          input?.academic_year_id
+        )
+      }, 'Could not load subject coefficients.')
+    }
+  )
+
+  ipcMain.handle(
+    'results-calc:coefficients-save',
+    (
+      _e,
+      input: {
+        items: Array<{
+          subject_id: string
+          class_id?: string | null
+          academic_level_id?: string | null
+          academic_year_id?: string | null
+          coefficient: number
+        }>
+      }
+    ): Result<unknown> => {
+      const s = session()
+      if (
+        !s ||
+        !allow(repos, s, [
+          'results.coefficients.edit',
+          'results.calculation.edit',
+          'academic.manage',
+        ])
+      ) {
+        return { ok: false, error: 'Access denied.' }
+      }
+      if (!input?.items?.length) {
+        return { ok: false, error: 'No coefficient items to save.' }
+      }
+      const schoolId = sid(repos, s)
+      return wrap(() => {
+        repos.subjectCoefficients.bulkSave(schoolId, input.items)
+        audit(
+          repos,
+          s,
+          schoolId,
+          'results.coefficient.updated',
+          schoolId,
+          `Updated ${input.items.length} subject coefficient(s)`
+        )
+        return { count: input.items.length }
+      }, 'Could not save subject coefficients.')
+    }
+  )
+
+  ipcMain.handle(
+    'results-calc:validate',
+    (
+      _e,
+      input: { class_id: string; term_id?: string | null }
+    ): Result<unknown> => {
+      const s = session()
+      if (
+        !s ||
+        !allow(repos, s, [
+          'results.calculate',
+          'results.calculation.view',
+          'academic.manage',
+          'results.read',
+        ])
+      ) {
+        return { ok: false, error: 'Access denied.' }
+      }
+      if (!input?.class_id) return { ok: false, error: 'Class is required.' }
+      const schoolId = sid(repos, s)
+
+      return wrap(() => {
+        const classRow = repos.classes.findById(input.class_id)
+        const year = repos.academicYears.getSetupDto(schoolId)
+        const profile =
+          repos.resultCalc.resolveForClass(
+            schoolId,
+            input.class_id,
+            classRow?.academic_level_id ?? null,
+            year?.id ?? null
+          ) ?? {
+            profile: { id: 'default', name: 'Standard Cameroon 40/60' },
+            config: cameroonStandardSecondary20(),
+          }
+
+        const students = repos.students
+          .findByClassId(input.class_id)
+          .filter((st) => st.status === 'active')
+        const subjects = repos.subjects.findByClassId(input.class_id)
+        const coeffMap = repos.subjectCoefficients.resolveCoefficientsMap(
+          schoolId,
+          subjects.map((sub) => sub.id),
+          input.class_id,
+          classRow?.academic_level_id ?? null,
+          year?.id ?? null
+        )
+
+        const caAssessments = repos.ca.findScoresForClassTerm(
+          input.class_id,
+          input.term_id ?? null
+        )
+        const examPapers = repos.exams
+          .findPapersByClass(input.class_id, input.term_id ?? null)
+          .map((p) => ({
+            ...p,
+            scores: repos.exams.findScores(p.id),
+          }))
+
+        const validation = validateClassCalculation({
+          config: profile.config,
+          students,
+          subjects,
+          coefficientsMap: coeffMap,
+          caAssessments,
+          examPapers,
+        })
+
+        return {
+          validation,
+          profile_name: profile.profile.name,
+          config: profile.config,
+        }
+      }, 'Validation check failed.')
+    }
+  )
+
+  ipcMain.handle(
+    'results-calc:breakdown',
+    (
+      _e,
+      input: {
+        class_id: string
+        term_id?: string | null
+        student_id: string
+        subject_id: string
+      }
+    ): Result<unknown> => {
+      const s = session()
+      if (!s) return { ok: false, error: 'Access denied.' }
+      const schoolId = sid(repos, s)
+
+      return wrap(() => {
+        const student = repos.students.findById(input.student_id)
+        const subject = repos.subjects.findById(input.subject_id)
+        const classRow = repos.classes.findById(input.class_id)
+        const year = repos.academicYears.getSetupDto(schoolId)
+
+        const profile =
+          repos.resultCalc.resolveForClass(
+            schoolId,
+            input.class_id,
+            classRow?.academic_level_id ?? null,
+            year?.id ?? null
+          ) ?? {
+            profile: { id: 'default', name: 'Standard Cameroon 40/60' },
+            config: cameroonStandardSecondary20(),
+          }
+
+        const coeff = repos.subjectCoefficients.resolveCoefficient(
+          schoolId,
+          input.subject_id,
+          input.class_id,
+          classRow?.academic_level_id ?? null,
+          year?.id ?? null
+        )
+
+        // Check if computed row exists in result_subject_rows
+        const run = repos.results.findByClassTerm(
+          input.class_id,
+          input.term_id ?? null
+        )
+        if (run) {
+          const rows = repos.results.findSubjectRows(run.id)
+          const row = rows.find(
+            (r) =>
+              r.student_id === input.student_id &&
+              r.subject_id === input.subject_id
+          )
+          if (row) {
+            let seqDetails = []
+            if (row.sequence_scores_json) {
+              try {
+                seqDetails = JSON.parse(row.sequence_scores_json)
+              } catch {
+                seqDetails = []
+              }
+            }
+
+            const targetScale = profile.config.scale ?? 20
+            const caWeight = profile.config.ca_weight ?? 40
+            const examWeight = profile.config.exam_weight ?? 60
+            const passMark = profile.config.pass_mark ?? 10
+
+            return {
+              student_id: student?.id,
+              student_name: student?.name ?? 'Student',
+              student_code: student?.student_code ?? null,
+              subject_id: subject?.id,
+              subject_name: subject?.name ?? 'Subject',
+              sequence_details: seqDetails,
+              ca_average: row.ca_average ?? row.ca_score,
+              ca_weight: caWeight,
+              ca_contribution:
+                row.ca_score != null && row.ca_average != null
+                  ? Number(((row.ca_average * caWeight) / 100).toFixed(4))
+                  : null,
+              exam_raw: row.exam_score,
+              exam_max: targetScale,
+              exam_normalized: row.exam_score,
+              exam_weight: examWeight,
+              exam_contribution:
+                row.exam_score != null
+                  ? Number(((row.exam_score * examWeight) / 100).toFixed(4))
+                  : null,
+              subject_mark: row.subject_mark ?? row.total,
+              coefficient: row.coefficient ?? coeff,
+              weighted_mark: row.weighted_mark ?? row.total * (row.coefficient ?? coeff),
+              grade: row.grade,
+              remark: row.remark ?? '',
+              passed: (row.subject_mark ?? row.total) >= passMark,
+              scale: targetScale,
+              status: run.status,
+            }
+          }
+        }
+
+        // Live calculation if no stored row
+        const caAssessments = repos.ca
+          .findScoresForClassTerm(input.class_id, input.term_id ?? null)
+          .filter((a) => a.subject_id === input.subject_id)
+          .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+          .map((a) => {
+            const sc = a.scores.find((x) => x.student_id === input.student_id)
+            return {
+              name: a.name,
+              max: a.max_score,
+              raw: sc?.score ?? null,
+              status: (sc?.score_status as never) ?? undefined,
+            }
+          })
+
+        const papers = repos.exams.findPapersByClass(
+          input.class_id,
+          input.term_id ?? null
+        )
+        const paper = papers.find((p) => p.subject_id === input.subject_id)
+        let examInput = null
+        if (paper) {
+          const sc = repos.exams
+            .findScores(paper.id)
+            .find((x) => x.student_id === input.student_id)
+          examInput = {
+            name: 'Exam',
+            max: paper.max_score,
+            raw: sc?.score ?? null,
+            status: (sc?.score_status as never) ?? undefined,
+          }
+        }
+
+        const res = calculateSubjectResult({
+          subjectId: input.subject_id,
+          subjectName: subject?.name,
+          sequences: caAssessments,
+          exam: examInput,
+          coefficient: coeff,
+          caWeight: profile.config.ca_weight ?? 40,
+          examWeight: profile.config.exam_weight ?? 60,
+          passMark: profile.config.pass_mark ?? 10,
+          targetScale: profile.config.scale ?? 20,
+          grading: profile.config.grading,
+          rounding: profile.config.rounding,
+          missingPolicy: profile.config.missing_policy ?? 'exclude',
+          absentPolicy: profile.config.absent_policy ?? 'exclude',
+          sequenceMethod: profile.config.sequence_method ?? 'simple_average',
+          bestN: profile.config.best_n,
+        })
+
+        return {
+          student_id: student?.id,
+          student_name: student?.name ?? 'Student',
+          student_code: student?.student_code ?? null,
+          ...res,
+        }
+      }, 'Could not compute calculation breakdown.')
+    }
+  )
+
+  ipcMain.handle(
+    'results-calc:student-summary',
+    (
+      _e,
+      input: {
+        class_id: string
+        term_id?: string | null
+        student_id: string
+      }
+    ): Result<unknown> => {
+      const s = session()
+      if (!s) return { ok: false, error: 'Access denied.' }
+      const schoolId = sid(repos, s)
+
+      return wrap(() => {
+        const student = repos.students.findById(input.student_id)
+        if (!student) throw new Error('Student not found.')
+        const classRow = repos.classes.findById(input.class_id)
+        const year = repos.academicYears.getSetupDto(schoolId)
+        const termName =
+          year?.terms.find((t) => t.id === input.term_id)?.name ?? 'Current Term'
+
+        const run = repos.results.findByClassTerm(
+          input.class_id,
+          input.term_id ?? null
+        )
+
+        const profile =
+          repos.resultCalc.resolveForClass(
+            schoolId,
+            input.class_id,
+            classRow?.academic_level_id ?? null,
+            year?.id ?? null
+          ) ?? {
+            profile: { id: 'default', name: 'Standard Cameroon 40/60' },
+            config: cameroonStandardSecondary20(),
+          }
+
+        if (run) {
+          const summaries = repos.results.findSummaries(run.id)
+          const sm = summaries.find((x) => x.student_id === input.student_id)
+          const rows = repos.results
+            .findSubjectRows(run.id)
+            .filter((r) => r.student_id === input.student_id)
+
+          const subjectList = rows.map((r) => ({
+            subject_id: r.subject_id,
+            subject_name: repos.subjects.findById(r.subject_id)?.name ?? '—',
+            ca_average: r.ca_average ?? r.ca_score,
+            exam_score: r.exam_score,
+            subject_mark: r.subject_mark ?? r.total,
+            coefficient: r.coefficient ?? 1,
+            weighted_mark: r.weighted_mark ?? r.total * (r.coefficient ?? 1),
+            grade: r.grade,
+            remark: r.remark ?? '',
+          }))
+
+          return {
+            student_id: student.id,
+            student_name: student.name,
+            student_code: student.student_code,
+            class_name: classRow?.name ?? 'Class',
+            term_name: termName,
+            year_name: year?.name ?? null,
+            total_weighted_marks:
+              sm?.total_weighted_marks ?? sm?.total ?? 0,
+            total_coefficients: sm?.total_coefficients ?? 0,
+            term_average: sm?.average ?? 0,
+            pass_mark: profile.config.pass_mark ?? 10,
+            status: sm?.status ?? (sm?.average && sm.average >= 10 ? 'PASSED' : 'FAILED'),
+            position: sm?.position ?? null,
+            total_students: summaries.length,
+            subjects: subjectList,
+          }
+        }
+
+        throw new Error('Results have not been processed yet for this student.')
+      }, 'Could not load student result summary.')
     }
   )
 }

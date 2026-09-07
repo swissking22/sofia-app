@@ -3,7 +3,7 @@ import { enqueueSync } from '../../sync/queue'
 import type { StudentSettings } from '../types'
 import { BaseRepository, type UpdateInput } from './base'
 
-export const DEFAULT_STUDENT_ID_FORMAT = 'SOF-{YEAR}-{SEQ}'
+export const DEFAULT_STUDENT_ID_FORMAT = 'SOF-{SEQ}'
 
 export const STUDENT_INFO_FIELDS = [
   { key: 'full_name', label: 'Full Name', column: 'field_full_name', required: true },

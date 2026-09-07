@@ -11,6 +11,7 @@ import {
   PrimaryButton,
   StatusBadge,
   StudentTable,
+  TableSelectionBar,
   selectClass,
 } from "../../../components/students/ui";
 import {
@@ -73,6 +74,30 @@ export default function IssuedCardsPage() {
   }, [load]);
 
   const ids = Object.keys(picked).filter((k) => picked[k]);
+  const allSelected = cards.length > 0 && ids.length === cards.length;
+
+  function toggleAll() {
+    if (allSelected) {
+      setPicked({});
+    } else {
+      const next: Record<string, boolean> = {};
+      for (const c of cards) next[c.id] = true;
+      setPicked(next);
+    }
+  }
+
+  async function bulkMarkIssued() {
+    setError("");
+    for (const id of ids) {
+      const res = await setIdCardStatus(id, "issued");
+      if (!res.ok) {
+        setError(res.error);
+        break;
+      }
+    }
+    setPicked({});
+    await load();
+  }
 
   return (
     <AppShell
@@ -157,7 +182,16 @@ export default function IssuedCardsPage() {
       />
       <StudentTable
         columns={[
-          "",
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = ids.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
           "Student",
           "Card number",
           "Verify",
@@ -252,6 +286,36 @@ export default function IssuedCardsPage() {
           <EmptyRow colSpan={8}>No issued cards yet.</EmptyRow>
         )}
       </StudentTable>
+
+      <TableSelectionBar
+        totalCount={cards.length}
+        selectedCount={ids.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setPicked({})}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                router.push(`/students/id-cards/print?ids=${ids.join(",")}`)
+              }
+              className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+            >
+              Print selected ({ids.length})
+            </button>
+            {meta?.can_issue ? (
+              <button
+                type="button"
+                onClick={() => void bulkMarkIssued()}
+                className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Mark selected issued
+              </button>
+            ) : null}
+          </>
+        }
+      />
     </AppShell>
   );
 }

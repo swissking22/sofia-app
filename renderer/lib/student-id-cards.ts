@@ -1,3 +1,52 @@
+import {
+  DEFAULT_ACADEMIC_CREST,
+  DEFAULT_SAMPLE_STUDENT_PHOTO,
+  DEFAULT_SAMPLE_SIGNATURE,
+} from './id-card-assets'
+
+export {
+  DEFAULT_ACADEMIC_CREST,
+  DEFAULT_SAMPLE_STUDENT_PHOTO,
+  DEFAULT_SAMPLE_SIGNATURE,
+}
+
+export const DEFAULT_SAMPLE_BINDINGS: Record<string, string> = {
+  'student.name': 'Olivia Wilson',
+  'student.first_name': 'Olivia',
+  'student.last_name': 'Wilson',
+  'student.student_id': 'IAE-2026-00124',
+  'student.gender': 'Female',
+  'student.date_of_birth': '18 Apr 2009',
+  'student.photo': DEFAULT_SAMPLE_STUDENT_PHOTO,
+  'student.class': 'Form 5A',
+  'student.stream': 'A',
+  'student.department': 'General',
+  'academic.year': '2026/2027',
+  'academic.term': 'First Term',
+  'academic.level': 'Form 5',
+  'academic.class': 'Form 5A',
+  'academic.department': 'General',
+  'school.name': 'International Academy of Excellence',
+  'school.short_code': 'IAE',
+  'school.logo': DEFAULT_ACADEMIC_CREST,
+  'school.address': 'Yaoundé, Cameroon',
+  'school.phone': '+237 222 000 000',
+  'school.email': 'admissions@iae.edu',
+  'school.website': 'www.iae.edu',
+  'school.motto': 'Excellence • Integrity • Future',
+  'school.signature': DEFAULT_SAMPLE_SIGNATURE,
+  'card.number': 'IAE/ID/2026/00124',
+  'card.issue_date': '01 September 2026',
+  'card.expiry_date': '31 August 2027',
+  'card.status': 'Active',
+  'card.verification_code': 'ID-8A72F91C',
+  'card.barcode': 'IAE-2026-00124',
+  'card.qr_code': 'sofia:v1:ID-8A72F91C',
+  'date.today': '06 Sep 2026',
+  'date.year': '2026',
+  'system.generated_at': '06 Sep 2026 10:42',
+}
+
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
 export type VariableDef = {
@@ -125,6 +174,9 @@ export async function fetchIdCardTemplates() {
       card_type: string
       orientation: string
       status: string
+      is_system?: number
+      category?: string
+      sample_key?: string | null
       current_version_number: number
       updated_at: string
       updated_by_email: string | null
@@ -142,6 +194,9 @@ export async function fetchIdCardTemplate(id: string) {
       status: string
       card_type: string
       orientation: string
+      is_system?: number
+      category?: string
+      sample_key?: string | null
       width_mm: number
       height_mm: number
       current_version_number: number
@@ -156,6 +211,8 @@ export async function saveIdCardTemplate(input: {
   description?: string
   card_type?: 'student' | 'staff'
   status?: 'draft' | 'active' | 'archived'
+  is_system?: number
+  category?: string
   design: CardDesign
 }) {
   return (await window.ipc.invoke('id-cards:template-save', input)) as Result<{ id: string }>
@@ -173,10 +230,17 @@ export async function wizardIdCardTemplate(input: {
 
 export async function idCardTemplateAction(input: {
   id: string
-  action: 'duplicate' | 'activate' | 'archive' | 'delete' | 'rename'
+  action: 'duplicate' | 'use' | 'activate' | 'archive' | 'delete' | 'rename'
   name?: string
 }) {
-  return (await window.ipc.invoke('id-cards:template-action', input)) as Result<unknown>
+  return (await window.ipc.invoke('id-cards:template-action', input)) as Result<{ id?: string; name?: string }>
+}
+
+export async function useIdCardTemplate(id: string) {
+  return (await window.ipc.invoke('id-cards:template-action', { id, action: 'use' })) as Result<{
+    id: string
+    name: string
+  }>
 }
 
 export async function previewIdCard(input: {

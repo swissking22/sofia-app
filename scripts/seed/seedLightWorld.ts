@@ -3,8 +3,11 @@ import { hashSync } from 'bcryptjs'
 import { randomUUID } from 'node:crypto'
 import type { SeedContext } from './context'
 import {
+  normalizeSubjectName,
+  subjectIdentityKey,
+} from '../../main/domain/subject-names'
+import {
   baseFields,
-  daysAgo,
   isoDate,
   padNum,
   round2,
@@ -298,7 +301,7 @@ const BC1 = [
   'French',
   'Computer Science',
   'Religious Studies',
-  'Sports',
+  'Sports and Physical Education',
   'BC Drawing',
   'Automobile Technology',
   'Engineering Science',
@@ -399,9 +402,204 @@ function shortLevel(name: string): string {
     .replace('Upper Sixth', 'U6')
 }
 
+type LwmClassMeta = {
+  id: string
+  school_id: string
+  name: string
+  level: string
+  academic_level_id: string
+  department_id: string | null
+  section_id: string | null
+  feeKey: keyof typeof DAY_FEES
+  subjects: string[]
+  dept: string
+}
+
+/**
+ * Soft-delete existing LWM subjects and class/teacher links, then recreate
+ * one subject per academic level + name, linked to every class at that level
+ * that offers it (General / Commercial / Technical share Maths, English, etc.).
+ */
+function rebuildLightWorldSubjects(
+  ctx: SeedContext,
+  schoolId: string,
+  classMeta: LwmClassMeta[],
+  teachers: string[],
+  now: string
+): void {
+  const { db } = ctx
+  const oldSubjects = db
+    .prepare(
+      `SELECT id FROM subjects WHERE school_id = ? AND deleted_at IS NULL`
+    )
+    .all(schoolId) as Array<{ id: string }>
+
+  const softDelete = db.prepare(
+    `UPDATE subjects SET deleted_at = ?, updated_at = ?, sync_status = 'pending' WHERE id = ?`
+  )
+  const softDeleteSc = db.prepare(
+    `UPDATE subject_classes SET deleted_at = ?, updated_at = ?, sync_status = 'pending'
+     WHERE subject_id = ? AND deleted_at IS NULL`
+  )
+  const softDeleteSs = db.prepare(
+    `UPDATE staff_subjects SET deleted_at = ?, updated_at = ?, sync_status = 'pending'
+     WHERE subject_id = ? AND deleted_at IS NULL`
+  )
+  const clearSlots = db.prepare(
+    `UPDATE timetable_slots SET subject_id = NULL, staff_id = NULL, updated_at = ?, sync_status = 'pending'
+     WHERE subject_id = ?`
+  )
+
+  for (const row of oldSubjects) {
+    softDelete.run(now, now, row.id)
+    softDeleteSc.run(now, now, row.id)
+    softDeleteSs.run(now, now, row.id)
+    clearSlots.run(now, row.id)
+  }
+
+  const subjectInsert = db.prepare(
+    `INSERT INTO subjects (
+      id, name, class_id, school_id, department_id, coefficient,
+      created_at, updated_at, deleted_at, sync_status, version
+    ) VALUES (
+      @id, @name, @class_id, @school_id, @department_id, 1,
+      @created_at, @updated_at, @deleted_at, @sync_status, @version
+    )`
+  )
+  const subjectClassInsert = db.prepare(
+    `INSERT INTO subject_classes (
+      id, subject_id, class_id,
+      created_at, updated_at, deleted_at, sync_status, version
+    ) VALUES (
+      @id, @subject_id, @class_id,
+      @created_at, @updated_at, @deleted_at, @sync_status, @version
+    )`
+  )
+  const staffSubjectInsert = db.prepare(
+    `INSERT INTO staff_subjects (
+      id, staff_id, subject_id, class_id,
+      created_at, updated_at, deleted_at, sync_status, version
+    ) VALUES (
+      @id, @staff_id, @subject_id, @class_id,
+      @created_at, @updated_at, @deleted_at, @sync_status, @version
+    )`
+  )
+
+  const subjectIds = new Map<string, string>()
+  const subjectTeachers = new Map<string, string>()
+
+  for (const cls of classMeta) {
+    for (const rawName of cls.subjects) {
+      const subjectName = normalizeSubjectName(rawName)
+      const key = subjectIdentityKey(cls.level, subjectName)
+      let sid = subjectIds.get(key)
+      if (!sid) {
+        sid = randomUUID()
+        subjectIds.set(key, sid)
+        subjectInsert.run({
+          ...baseFields(now),
+          id: sid,
+          name: subjectName,
+          class_id: cls.id,
+          school_id: schoolId,
+          department_id: null,
+        })
+        ctx.subjects.push({
+          id: sid,
+          school_id: schoolId,
+          name: subjectName,
+          class_id: cls.id,
+          department_id: null,
+        })
+        if (teachers.length > 0) {
+          subjectTeachers.set(key, teachers[subjectIds.size % teachers.length])
+        }
+      }
+      subjectClassInsert.run({
+        ...baseFields(now),
+        subject_id: sid,
+        class_id: cls.id,
+      })
+      const teacher = subjectTeachers.get(key)
+      if (teacher) {
+        staffSubjectInsert.run({
+          ...baseFields(now),
+          staff_id: teacher,
+          subject_id: sid,
+          class_id: cls.id,
+        })
+      }
+    }
+  }
+
+  console.log(
+    `  Subjects: ${subjectIds.size} (level-scoped; shared across streams at each level)`
+  )
+}
+
+function repairExistingLightWorldSubjects(ctx: SeedContext, schoolId: string): void {
+  const { db } = ctx
+  const now = new Date().toISOString()
+  const classRows = db
+    .prepare(
+      `SELECT id, name, level, academic_level_id, section_id
+       FROM classes WHERE school_id = ? AND deleted_at IS NULL`
+    )
+    .all(schoolId) as Array<{
+    id: string
+    name: string
+    level: string
+    academic_level_id: string
+    section_id: string | null
+  }>
+
+  const deptRows = db
+    .prepare(
+      `SELECT id, name FROM departments WHERE school_id = ? AND deleted_at IS NULL`
+    )
+    .all(schoolId) as Array<{ id: string; name: string }>
+  const deptByName = new Map(deptRows.map((d) => [d.name, d.id]))
+
+  const classMeta: LwmClassMeta[] = []
+  for (const row of classRows) {
+    const def = CLASS_DEFS.find((d) => d.name === row.name)
+    if (!def) {
+      console.warn(`  Skipping class without curriculum def: ${row.name}`)
+      continue
+    }
+    classMeta.push({
+      id: row.id,
+      school_id: schoolId,
+      name: row.name,
+      level: row.level || def.level,
+      academic_level_id: row.academic_level_id,
+      department_id: deptByName.get(def.dept) ?? null,
+      section_id: row.section_id,
+      feeKey: def.feeKey,
+      subjects: def.subjects,
+      dept: def.dept,
+    })
+  }
+
+  const teachers = (
+    db
+      .prepare(
+        `SELECT id FROM staff
+         WHERE school_id = ? AND deleted_at IS NULL AND staff_type = 'teaching'
+         ORDER BY full_name`
+      )
+      .all(schoolId) as Array<{ id: string }>
+  ).map((r) => r.id)
+
+  runInTransaction(db, () => {
+    rebuildLightWorldSubjects(ctx, schoolId, classMeta, teachers, now)
+  })
+}
+
 /**
  * Seeds Light World Mission College (Simbock, Yaoundé) with published
- * 2025/2026 fee bands, streams, and subject lists. Skips if LWM already exists.
+ * 2025/2026 fee bands, streams, and subject lists.
+ * If LWM already exists, rebuilds subjects so shared titles are one per level.
  */
 export function seedLightWorld(ctx: SeedContext): void {
   const { db } = ctx
@@ -411,7 +609,10 @@ export function seedLightWorld(ctx: SeedContext): void {
     )
     .get(SHORT_CODE) as { id: string } | undefined
   if (existing) {
-    console.log('  Light World Mission already present — skipped.')
+    console.log(
+      '  Light World Mission already present — repairing shared subjects…'
+    )
+    repairExistingLightWorldSubjects(ctx, existing.id)
     return
   }
 
@@ -898,79 +1099,7 @@ export function seedLightWorld(ctx: SeedContext): void {
       }
     })
 
-    const subjectInsert = db.prepare(
-      `INSERT INTO subjects (
-        id, name, class_id, school_id, department_id, coefficient,
-        created_at, updated_at, deleted_at, sync_status, version
-      ) VALUES (
-        @id, @name, @class_id, @school_id, @department_id, 1,
-        @created_at, @updated_at, @deleted_at, @sync_status, @version
-      )`
-    )
-    const subjectClassInsert = db.prepare(
-      `INSERT INTO subject_classes (
-        id, subject_id, class_id,
-        created_at, updated_at, deleted_at, sync_status, version
-      ) VALUES (
-        @id, @subject_id, @class_id,
-        @created_at, @updated_at, @deleted_at, @sync_status, @version
-      )`
-    )
-    const staffSubjectInsert = db.prepare(
-      `INSERT INTO staff_subjects (
-        id, staff_id, subject_id, class_id,
-        created_at, updated_at, deleted_at, sync_status, version
-      ) VALUES (
-        @id, @staff_id, @subject_id, @class_id,
-        @created_at, @updated_at, @deleted_at, @sync_status, @version
-      )`
-    )
-
-    const subjectKey = (dept: string, name: string) => `${dept}::${name}`
-    const subjectIds = new Map<string, string>()
-    const subjectTeachers = new Map<string, string>()
-
-    for (const cls of classMeta) {
-      for (const subjectName of cls.subjects) {
-        const key = subjectKey(cls.dept, subjectName)
-        let sid = subjectIds.get(key)
-        if (!sid) {
-          sid = randomUUID()
-          subjectIds.set(key, sid)
-          subjectInsert.run({
-            ...baseFields(now),
-            id: sid,
-            name: subjectName,
-            class_id: cls.id,
-            school_id: schoolId,
-            department_id: cls.department_id,
-          })
-          ctx.subjects.push({
-            id: sid,
-            school_id: schoolId,
-            name: subjectName,
-            class_id: cls.id,
-            department_id: cls.department_id,
-          })
-          const teacher = teachers[subjectIds.size % teachers.length]
-          subjectTeachers.set(key, teacher)
-        }
-        subjectClassInsert.run({
-          ...baseFields(now),
-          subject_id: sid,
-          class_id: cls.id,
-        })
-        const teacher = subjectTeachers.get(key)
-        if (teacher) {
-          staffSubjectInsert.run({
-            ...baseFields(now),
-            staff_id: teacher,
-            subject_id: sid,
-            class_id: cls.id,
-          })
-        }
-      }
-    }
+    rebuildLightWorldSubjects(ctx, schoolId, classMeta, teachers, now)
 
     const studentInsert = db.prepare(
       `INSERT INTO students (

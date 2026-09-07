@@ -15,6 +15,7 @@ module.exports = {
     ],
   },
   moduleNameMapper: {
+    '^electron$': '<rootDir>/tests/mocks/electron.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   clearMocks: true,

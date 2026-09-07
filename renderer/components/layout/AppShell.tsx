@@ -59,17 +59,17 @@ export function AppShell({
       <Head>
         <title>{title} — SOFIA</title>
       </Head>
-      <div className="flex h-screen overflow-hidden bg-[#f4f5f7]">
+      <div className="flex h-screen overflow-hidden bg-[#f4f5f7] print:h-auto print:overflow-visible print:bg-white">
         <AppSidebar
           session={session}
           collapsed={collapsed}
           onToggle={() => setCollapsed((v) => !v)}
           onLogout={handleLogout}
         />
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col print:block">
           <AppHeader breadcrumb={breadcrumb} />
-          <main className="flex-1 overflow-y-auto px-6 py-5">
-            <div className="mb-5 animate-[fadeInUp_0.4s_ease-out]">
+          <main className="flex-1 overflow-y-auto px-6 py-5 print:overflow-visible print:p-0">
+            <div className="mb-5 animate-[fadeInUp_0.4s_ease-out] print:hidden">
               <h1 className="text-2xl font-bold tracking-tight text-slate-900">
                 {heading}
               </h1>

@@ -10,6 +10,7 @@ export {
   SecondaryButton,
   StatusBadge,
   StudentTable as CommunicationTable,
+  TableSelectionBar,
   fieldClass,
   selectClass,
   useDebouncedValue,

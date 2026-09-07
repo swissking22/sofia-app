@@ -26,6 +26,7 @@ import type {
   DocumentSignatory,
   DocumentTemplate,
   IssuedDocument,
+  IssuedDocumentStatus,
 } from '../types'
 
 type Ctx = Record<string, string>
@@ -163,7 +164,15 @@ export class DocumentsRepository {
       .all(schoolId) as Array<{ id: string; name: string; section_id: string | null }>
     const sections = this.db
       .prepare(
-        `SELECT id, name FROM sections WHERE school_id = ? AND deleted_at IS NULL ORDER BY name`
+        `SELECT id, name FROM sections WHERE school_id = ? AND deleted_at IS NULL
+         ORDER BY
+           CASE LOWER(name)
+             WHEN 'general' THEN 0
+             WHEN 'commercial' THEN 1
+             WHEN 'technical' THEN 2
+             ELSE 50
+           END ASC,
+           name COLLATE NOCASE ASC`
       )
       .all(schoolId) as Array<{ id: string; name: string }>
     const students = this.db
@@ -654,7 +663,7 @@ export class DocumentsRepository {
 
   issue(schoolId: string, id: string, userId: string | null): IssuedDocument {
     const doc = this.requireIssued(schoolId, id)
-    assertTransition(doc.status as IssuedDocument['status'], 'issued')
+    assertTransition(doc.status as IssuedDocumentStatus, 'issued')
     const now = new Date().toISOString()
     this.db
       .prepare(
@@ -669,7 +678,7 @@ export class DocumentsRepository {
 
   voidDoc(schoolId: string, id: string, userId: string | null): IssuedDocument {
     const doc = this.requireIssued(schoolId, id)
-    assertTransition(doc.status as IssuedDocument['status'], 'voided')
+    assertTransition(doc.status as IssuedDocumentStatus, 'voided')
     const now = new Date().toISOString()
     this.db
       .prepare(
@@ -685,7 +694,7 @@ export class DocumentsRepository {
   regenerate(schoolId: string, id: string, userId: string | null): IssuedDocument {
     const current = this.requireIssued(schoolId, id)
     if (!current.student_id) throw new Error('Cannot regenerate this document.')
-    assertTransition(current.status as IssuedDocument['status'], 'superseded')
+    assertTransition(current.status as IssuedDocumentStatus, 'superseded')
     const meta = JSON.parse(current.metadata_json || '{}') as {
       reason?: string
       custom_text?: string

@@ -8,6 +8,7 @@ import {
   EmptyRow,
   FilterBar,
   FinanceTable,
+  TableSelectionBar,
   PageAlert,
   PrimaryButton,
   SecondaryButton,
@@ -58,7 +59,82 @@ export default function PaymentsPage() {
   const canManage = meta?.can_manage ?? false;
   const currency = meta?.currency ?? "";
 
+  const [selectedOnline, setSelectedOnline] = React.useState<string[]>([]);
+  const [selectedPayments, setSelectedPayments] = React.useState<string[]>([]);
+
+  const methodOptions = (
+    (meta?.payment_methods ??
+      Object.keys(PAYMENT_METHOD_LABELS)) as PaymentMethod[]
+  ).filter((m) => m !== "online");
+
+  const openOnline = onlineTxns.filter(
+    (t) => t.status === "pending" || t.status === "processing",
+  );
+
   const selectedInvoice = outstanding.find((i) => i.id === invoiceId);
+
+  const allOnlineSelected =
+    openOnline.length > 0 && selectedOnline.length === openOnline.length;
+  function toggleOnline(id: string) {
+    setSelectedOnline((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAllOnline() {
+    if (allOnlineSelected) setSelectedOnline([]);
+    else setSelectedOnline(openOnline.map((t) => t.id));
+  }
+
+  const allPaymentsSelected =
+    payments.length > 0 && selectedPayments.length === payments.length;
+  function togglePayment(id: string) {
+    setSelectedPayments((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAllPayments() {
+    if (allPaymentsSelected) setSelectedPayments([]);
+    else setSelectedPayments(payments.map((p) => p.id));
+  }
+
+  async function bulkConfirmOnline() {
+    setBusy(true);
+    setError("");
+    try {
+      for (const id of selectedOnline) {
+        await handleOnlineComplete(id, "successful");
+      }
+      setSelectedOnline([]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function exportPayments() {
+    const target = payments.filter((p) => selectedPayments.includes(p.id));
+    if (!target.length) return;
+    const csv = [
+      ["Payment #", "Student", "Invoice #", "Amount", "Method", "Date", "Reference"].join(","),
+      ...target.map((p) =>
+        [
+          `"${p.payment_number}"`,
+          `"${p.student_name || ""}"`,
+          `"${p.invoice_number || ""}"`,
+          p.amount,
+          `"${PAYMENT_METHOD_LABELS[p.method] ?? p.method}"`,
+          `"${p.paid_at}"`,
+          `"${p.reference || ""}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `payments-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const load = React.useCallback(async () => {
     const [metaRes, payRes, invRes, onlineRes] = await Promise.all([
@@ -137,15 +213,6 @@ export default function PaymentsPage() {
       setBusy(false);
     }
   }
-
-  const methodOptions = (
-    (meta?.payment_methods ??
-      Object.keys(PAYMENT_METHOD_LABELS)) as PaymentMethod[]
-  ).filter((m) => m !== "online");
-
-  const openOnline = onlineTxns.filter(
-    (t) => t.status === "pending" || t.status === "processing",
-  );
 
   async function handleOnlineInitiate(e: React.FormEvent) {
     e.preventDefault();
@@ -253,6 +320,18 @@ export default function PaymentsPage() {
           </h2>
           <FinanceTable
             columns={[
+              <input
+                key="select-all-online"
+                type="checkbox"
+                checked={allOnlineSelected}
+                ref={(el) => {
+                  if (el)
+                    el.indeterminate =
+                      selectedOnline.length > 0 && !allOnlineSelected;
+                }}
+                onChange={toggleAllOnline}
+                aria-label="Select all"
+              />,
               "Reference",
               "Invoice",
               "Amount",
@@ -262,7 +341,14 @@ export default function PaymentsPage() {
             ]}
           >
             {openOnline.map((t) => (
-              <tr key={t.id} className="border-t border-slate-100">
+              <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+                <td className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedOnline.includes(t.id)}
+                    onChange={() => toggleOnline(t.id)}
+                  />
+                </td>
                 <td className="px-4 py-3 font-mono text-xs">
                   {t.provider_reference || t.id}
                 </td>
@@ -304,11 +390,42 @@ export default function PaymentsPage() {
               </tr>
             ))}
           </FinanceTable>
+          <TableSelectionBar
+            totalCount={openOnline.length}
+            selectedCount={selectedOnline.length}
+            allSelected={allOnlineSelected}
+            onToggleAll={toggleAllOnline}
+            onClear={() => setSelectedOnline([])}
+            actions={
+              canManage ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void bulkConfirmOnline()}
+                  className="cursor-pointer rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  Confirm selected ({selectedOnline.length})
+                </button>
+              ) : null
+            }
+          />
         </div>
       ) : null}
 
       <FinanceTable
         columns={[
+          <input
+            key="select-all-payments"
+            type="checkbox"
+            checked={allPaymentsSelected}
+            ref={(el) => {
+              if (el)
+                el.indeterminate =
+                  selectedPayments.length > 0 && !allPaymentsSelected;
+            }}
+            onChange={toggleAllPayments}
+            aria-label="Select all"
+          />,
           "Payment #",
           "Student",
           "Invoice",
@@ -320,10 +437,17 @@ export default function PaymentsPage() {
         loading={loading}
       >
         {payments.length === 0 ? (
-          <EmptyRow colSpan={7} message="No payments recorded." />
+          <EmptyRow colSpan={8} message="No payments recorded." />
         ) : (
           payments.map((p) => (
-            <tr key={p.id} className="border-t border-slate-100">
+            <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selectedPayments.includes(p.id)}
+                  onChange={() => togglePayment(p.id)}
+                />
+              </td>
               <td className="px-4 py-3 font-medium text-slate-900">
                 {p.payment_number}
               </td>
@@ -345,6 +469,23 @@ export default function PaymentsPage() {
           ))
         )}
       </FinanceTable>
+
+      <TableSelectionBar
+        totalCount={payments.length}
+        selectedCount={selectedPayments.length}
+        allSelected={allPaymentsSelected}
+        onToggleAll={toggleAllPayments}
+        onClear={() => setSelectedPayments([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportPayments}
+            className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Export selected ({selectedPayments.length})
+          </button>
+        }
+      />
 
       <FormModal
         open={open}

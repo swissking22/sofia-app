@@ -67,6 +67,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: StudentIcon,
         children: [
           { id: 'students', label: 'Students', href: '/students' },
+          { id: 'class-lists', label: 'Class Lists', href: '/students/class-lists' },
           { id: 'admissions', label: 'Admissions', href: '/students/admissions' },
           { id: 'transfers', label: 'Student Transfers', href: '/students/transfers' },
           { id: 'promotion', label: 'Student Promotion', href: '/students/promotion' },
@@ -90,6 +91,11 @@ export const NAV_SECTIONS: NavSection[] = [
             id: 'calculation-settings',
             label: 'Calculation Settings',
             href: '/academic/results/calculation-settings',
+          },
+          {
+            id: 'subject-coefficients',
+            label: 'Subject Coefficients',
+            href: '/academic/results/coefficients',
           },
           { id: 'report-cards', label: 'Report Cards', href: '/academic/report-cards' },
           { id: 'academic-reports', label: 'Academic Reports', href: '/academic/reports' },

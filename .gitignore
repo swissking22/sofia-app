@@ -13,3 +13,10 @@ next-env.d.ts
 *.db
 *.db-wal
 *.db-shm
+
+# OS files
+.DS_Store
+
+# root build output
+/main.js
+

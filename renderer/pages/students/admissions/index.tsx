@@ -13,6 +13,7 @@ import {
   SecondaryButton,
   StatusBadge,
   StudentTable,
+  TableSelectionBar,
   fieldClass,
   selectClass,
   useDebouncedValue,
@@ -23,6 +24,7 @@ import { fetchAcademicStructure } from "../../../lib/academic-structure";
 import {
   ADMISSION_STATUS_LABELS,
   approveAdmission,
+  downloadCsv,
   fetchAdmissions,
   rejectAdmission,
   type AdmissionDto,
@@ -47,6 +49,56 @@ export default function AdmissionsIndexPage() {
   const [rejectNotes, setRejectNotes] = React.useState("");
   const [acting, setActing] = React.useState(false);
   const [confirmReject, setConfirmReject] = React.useState(false);
+  const [selected, setSelected] = React.useState<string[]>([]);
+
+  const allSelected = rows.length > 0 && selected.length === rows.length;
+  function toggle(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelected([]);
+    else setSelected(rows.map((r) => r.id));
+  }
+  function exportSelected() {
+    const target = rows.filter((r) => selected.includes(r.id));
+    if (!target.length) return;
+    const csv = [
+      ["Applicant", "Phone", "Email", "Level", "Preferred Class", "Year", "Guardian", "Status", "Applied"].join(","),
+      ...target.map((r) =>
+        [
+          `"${r.full_name}"`,
+          `"${r.phone || ""}"`,
+          `"${r.email || ""}"`,
+          `"${r.level_name || ""}"`,
+          `"${r.class_name || ""}"`,
+          r.admission_year ?? "",
+          `"${r.guardian_name || ""}"`,
+          `"${r.status}"`,
+          `"${r.created_at?.slice(0, 10) || ""}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    downloadCsv(`admissions-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  }
+  async function bulkReject() {
+    const pendingSelected = rows.filter((r) => selected.includes(r.id) && r.status === "pending");
+    if (!pendingSelected.length) return;
+    setActing(true);
+    setError("");
+    setSuccess("");
+    try {
+      for (const item of pendingSelected) {
+        await rejectAdmission({ id: item.id, notes: "Bulk rejected" });
+      }
+      setSuccess(`Rejected ${pendingSelected.length} application(s).`);
+      setSelected([]);
+      await load();
+    } finally {
+      setActing(false);
+    }
+  }
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -228,6 +280,16 @@ export default function AdmissionsIndexPage() {
       <StudentTable
         loading={loading}
         columns={[
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
           "Applicant",
           "Level",
           "Preferred class",
@@ -239,7 +301,7 @@ export default function AdmissionsIndexPage() {
         ]}
       >
         {rows.length === 0 ? (
-          <EmptyRow colSpan={8}>
+          <EmptyRow colSpan={9}>
             No applications match these filters.{" "}
             <Link
               href="/students/admissions/create"
@@ -251,6 +313,13 @@ export default function AdmissionsIndexPage() {
         ) : (
           rows.map((r) => (
             <tr key={r.id} className="hover:bg-slate-50/80">
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(r.id)}
+                  onChange={() => toggle(r.id)}
+                />
+              </td>
               <td className="px-4 py-3">
                 <p className="font-medium text-slate-800">{r.full_name}</p>
                 <p className="text-xs text-slate-500">
@@ -310,6 +379,33 @@ export default function AdmissionsIndexPage() {
           ))
         )}
       </StudentTable>
+
+      <TableSelectionBar
+        totalCount={rows.length}
+        selectedCount={selected.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <>
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => void bulkReject()}
+              className="cursor-pointer rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+            >
+              Reject pending selected
+            </button>
+            <button
+              type="button"
+              onClick={exportSelected}
+              className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Export selected ({selected.length})
+            </button>
+          </>
+        }
+      />
 
       <FormModal
         open={!!drawer}

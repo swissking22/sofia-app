@@ -30,6 +30,11 @@ import {
   type ReplacementReason,
 } from '../../domain/id-card'
 import { SAMPLE_SPECS } from '../../domain/id-card-templates'
+import {
+  DEFAULT_ACADEMIC_CREST,
+  DEFAULT_SAMPLE_SIGNATURE,
+  DEFAULT_SAMPLE_STUDENT_PHOTO,
+} from '../../domain/id-card-assets'
 import { code128Svg } from '../../helpers/code128'
 import { qrSvg } from '../../helpers/qr-svg'
 import { assetToDataUrl } from '../../helpers/school-assets'
@@ -137,29 +142,34 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
   }
 
   ensureSampleTemplates(schoolId: string, userId: string | null): void {
-    const count = this.db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM student_id_card_templates WHERE school_id = ? AND deleted_at IS NULL AND sample_key IS NOT NULL`
-      )
-      .get(schoolId) as { n: number }
-    if (count.n >= SAMPLE_SPECS.length) return
     for (const spec of SAMPLE_SPECS) {
       const exists = this.db
         .prepare(
-          `SELECT id FROM student_id_card_templates WHERE school_id = ? AND sample_key = ? AND deleted_at IS NULL`
+          `SELECT id, is_system, category, status FROM student_id_card_templates WHERE school_id = ? AND sample_key = ? AND deleted_at IS NULL`
         )
-        .get(schoolId, spec.key) as { id: string } | undefined
-      if (exists) continue
+        .get(schoolId, spec.key) as { id: string; is_system?: number; category?: string; status?: string } | undefined
+      if (exists) {
+        if (spec.is_system && (!exists.is_system || exists.category !== spec.category || exists.status !== 'active')) {
+          this.db
+            .prepare(
+              `UPDATE student_id_card_templates SET is_system = ?, category = ?, status = 'active', updated_at = ? WHERE id = ?`
+            )
+            .run(spec.is_system ? 1 : 0, spec.category || 'Standard', new Date().toISOString(), exists.id)
+        }
+        continue
+      }
       this.createTemplate({
         school_id: schoolId,
         name: spec.name,
         description: spec.description,
         card_type: spec.card_type,
         design: spec.design(),
-        status: spec.key === 'classic_university_vertical' ? 'active' : 'draft',
-        is_default: spec.key === 'classic_university_vertical' ? 1 : 0,
+        status: 'active',
+        is_default: spec.key === 'the_heritage' ? 1 : 0,
         sample_key: spec.key,
         userId,
+        is_system: spec.is_system ? 1 : 0,
+        category: spec.category,
       })
     }
   }
@@ -250,6 +260,8 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
     is_default: number
     sample_key: string | null
     userId: string | null
+    is_system?: number
+    category?: string
   }): StudentIdCardTemplate {
     const now = new Date().toISOString()
     const tplId = randomUUID()
@@ -272,6 +284,8 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
       height_mm: input.design.heightMm,
       unit: input.design.unit,
       sample_key: input.sample_key,
+      is_system: input.is_system ?? 0,
+      category: input.category ?? 'Standard',
       current_version_id: verId,
       current_version_number: 1,
       updated_by: input.userId,
@@ -282,11 +296,13 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
           `INSERT INTO student_id_card_templates (
              id, school_id, name, is_default, front_layout, back_layout, show_photo, validity_months,
              description, card_type, status, orientation, width_mm, height_mm, unit, sample_key,
+             is_system, category,
              current_version_id, current_version_number, updated_by,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @school_id, @name, @is_default, @front_layout, @back_layout, @show_photo, @validity_months,
              @description, @card_type, @status, @orientation, @width_mm, @height_mm, @unit, @sample_key,
+             @is_system, @category,
              @current_version_id, @current_version_number, @updated_by,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
@@ -313,6 +329,8 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
     design?: CardDesign
     userId: string | null
     bumpVersion?: boolean
+    is_system?: number
+    category?: string
   }): StudentIdCardTemplate {
     const existing = this.getTemplate(input.school_id, input.id)
     if (!existing) throw new Error('Template not found.')
@@ -369,6 +387,8 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
       current_version_number: versionNumber,
       updated_by: input.userId,
       is_default: input.status === 'active' ? 1 : existing.is_default,
+      is_system: input.is_system ?? existing.is_system ?? 0,
+      category: input.category ?? existing.category ?? 'Standard',
       updated_at: now,
       version: existing.version + 1,
       sync_status: 'pending' as const,
@@ -379,7 +399,7 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
            name = @name, description = @description, status = @status, orientation = @orientation,
            width_mm = @width_mm, height_mm = @height_mm, unit = @unit,
            current_version_id = @current_version_id, current_version_number = @current_version_number,
-           updated_by = @updated_by, is_default = @is_default,
+           updated_by = @updated_by, is_default = @is_default, is_system = @is_system, category = @category,
            updated_at = @updated_at, version = @version, sync_status = @sync_status
          WHERE id = @id AND school_id = @school_id`
       )
@@ -400,6 +420,39 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
       status: 'draft',
       is_default: 0,
       sample_key: null,
+      is_system: 0,
+      category: tpl.category || 'Standard',
+      userId,
+    })
+  }
+
+  useTemplate(schoolId: string, id: string, userId: string | null): StudentIdCardTemplate {
+    const tpl = this.getTemplate(schoolId, id)
+    if (!tpl) throw new Error('Template not found.')
+    const school = this.db
+      .prepare(`SELECT name, short_code FROM schools WHERE id = ?`)
+      .get(schoolId) as { name: string; short_code: string } | undefined
+    const schoolLabel = school?.short_code || school?.name || 'My School'
+
+    let copyName = `${tpl.name} - ${schoolLabel}`
+    if (tpl.name.toUpperCase().startsWith('THE ')) {
+      const cleanTitle = tpl.name.slice(4).charAt(0).toUpperCase() + tpl.name.slice(5).toLowerCase()
+      copyName = `${cleanTitle} Student ID - ${schoolLabel}`
+    } else if (!tpl.is_system) {
+      copyName = `${tpl.name} (Copy)`
+    }
+
+    return this.createTemplate({
+      school_id: schoolId,
+      name: copyName,
+      description: tpl.description || `Customized from ${tpl.name}`,
+      card_type: tpl.card_type,
+      design: this.currentDesign(schoolId, id),
+      status: 'draft',
+      is_default: 0,
+      sample_key: null,
+      is_system: 0,
+      category: tpl.category || 'Standard',
       userId,
     })
   }
@@ -414,6 +467,11 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
   }
 
   deleteTemplate(schoolId: string, id: string): void {
+    const tpl = this.getTemplate(schoolId, id)
+    if (!tpl) throw new Error('Template not found.')
+    if (tpl.is_system) {
+      throw new Error('System templates cannot be deleted.')
+    }
     const count = this.issuedCountForTemplate(schoolId, id)
     if (!canDeleteTemplate(count)) {
       throw new Error(
@@ -503,6 +561,8 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
       phone: string | null
       email: string
       website: string | null
+      logo_path?: string | null
+      principal_signature_path?: string | null
     }
     const settings = this.getSettings(input.schoolId)
     const names = splitName(input.student.name)
@@ -514,7 +574,7 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
       'student.student_id': input.student.student_code || '',
       'student.gender': input.student.gender || '',
       'student.date_of_birth': formatDisplayDate(input.student.date_of_birth),
-      'student.photo': assetToDataUrl(input.student.photo_path) || '',
+      'student.photo': assetToDataUrl(input.student.photo_path) || DEFAULT_SAMPLE_STUDENT_PHOTO,
       'student.class': input.student.class_name || '',
       'student.stream': input.student.stream || '',
       'student.department': input.student.department_name || '',
@@ -525,12 +585,13 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
       'academic.department': input.student.department_name || '',
       'school.name': school?.name || '',
       'school.short_code': school?.short_code || '',
-      'school.logo': '',
+      'school.logo': assetToDataUrl(school?.logo_path) || DEFAULT_ACADEMIC_CREST,
       'school.address': school?.address || '',
       'school.phone': school?.phone || '',
       'school.email': school?.email || '',
       'school.website': school?.website || '',
       'school.motto': settings.motto || '',
+      'school.signature': assetToDataUrl(school?.principal_signature_path) || DEFAULT_SAMPLE_SIGNATURE,
       'card.number': input.card.number,
       'card.issue_date': formatDisplayDate(input.card.issue_date),
       'card.expiry_date': formatDisplayDate(input.card.expiry_date),
@@ -1186,8 +1247,8 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
       const bindings: BindingMap = {
         ...sampleBindings(),
         ...stored,
-        'school.logo': logo || stored['school.logo'] || '',
-        'student.photo': student ? assetToDataUrl(student.photo_path) || stored['student.photo'] || '' : stored['student.photo'] || '',
+        'school.logo': logo || stored['school.logo'] || DEFAULT_ACADEMIC_CREST,
+        'student.photo': student ? assetToDataUrl(student.photo_path) || stored['student.photo'] || DEFAULT_SAMPLE_STUDENT_PHOTO : stored['student.photo'] || DEFAULT_SAMPLE_STUDENT_PHOTO,
       }
       const resolved = design.elements.map((el) => {
         const text = el.text ? interpolate(el.text, bindings) : ''
@@ -1196,7 +1257,7 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
         let image = ''
         if (el.imageBinding === 'student.photo') image = bindings['student.photo']
         else if (el.imageBinding === 'school.logo') image = bindings['school.logo']
-        else if (el.imageBinding === 'school.signature') image = signature || ''
+        else if (el.imageBinding === 'school.signature') image = signature || DEFAULT_SAMPLE_SIGNATURE
         else if (el.imageSrc) image = assetToDataUrl(el.imageSrc) || el.imageSrc
         return {
           ...el,

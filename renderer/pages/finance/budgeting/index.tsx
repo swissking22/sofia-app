@@ -45,15 +45,10 @@ export default function BudgetingPage() {
     remaining: 0,
     utilization: 0,
   });
-  const [meta, setMeta] =
-    React.useState<
-      Awaited<ReturnType<typeof fetchBudgetMeta>> extends {
-        ok: true;
-        data: infer D;
-      }
-        ? D
-        : null
-    >(null);
+  const [meta, setMeta] = React.useState<
+    | Extract<Awaited<ReturnType<typeof fetchBudgetMeta>>, { ok: true }>["data"]
+    | null
+  >(null);
   const [open, setOpen] = React.useState(false);
   const [amount, setAmount] = React.useState("");
   const [categoryId, setCategoryId] = React.useState("");

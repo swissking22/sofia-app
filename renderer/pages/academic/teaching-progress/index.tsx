@@ -11,6 +11,7 @@ import {
   SecondaryButton,
   StatusBadge,
   StudentTable,
+  TableSelectionBar,
   fieldClass,
   selectClass,
 } from "../../../components/students/ui";
@@ -72,6 +73,43 @@ export default function TeachingProgressPage() {
       { ok: true }
     >["data"]["logs"]
   >([]);
+
+  const [selectedLogIds, setSelectedLogIds] = React.useState<string[]>([]);
+  const allLogsSelected =
+    logs.length > 0 && selectedLogIds.length === logs.length;
+  function toggleLog(id: string) {
+    setSelectedLogIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAllLogs() {
+    if (allLogsSelected) setSelectedLogIds([]);
+    else setSelectedLogIds(logs.map((l) => l.id));
+  }
+  function exportSelectedLogs() {
+    const target = logs.filter((l) => selectedLogIds.includes(l.id));
+    if (!target.length) return;
+    const csv = [
+      ["Date", "Class", "Subject", "Topic", "Status", "Teacher"].join(","),
+      ...target.map((l) =>
+        [
+          `"${l.lesson_date}"`,
+          `"${l.class_name || ""}"`,
+          `"${l.subject_name || ""}"`,
+          `"${l.topic_title || ""}"`,
+          `"${l.status}"`,
+          `"${l.teacher_name || ""}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `teaching-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const [title, setTitle] = React.useState("");
   const [subjectId, setSubjectId] = React.useState("");
@@ -460,14 +498,40 @@ export default function TeachingProgressPage() {
             }
           />
           <StudentTable
-            columns={["Date", "Class", "Subject", "Topic", "Status", "Teacher"]}
+            columns={[
+              <input
+                key="select-all-logs"
+                type="checkbox"
+                checked={allLogsSelected}
+                ref={(el) => {
+                  if (el)
+                    el.indeterminate =
+                      selectedLogIds.length > 0 && !allLogsSelected;
+                }}
+                onChange={toggleAllLogs}
+                aria-label="Select all"
+              />,
+              "Date",
+              "Class",
+              "Subject",
+              "Topic",
+              "Status",
+              "Teacher",
+            ]}
             loading={false}
           >
             {logs.length === 0 ? (
-              <EmptyRow colSpan={6} message="No lessons recorded yet." />
+              <EmptyRow colSpan={7} message="No lessons recorded yet." />
             ) : (
               logs.map((l) => (
                 <tr key={l.id} className="border-t border-slate-100">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedLogIds.includes(l.id)}
+                      onChange={() => toggleLog(l.id)}
+                    />
+                  </td>
                   <td className="px-4 py-3">{l.lesson_date}</td>
                   <td className="px-4 py-3">{l.class_name || "—"}</td>
                   <td className="px-4 py-3">{l.subject_name || "—"}</td>
@@ -489,6 +553,23 @@ export default function TeachingProgressPage() {
               ))
             )}
           </StudentTable>
+
+          <TableSelectionBar
+            totalCount={logs.length}
+            selectedCount={selectedLogIds.length}
+            allSelected={allLogsSelected}
+            onToggleAll={toggleAllLogs}
+            onClear={() => setSelectedLogIds([])}
+            actions={
+              <button
+                type="button"
+                onClick={exportSelectedLogs}
+                className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Export selected ({selectedLogIds.length})
+              </button>
+            }
+          />
         </>
       )}
 

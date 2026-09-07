@@ -7,6 +7,7 @@ import {
   FormModal,
   PageAlert,
   StudentTable,
+  TableSelectionBar,
   fieldClass,
   selectClass,
 } from "../../../components/students/ui";
@@ -26,6 +27,43 @@ export default function AuditLogsPage() {
   const [detail, setDetail] = React.useState<Record<string, unknown> | null>(
     null,
   );
+
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const allSelected =
+    events.length > 0 && selectedIds.length === events.length;
+  function toggleRow(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelectedIds([]);
+    else setSelectedIds(events.map((e) => String(e.id)));
+  }
+  function exportSelected() {
+    const target = events.filter((e) => selectedIds.includes(String(e.id)));
+    if (!target.length) return;
+    const csv = [
+      ["Date/Time", "User", "Action", "Module", "Entity", "Result"].join(","),
+      ...target.map((e) =>
+        [
+          `"${String(e.created_at).replace("T", " ").slice(0, 19)}"`,
+          `"${String(e.user_name || e.user_email || "—")}"`,
+          `"${String(e.action)}"`,
+          `"${String(e.module_key)}"`,
+          `"${String(e.entity_id || "—")}"`,
+          `"${String(e.result || "success")}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const load = React.useCallback(async () => {
     const res = await fetchAuditLogs({
@@ -98,37 +136,122 @@ export default function AuditLogsPage() {
         }
       />
       <StudentTable
-        columns={["Date/time", "User", "Action", "Module", "Entity", "Result"]}
+        columns={[
+          <input
+            key="select-all"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el)
+                el.indeterminate = selectedIds.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
+          "Date/time",
+          "User",
+          "Action",
+          "Module",
+          "Entity",
+          "Result",
+        ]}
       >
         {events.length === 0 ? (
-          <EmptyRow colSpan={6} message="No audit events for these filters." />
+          <EmptyRow colSpan={7} message="No audit events for these filters." />
         ) : (
           events.map((e) => (
             <tr
               key={String(e.id)}
-              className="cursor-pointer hover:bg-slate-50"
-              onClick={() =>
-                void fetchAuditEvent(String(e.id)).then(
-                  (r) => r.ok && setDetail(r.data.event),
-                )
-              }
+              className="hover:bg-slate-50"
             >
-              <td className="px-4 py-3 text-xs">
+              <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(String(e.id))}
+                  onChange={() => toggleRow(String(e.id))}
+                />
+              </td>
+              <td
+                className="cursor-pointer px-4 py-3 text-xs"
+                onClick={() =>
+                  void fetchAuditEvent(String(e.id)).then(
+                    (r) => r.ok && setDetail(r.data.event),
+                  )
+                }
+              >
                 {String(e.created_at).replace("T", " ").slice(0, 19)}
               </td>
-              <td className="px-4 py-3 text-sm">
+              <td
+                className="cursor-pointer px-4 py-3 text-sm"
+                onClick={() =>
+                  void fetchAuditEvent(String(e.id)).then(
+                    (r) => r.ok && setDetail(r.data.event),
+                  )
+                }
+              >
                 {String(e.user_name || e.user_email || "—")}
               </td>
-              <td className="px-4 py-3">{String(e.action)}</td>
-              <td className="px-4 py-3">{String(e.module_key)}</td>
-              <td className="px-4 py-3 font-mono text-xs">
+              <td
+                className="cursor-pointer px-4 py-3"
+                onClick={() =>
+                  void fetchAuditEvent(String(e.id)).then(
+                    (r) => r.ok && setDetail(r.data.event),
+                  )
+                }
+              >
+                {String(e.action)}
+              </td>
+              <td
+                className="cursor-pointer px-4 py-3"
+                onClick={() =>
+                  void fetchAuditEvent(String(e.id)).then(
+                    (r) => r.ok && setDetail(r.data.event),
+                  )
+                }
+              >
+                {String(e.module_key)}
+              </td>
+              <td
+                className="cursor-pointer px-4 py-3 font-mono text-xs"
+                onClick={() =>
+                  void fetchAuditEvent(String(e.id)).then(
+                    (r) => r.ok && setDetail(r.data.event),
+                  )
+                }
+              >
                 {String(e.entity_id || "—")}
               </td>
-              <td className="px-4 py-3">{String(e.result || "success")}</td>
+              <td
+                className="cursor-pointer px-4 py-3"
+                onClick={() =>
+                  void fetchAuditEvent(String(e.id)).then(
+                    (r) => r.ok && setDetail(r.data.event),
+                  )
+                }
+              >
+                {String(e.result || "success")}
+              </td>
             </tr>
           ))
         )}
       </StudentTable>
+
+      <TableSelectionBar
+        totalCount={events.length}
+        selectedCount={selectedIds.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelectedIds([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportSelected}
+            className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Export selected ({selectedIds.length})
+          </button>
+        }
+      />
       <p className="mt-2 text-xs text-slate-500">{total} event(s)</p>
       {total > page * 25 ? (
         <button

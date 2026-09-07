@@ -8,31 +8,41 @@ import {
   PageAlert,
   StatusBadge,
   StudentTable,
+  TableSelectionBar,
   selectClass,
   useDebouncedValue,
 } from "../../components/students/ui";
 import {
+  bulkUpdateStudentStatus,
+  downloadCsv,
   fetchAlumni,
   STATUS_LABELS,
   type StudentDto,
+  type StudentStatus,
 } from "../../lib/student-mgmt";
 
 export default function AlumniPage() {
   const [loading, setLoading] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  const [success, setSuccess] = React.useState("");
   const [rows, setRows] = React.useState<StudentDto[]>([]);
   const [year, setYear] = React.useState("");
   const [search, setSearch] = React.useState("");
+  const [selected, setSelected] = React.useState<string[]>([]);
   const debouncedSearch = useDebouncedValue(search, 300);
 
-  React.useEffect(() => {
-    void (async () => {
-      const res = await fetchAlumni();
-      if (res.ok) setRows(res.data);
-      else setError(res.error);
-      setLoading(false);
-    })();
+  const loadData = React.useCallback(async () => {
+    setLoading(true);
+    const res = await fetchAlumni();
+    if (res.ok) setRows(res.data);
+    else setError(res.error);
+    setLoading(false);
   }, []);
+
+  React.useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const years = React.useMemo(() => {
     const set = new Set<number>();
@@ -52,6 +62,57 @@ export default function AlumniPage() {
     );
   });
 
+  const allSelected =
+    filtered.length > 0 && selected.length === filtered.length;
+
+  function toggle(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  function toggleAll() {
+    if (allSelected) setSelected([]);
+    else setSelected(filtered.map((s) => s.id));
+  }
+
+  function exportSelected() {
+    const target = filtered.filter((s) => selected.includes(s.id));
+    if (!target.length) return;
+    const csv = [
+      ["Student ID", "Name", "Last Class", "Level", "Admission Year", "Status"].join(","),
+      ...target.map((s) =>
+        [
+          `"${s.student_code || ""}"`,
+          `"${s.name}"`,
+          `"${s.class_name || ""}"`,
+          `"${s.level_name || ""}"`,
+          s.admission_year ?? "",
+          `"${s.status}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    downloadCsv(`alumni-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  }
+
+  async function bulkReactivate() {
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await bulkUpdateStudentStatus(selected, "active" as StudentStatus);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setSuccess(`Reactivated ${res.data.updated} student(s) to active status.`);
+      setSelected([]);
+      await loadData();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <AppShell
       title="Alumni"
@@ -60,6 +121,7 @@ export default function AlumniPage() {
       subtitle="Former students marked as alumni."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
+      {success ? <PageAlert tone="success">{success}</PageAlert> : null}
 
       <FilterBar
         filters={
@@ -92,6 +154,16 @@ export default function AlumniPage() {
 
       <StudentTable
         columns={[
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
           "Student ID",
           "Name",
           "Last class",
@@ -102,7 +174,7 @@ export default function AlumniPage() {
         loading={loading}
       >
         {filtered.length === 0 ? (
-          <EmptyRow colSpan={6}>
+          <EmptyRow colSpan={7}>
             {rows.length === 0 ? (
               <>
                 No alumni yet. Mark students as alumni from the{" "}
@@ -121,6 +193,13 @@ export default function AlumniPage() {
         ) : (
           filtered.map((s) => (
             <tr key={s.id} className="hover:bg-slate-50/80">
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(s.id)}
+                  onChange={() => toggle(s.id)}
+                />
+              </td>
               <td className="px-4 py-3 font-mono text-xs text-slate-600">
                 {s.student_code || "—"}
               </td>
@@ -151,6 +230,33 @@ export default function AlumniPage() {
           ))
         )}
       </StudentTable>
+
+      <TableSelectionBar
+        totalCount={filtered.length}
+        selectedCount={selected.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void bulkReactivate()}
+              className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-60"
+            >
+              Reactivate selected ({selected.length})
+            </button>
+            <button
+              type="button"
+              onClick={exportSelected}
+              className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Export selected ({selected.length})
+            </button>
+          </>
+        }
+      />
     </AppShell>
   );
 }

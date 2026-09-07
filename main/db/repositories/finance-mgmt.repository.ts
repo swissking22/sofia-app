@@ -12,6 +12,7 @@ import type {
   FinanceSettings,
   Invoice,
   InvoiceLine,
+  InvoiceStatus,
   LateFeeMode,
   LedgerEntry,
   Payment,

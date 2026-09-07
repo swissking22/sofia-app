@@ -11,6 +11,7 @@ import {
   type AcademicMeta,
   type CaAssessmentDto,
 } from "../../../lib/academic-mgmt";
+import { TableSelectionBar } from "../../../components/students/ui";
 
 const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -85,6 +86,43 @@ export default function CaIndexPage() {
     if (!classId) return meta.subjects;
     return meta.subjects.filter((s) => s.class_ids.includes(classId));
   }, [meta, classId]);
+
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const allSelected =
+    filtered.length > 0 && selectedIds.length === filtered.length;
+  function toggleRow(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelectedIds([]);
+    else setSelectedIds(filtered.map((a) => a.id));
+  }
+  function exportSelected() {
+    const target = filtered.filter((a) => selectedIds.includes(a.id));
+    if (!target.length) return;
+    const csv = [
+      ["Assessment", "Subject", "Class", "Weight %", "Max Score", "Date"].join(","),
+      ...target.map((a) =>
+        [
+          `"${a.name}"`,
+          `"${a.subject_name || ""}"`,
+          `"${a.class_name || ""}"`,
+          a.weight_percent,
+          a.max_score,
+          `"${formatDate(a.assessment_date)}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ca-assessments-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   function resetForm() {
     setName("");
@@ -216,64 +254,103 @@ export default function CaIndexPage() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading assessments…</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Subject</th>
-                <th className="px-4 py-3">Class</th>
-                <th className="px-4 py-3">Weight %</th>
-                <th className="px-4 py-3">Max score</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.length === 0 ? (
+        <>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-4 py-8 text-center text-slate-500"
-                  >
-                    No assessments match these filters.
-                  </td>
+                  <th className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            selectedIds.length > 0 && !allSelected;
+                      }}
+                      onChange={toggleAll}
+                      aria-label="Select all"
+                    />
+                  </th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Subject</th>
+                  <th className="px-4 py-3">Class</th>
+                  <th className="px-4 py-3">Weight %</th>
+                  <th className="px-4 py-3">Max score</th>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Actions</th>
                 </tr>
-              ) : (
-                filtered.map((a) => (
-                  <tr key={a.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      {a.name}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {a.subject_name || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {a.class_name || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {a.weight_percent}%
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{a.max_score}</td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {formatDate(a.assessment_date)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <TableActionGroup>
-                        <TableIconButton
-                          icon={PencilEdit01Icon}
-                          label="Enter scores"
-                          tone="primary"
-                          href={`/academic/ca/entry?assessment_id=${a.id}`}
-                        />
-                      </TableActionGroup>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={8}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      No assessments match these filters.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filtered.map((a) => (
+                    <tr key={a.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(a.id)}
+                          onChange={() => toggleRow(a.id)}
+                        />
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {a.name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {a.subject_name || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {a.class_name || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {a.weight_percent}%
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{a.max_score}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {formatDate(a.assessment_date)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <TableActionGroup>
+                          <TableIconButton
+                            icon={PencilEdit01Icon}
+                            label="Enter scores"
+                            tone="primary"
+                            href={`/academic/ca/entry?assessment_id=${a.id}`}
+                          />
+                        </TableActionGroup>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <TableSelectionBar
+            totalCount={filtered.length}
+            selectedCount={selectedIds.length}
+            allSelected={allSelected}
+            onToggleAll={toggleAll}
+            onClear={() => setSelectedIds([])}
+            actions={
+              <button
+                type="button"
+                onClick={exportSelected}
+                className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Export selected ({selectedIds.length})
+              </button>
+            }
+          />
+        </>
       )}
 
       {createOpen ? (

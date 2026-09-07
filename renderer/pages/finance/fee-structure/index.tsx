@@ -13,6 +13,7 @@ import {
   EmptyRow,
   FilterBar,
   FinanceTable,
+  TableSelectionBar,
   PageAlert,
   PrimaryButton,
   SecondaryButton,
@@ -83,6 +84,44 @@ export default function FeeStructurePage() {
     "all",
   );
   const [lines, setLines] = React.useState<LineDraft[]>([emptyLine()]);
+  const [selected, setSelected] = React.useState<string[]>([]);
+
+  const allSelected = rows.length > 0 && selected.length === rows.length;
+  function toggle(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelected([]);
+    else setSelected(rows.map((r) => r.id));
+  }
+  function exportSelected() {
+    const target = rows.filter((r) => selected.includes(r.id));
+    if (!target.length) return;
+    const csv = [
+      ["Name", "Year", "Level", "Class", "Residence", "Total", "Lines Count", "Status"].join(","),
+      ...target.map((r) =>
+        [
+          `"${r.name}"`,
+          `"${r.year_name || ""}"`,
+          `"${r.level_name || ""}"`,
+          `"${r.class_name || ""}"`,
+          `"${r.applies_to_residence || "all"}"`,
+          r.total,
+          r.lines.length,
+          `"${r.is_active ? "active" : "inactive"}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `fee-structures-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const canManage = meta?.can_manage ?? false;
   const currency = meta?.currency ?? "";
@@ -269,6 +308,16 @@ export default function FeeStructurePage() {
 
       <FinanceTable
         columns={[
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
           "Name",
           "Year",
           "Level / class",
@@ -280,10 +329,17 @@ export default function FeeStructurePage() {
         loading={loading}
       >
         {rows.length === 0 ? (
-          <EmptyRow colSpan={7} message="No fee structures yet." />
+          <EmptyRow colSpan={8} message="No fee structures yet." />
         ) : (
           rows.map((row) => (
-            <tr key={row.id} className="border-t border-slate-100">
+            <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(row.id)}
+                  onChange={() => toggle(row.id)}
+                />
+              </td>
               <td className="px-4 py-3 font-medium text-slate-900">
                 {row.name}
               </td>
@@ -336,6 +392,23 @@ export default function FeeStructurePage() {
           ))
         )}
       </FinanceTable>
+
+      <TableSelectionBar
+        totalCount={rows.length}
+        selectedCount={selected.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportSelected}
+            className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Export selected ({selected.length})
+          </button>
+        }
+      />
 
       <FormModal
         open={createOpen}

@@ -15,6 +15,7 @@ import {
   SecondaryButton,
   StatusBadge,
   StaffTable,
+  TableSelectionBar,
   fieldClass,
   selectClass,
 } from "../../../components/staff/ui";
@@ -126,6 +127,64 @@ export default function LeaveManagementPage() {
   const [applyStaffId, setApplyStaffId] = React.useState("");
 
   const canManage = meta?.can_manage ?? false;
+  const [selectedRequests, setSelectedRequests] = React.useState<string[]>([]);
+
+  const allRequestsSelected =
+    requests.length > 0 && selectedRequests.length === requests.length;
+  function toggleRequest(id: string) {
+    setSelectedRequests((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAllRequests() {
+    if (allRequestsSelected) setSelectedRequests([]);
+    else setSelectedRequests(requests.map((r) => r.id));
+  }
+  async function bulkDecide(decision: "approved" | "rejected") {
+    const pending = requests.filter(
+      (r) => selectedRequests.includes(r.id) && r.status === "pending",
+    );
+    if (!pending.length) return;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      for (const item of pending) {
+        await decideLeave({ id: item.id, decision });
+      }
+      setSuccess(`${pending.length} request(s) ${decision}.`);
+      setSelectedRequests([]);
+      await loadRequests();
+      await loadNotifications();
+    } finally {
+      setBusy(false);
+    }
+  }
+  function exportSelectedRequests() {
+    const target = requests.filter((r) => selectedRequests.includes(r.id));
+    if (!target.length) return;
+    const csv = [
+      ["Staff", "Leave Type", "Start Date", "End Date", "Days", "Status", "Reason"].join(","),
+      ...target.map((r) =>
+        [
+          `"${r.staff_name}"`,
+          `"${LEAVE_TYPE_LABELS[r.leave_type] ?? r.leave_type}"`,
+          `"${r.start_date}"`,
+          `"${r.end_date}"`,
+          r.days,
+          `"${r.status}"`,
+          `"${r.reason || ""}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `leave-requests-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const loadNotifications = React.useCallback(async () => {
     const res = (await fetchStaffNotifications()) as Result<{
@@ -369,6 +428,18 @@ export default function LeaveManagementPage() {
 
           <StaffTable
             columns={[
+              <input
+                key="select-all-requests"
+                type="checkbox"
+                checked={allRequestsSelected}
+                ref={(el) => {
+                  if (el)
+                    el.indeterminate =
+                      selectedRequests.length > 0 && !allRequestsSelected;
+                }}
+                onChange={toggleAllRequests}
+                aria-label="Select all"
+              />,
               "Staff",
               "Type",
               "Dates",
@@ -379,7 +450,7 @@ export default function LeaveManagementPage() {
             ]}
           >
             {requests.length === 0 ? (
-              <EmptyRow colSpan={7}>No leave requests.</EmptyRow>
+              <EmptyRow colSpan={8}>No leave requests.</EmptyRow>
             ) : (
               requests.map((r) => {
                 const isOwn =
@@ -387,6 +458,13 @@ export default function LeaveManagementPage() {
                   r.staff_id === meta.self_staff_id;
                 return (
                   <tr key={r.id} className="hover:bg-slate-50/80">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedRequests.includes(r.id)}
+                        onChange={() => toggleRequest(r.id)}
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium text-slate-900">
                       {r.staff_name}
                     </td>
@@ -438,6 +516,45 @@ export default function LeaveManagementPage() {
               })
             )}
           </StaffTable>
+
+          <TableSelectionBar
+            totalCount={requests.length}
+            selectedCount={selectedRequests.length}
+            allSelected={allRequestsSelected}
+            onToggleAll={toggleAllRequests}
+            onClear={() => setSelectedRequests([])}
+            actions={
+              <>
+                {canManage ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void bulkDecide("approved")}
+                      className="cursor-pointer rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      Approve selected
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void bulkDecide("rejected")}
+                      className="cursor-pointer rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      Reject selected
+                    </button>
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={exportSelectedRequests}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export selected ({selectedRequests.length})
+                </button>
+              </>
+            }
+          />
         </>
       ) : null}
 

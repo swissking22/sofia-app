@@ -20,9 +20,17 @@ import {
 } from '../../main/domain/id-card'
 import {
   classicUniversityVertical,
+  theHeritageDesign,
+  theAcademicDesign,
+  theSignatureDesign,
   SAMPLE_SPECS,
   wizardDesign,
 } from '../../main/domain/id-card-templates'
+import {
+  DEFAULT_ACADEMIC_CREST,
+  DEFAULT_SAMPLE_SIGNATURE,
+  DEFAULT_SAMPLE_STUDENT_PHOTO,
+} from '../../main/domain/id-card-assets'
 import { encodeCode128, code128Svg } from '../../main/helpers/code128'
 import { qrMatrix, qrSvg } from '../../main/helpers/qr-svg'
 
@@ -117,7 +125,7 @@ describe('dynamic variables', () => {
       '{{student.name}} · {{student.student_id}} · {{school.name}}',
       sampleBindings()
     )
-    expect(text).toBe('Olivia Wilson · STU-2026-00124 · International University')
+    expect(text).toBe('Olivia Wilson · IAE-2026-00124 · International Academy of Excellence')
   })
 
   it('splits names from the student record', () => {
@@ -160,6 +168,74 @@ describe('template versioning and front/back', () => {
   it('seeds five starting designs including Classic University Vertical', () => {
     expect(SAMPLE_SPECS.map((s) => s.name)).toContain('Classic University Vertical')
     expect(SAMPLE_SPECS).toHaveLength(5)
+  })
+
+  it('provides three signature institutional system templates: THE HERITAGE, THE ACADEMIC, and THE SIGNATURE', () => {
+    const heritage = SAMPLE_SPECS.find((s) => s.key === 'the_heritage')
+    const academic = SAMPLE_SPECS.find((s) => s.key === 'the_academic')
+    const signature = SAMPLE_SPECS.find((s) => s.key === 'the_signature')
+
+    expect(heritage).toBeDefined()
+    expect(heritage?.name).toBe('THE HERITAGE')
+    expect(heritage?.category).toBe('Premium')
+    expect(heritage?.is_system).toBe(true)
+    expect(heritage?.orientation).toBe('landscape')
+
+    expect(academic).toBeDefined()
+    expect(academic?.name).toBe('THE ACADEMIC')
+    expect(academic?.category).toBe('Modern')
+    expect(academic?.is_system).toBe(true)
+    expect(academic?.orientation).toBe('landscape')
+
+    expect(signature).toBeDefined()
+    expect(signature?.name).toBe('THE SIGNATURE')
+    expect(signature?.category).toBe('Minimal')
+    expect(signature?.is_system).toBe(true)
+    expect(signature?.orientation).toBe('landscape')
+  })
+
+  it('guarantees CR80 landscape format and front+back elements for all three flagship templates', () => {
+    const designs = [
+      { name: 'Heritage', design: theHeritageDesign() },
+      { name: 'Academic', design: theAcademicDesign() },
+      { name: 'Signature', design: theSignatureDesign() },
+    ]
+
+    for (const { design } of designs) {
+      expect(design.orientation).toBe('landscape')
+      expect(design.widthMm).toBe(85.6)
+      expect(design.heightMm).toBe(53.98)
+      expect(design.unit).toBe('mm')
+
+      const frontElements = design.elements.filter((e) => e.side === 'front')
+      const backElements = design.elements.filter((e) => e.side === 'back')
+
+      expect(frontElements.length).toBeGreaterThan(5)
+      expect(backElements.length).toBeGreaterThan(4)
+
+      // Must have student photo binding on front
+      expect(
+        frontElements.some((e) => e.type === 'image' && e.imageBinding === 'student.photo')
+      ).toBe(true)
+
+      // Must have school logo/crest binding on front
+      expect(
+        frontElements.some((e) => e.type === 'image' && e.imageBinding === 'school.logo')
+      ).toBe(true)
+
+      // Must have QR and barcode elements on card
+      expect(design.elements.some((e) => e.type === 'qr')).toBe(true)
+      expect(design.elements.some((e) => e.type === 'barcode')).toBe(true)
+    }
+  })
+
+  it('includes valid offline vector data URIs for crest, photo, and signature', () => {
+    expect(DEFAULT_ACADEMIC_CREST.startsWith('data:image/svg+xml;utf8,')).toBe(true)
+    expect(DEFAULT_SAMPLE_STUDENT_PHOTO.startsWith('data:image/svg+xml;utf8,')).toBe(true)
+    expect(DEFAULT_SAMPLE_SIGNATURE.startsWith('data:image/svg+xml;utf8,')).toBe(true)
+    expect(DEFAULT_ACADEMIC_CREST).toContain('svg')
+    expect(DEFAULT_SAMPLE_STUDENT_PHOTO).toContain('svg')
+    expect(DEFAULT_SAMPLE_SIGNATURE).toContain('svg')
   })
 })
 

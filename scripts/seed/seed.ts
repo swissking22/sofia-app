@@ -5,7 +5,7 @@
  *   npm run seed              # writes data/sofia.seed.db
  *   npm run seed -- --dev     # seeds Electron development sofia.db
  *   npm run seed -- --dev --reset
- *   npm run seed -- --dev --light-world-only   # add LWM to an existing DB
+ *   npm run seed -- --dev --light-world-only   # add or repair LWM subjects
  *
  * Demo login (per school):
  *   admin@greenfield.demo / Sofia@Demo1
@@ -23,6 +23,7 @@ import { seedSchools } from './seedSchools'
 import { seedStaff } from './seedStaff'
 import { seedStudents } from './seedStudents'
 import { seedLightWorld } from './seedLightWorld'
+import { seedInternationalAcademy } from './seedInternationalAcademy'
 
 function parseArgs(argv: string[]) {
   const args = argv.slice(2)
@@ -84,6 +85,9 @@ function main(): void {
 
     console.log('5b) Light World Mission College (Simbock)')
     seedLightWorld(ctx)
+
+    console.log('5c) International Academy of Excellence (Form 5A 40/60 Results)')
+    seedInternationalAcademy(ctx)
 
     console.log('6) Attendance (students + staff, last ~30 school days)')
     seedAttendance(ctx)

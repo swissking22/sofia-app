@@ -10,10 +10,11 @@ import {
   PrimaryButton,
   StatusBadge,
   StudentTable,
+  TableSelectionBar,
   selectClass,
 } from "../../../components/students/ui";
 import { Icon } from "../../../components/ui/Icon";
-import { fetchTransfers, type TransferDto } from "../../../lib/student-mgmt";
+import { downloadCsv, fetchTransfers, type TransferDto } from "../../../lib/student-mgmt";
 
 type StatusFilter = "all" | string;
 
@@ -53,6 +54,37 @@ export default function TransfersIndexPage() {
       );
     });
   }, [rows, search, statusFilter]);
+
+  const [selected, setSelected] = React.useState<string[]>([]);
+
+  const allSelected = filtered.length > 0 && selected.length === filtered.length;
+  function toggle(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelected([]);
+    else setSelected(filtered.map((r) => r.id));
+  }
+  function exportSelected() {
+    const target = filtered.filter((r) => selected.includes(r.id));
+    if (!target.length) return;
+    const csv = [
+      ["Student", "ID", "To School", "Date", "Status", "Reason"].join(","),
+      ...target.map((r) =>
+        [
+          `"${r.student_name || ""}"`,
+          `"${r.student_code || ""}"`,
+          `"${r.to_school_name}"`,
+          `"${r.transfer_date}"`,
+          `"${r.status}"`,
+          `"${r.reason || ""}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    downloadCsv(`transfers-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  }
 
   return (
     <AppShell
@@ -100,10 +132,27 @@ export default function TransfersIndexPage() {
 
       <StudentTable
         loading={loading}
-        columns={["Student", "ID", "To school", "Date", "Status", "Reason"]}
+        columns={[
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
+          "Student",
+          "ID",
+          "To school",
+          "Date",
+          "Status",
+          "Reason",
+        ]}
       >
         {filtered.length === 0 ? (
-          <EmptyRow colSpan={6}>
+          <EmptyRow colSpan={7}>
             No transfers match these filters.{" "}
             <Link
               href="/students/transfers/create"
@@ -115,6 +164,13 @@ export default function TransfersIndexPage() {
         ) : (
           filtered.map((r) => (
             <tr key={r.id} className="hover:bg-slate-50/80">
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(r.id)}
+                  onChange={() => toggle(r.id)}
+                />
+              </td>
               <td className="px-4 py-3 font-medium text-slate-800">
                 {r.student_id ? (
                   <Link
@@ -140,6 +196,23 @@ export default function TransfersIndexPage() {
           ))
         )}
       </StudentTable>
+
+      <TableSelectionBar
+        totalCount={filtered.length}
+        selectedCount={selected.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportSelected}
+            className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Export selected ({selected.length})
+          </button>
+        }
+      />
     </AppShell>
   );
 }

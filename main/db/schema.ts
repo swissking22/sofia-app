@@ -128,8 +128,8 @@ export function createSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS student_id_settings (
       id TEXT PRIMARY KEY NOT NULL,
       school_id TEXT NOT NULL UNIQUE,
-      pattern TEXT NOT NULL DEFAULT '{SCHOOL}-{YEAR}-{SEQ}',
-      sequence_scope TEXT NOT NULL DEFAULT 'year',
+      pattern TEXT NOT NULL DEFAULT '{SCHOOL}-{SEQ}',
+      sequence_scope TEXT NOT NULL DEFAULT 'school',
       next_sequence_number INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -142,7 +142,7 @@ export function createSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS student_settings (
       id TEXT PRIMARY KEY NOT NULL,
       school_id TEXT NOT NULL,
-      student_id_format TEXT NOT NULL DEFAULT 'SOF-{YEAR}-{SEQ}',
+      student_id_format TEXT NOT NULL DEFAULT 'SOF-{SEQ}',
       field_full_name INTEGER NOT NULL DEFAULT 1,
       field_gender INTEGER NOT NULL DEFAULT 1,
       field_date_of_birth INTEGER NOT NULL DEFAULT 1,
@@ -587,6 +587,10 @@ export function createSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_roles_school ON roles(school_id);
     CREATE INDEX IF NOT EXISTS idx_permissions_module ON permissions(module_key);
     CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_id);
+    CREATE INDEX IF NOT EXISTS idx_students_school_code ON students(school_id, student_code);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_students_school_code_unique
+      ON students(school_id, student_code)
+      WHERE deleted_at IS NULL AND student_code IS NOT NULL;
   `)
 
   // Migrate existing DBs that were created before extra school columns
@@ -1160,7 +1164,7 @@ function migrateStudentSettingsTable(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS student_settings (
       id TEXT PRIMARY KEY NOT NULL,
       school_id TEXT NOT NULL,
-      student_id_format TEXT NOT NULL DEFAULT 'SOF-{YEAR}-{SEQ}',
+      student_id_format TEXT NOT NULL DEFAULT 'SOF-{SEQ}',
       field_full_name INTEGER NOT NULL DEFAULT 1,
       field_gender INTEGER NOT NULL DEFAULT 1,
       field_date_of_birth INTEGER NOT NULL DEFAULT 1,
@@ -1179,6 +1183,13 @@ function migrateStudentSettingsTable(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_student_settings_school ON student_settings(school_id);
+
+    UPDATE student_settings
+    SET student_id_format = 'SOF-{SEQ}',
+        updated_at = datetime('now'),
+        version = version + 1,
+        sync_status = 'pending'
+    WHERE student_id_format = 'SOF-{YEAR}-{SEQ}';
   `)
 }
 
@@ -1188,8 +1199,8 @@ function migrateStudentIdSystem(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS student_id_settings (
       id TEXT PRIMARY KEY NOT NULL,
       school_id TEXT NOT NULL UNIQUE,
-      pattern TEXT NOT NULL DEFAULT '{SCHOOL}-{YEAR}-{SEQ}',
-      sequence_scope TEXT NOT NULL DEFAULT 'year',
+      pattern TEXT NOT NULL DEFAULT '{SCHOOL}-{SEQ}',
+      sequence_scope TEXT NOT NULL DEFAULT 'school',
       next_sequence_number INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -1226,6 +1237,72 @@ function migrateStudentIdSystem(db: Database.Database): void {
   ]
   for (const col of additions) {
     if (!studentCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  // Safe migration for existing student_id_settings:
+  // 1. Migrate default pattern from {SCHOOL}-{YEAR}-{SEQ} to {SCHOOL}-{SEQ}
+  // 2. Migrate sequence_scope from 'year' to 'school'
+  // 3. Preserve all existing student records, IDs, and student codes unchanged
+  db.exec(`
+    UPDATE student_id_settings
+    SET pattern = '{SCHOOL}-{SEQ}',
+        updated_at = datetime('now'),
+        version = version + 1,
+        sync_status = 'pending'
+    WHERE pattern = '{SCHOOL}-{YEAR}-{SEQ}';
+
+    UPDATE student_id_settings
+    SET sequence_scope = 'school',
+        updated_at = datetime('now'),
+        version = version + 1,
+        sync_status = 'pending'
+    WHERE sequence_scope = 'year';
+  `)
+
+  // Report existing students with missing student_code (do not silently regenerate)
+  try {
+    const missingCodes = db
+      .prepare(
+        `SELECT count(*) as count FROM students WHERE (student_code IS NULL OR TRIM(student_code) = '') AND deleted_at IS NULL`
+      )
+      .get() as { count: number } | undefined
+    if (missingCodes && missingCodes.count > 0) {
+      console.warn(
+        `[sofia] Note: Found ${missingCodes.count} student(s) with missing student_code. Leaving existing records unchanged.`
+      )
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Advance next_sequence_number if existing students have higher sequence numbers
+  try {
+    const settingsList = db
+      .prepare(
+        `SELECT id, school_id, next_sequence_number FROM student_id_settings WHERE deleted_at IS NULL`
+      )
+      .all() as Array<{ id: string; school_id: string; next_sequence_number: number }>
+
+    for (const setting of settingsList) {
+      const maxRow = db
+        .prepare(
+          `SELECT MAX(sequence_number) as max_seq FROM students WHERE school_id = ? AND deleted_at IS NULL`
+        )
+        .get(setting.school_id) as { max_seq: number | null } | undefined
+
+      if (maxRow?.max_seq != null && maxRow.max_seq >= setting.next_sequence_number) {
+        db.prepare(
+          `UPDATE student_id_settings
+           SET next_sequence_number = ?,
+               updated_at = datetime('now'),
+               version = version + 1,
+               sync_status = 'pending'
+           WHERE id = ?`
+        ).run(maxRow.max_seq + 1, setting.id)
+      }
+    }
+  } catch {
+    /* ignore */
   }
 
   db.exec(`
@@ -2517,6 +2594,8 @@ function migrateMvpFeatureTables(db: Database.Database): void {
       back_layout TEXT NOT NULL DEFAULT 'info',
       show_photo INTEGER NOT NULL DEFAULT 1,
       validity_months INTEGER NOT NULL DEFAULT 12,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      category TEXT NOT NULL DEFAULT 'Standard',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT,
@@ -3004,6 +3083,26 @@ function migrateResultsCalculationTables(db: Database.Database): void {
       ON result_calculation_profile_versions(profile_id, version_number);
     CREATE INDEX IF NOT EXISTS idx_rcp_assign_school
       ON result_calculation_class_assignments(school_id, profile_id);
+
+    CREATE TABLE IF NOT EXISTS result_subject_coefficients (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      class_id TEXT,
+      academic_level_id TEXT,
+      academic_year_id TEXT,
+      coefficient REAL NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (subject_id) REFERENCES subjects(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_rsc_school_subj
+      ON result_subject_coefficients(school_id, subject_id, class_id, academic_year_id);
   `)
 
   const runCols = (
@@ -3061,9 +3160,60 @@ function migrateResultsCalculationTables(db: Database.Database): void {
       name: 'failed_subjects',
       sql: `ALTER TABLE result_student_summaries ADD COLUMN failed_subjects INTEGER NOT NULL DEFAULT 0`,
     },
+    {
+      name: 'total_coefficients',
+      sql: `ALTER TABLE result_student_summaries ADD COLUMN total_coefficients REAL`,
+    },
+    {
+      name: 'total_weighted_marks',
+      sql: `ALTER TABLE result_student_summaries ADD COLUMN total_weighted_marks REAL`,
+    },
+    {
+      name: 'passed_subjects',
+      sql: `ALTER TABLE result_student_summaries ADD COLUMN passed_subjects INTEGER`,
+    },
+    {
+      name: 'status',
+      sql: `ALTER TABLE result_student_summaries ADD COLUMN status TEXT`,
+    },
   ]
   for (const col of sumAdds) {
     if (!sumCols.includes(col.name)) db.exec(col.sql)
+  }
+
+  const subjRowCols = (
+    db.prepare(`PRAGMA table_info(result_subject_rows)`).all() as Array<{
+      name: string
+    }>
+  ).map((c) => c.name)
+  const subjRowAdds: Array<{ name: string; sql: string }> = [
+    {
+      name: 'sequence_scores_json',
+      sql: `ALTER TABLE result_subject_rows ADD COLUMN sequence_scores_json TEXT`,
+    },
+    {
+      name: 'ca_average',
+      sql: `ALTER TABLE result_subject_rows ADD COLUMN ca_average REAL`,
+    },
+    {
+      name: 'subject_mark',
+      sql: `ALTER TABLE result_subject_rows ADD COLUMN subject_mark REAL`,
+    },
+    {
+      name: 'coefficient',
+      sql: `ALTER TABLE result_subject_rows ADD COLUMN coefficient REAL NOT NULL DEFAULT 1`,
+    },
+    {
+      name: 'weighted_mark',
+      sql: `ALTER TABLE result_subject_rows ADD COLUMN weighted_mark REAL NOT NULL DEFAULT 0`,
+    },
+    {
+      name: 'remark',
+      sql: `ALTER TABLE result_subject_rows ADD COLUMN remark TEXT`,
+    },
+  ]
+  for (const col of subjRowAdds) {
+    if (!subjRowCols.includes(col.name)) db.exec(col.sql)
   }
 
   const caCols = (
@@ -3213,6 +3363,8 @@ function migrateIdCardDesignerTables(db: Database.Database): void {
     { name: 'current_version_id', sql: `ALTER TABLE student_id_card_templates ADD COLUMN current_version_id TEXT` },
     { name: 'current_version_number', sql: `ALTER TABLE student_id_card_templates ADD COLUMN current_version_number INTEGER NOT NULL DEFAULT 1` },
     { name: 'updated_by', sql: `ALTER TABLE student_id_card_templates ADD COLUMN updated_by TEXT` },
+    { name: 'is_system', sql: `ALTER TABLE student_id_card_templates ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0` },
+    { name: 'category', sql: `ALTER TABLE student_id_card_templates ADD COLUMN category TEXT NOT NULL DEFAULT 'Standard'` },
   ]
   for (const col of tplAdds) {
     if (!tplCols.includes(col.name)) db.exec(col.sql)

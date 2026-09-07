@@ -32,7 +32,7 @@ export default function AttendanceAnalyticsPage() {
   const [to, setTo] = React.useState("");
   const [classId, setClassId] = React.useState("");
   const [deptId, setDeptId] = React.useState("");
-  const [studentId, setStudentId] = React.useState(
+  const [studentId] = React.useState(
     typeof router.query.student_id === "string" ? router.query.student_id : "",
   );
   const [threshold, setThreshold] = React.useState("75");

@@ -45,7 +45,7 @@ export const ADMISSION_TYPE_OPTIONS: Array<{
   },
 ]
 
-export const DEFAULT_STUDENT_ID_FORMAT = 'SOF-{YEAR}-{SEQ}'
+export const DEFAULT_STUDENT_ID_FORMAT = 'SOF-{SEQ}'
 
 export interface StudentSettings {
   id: string

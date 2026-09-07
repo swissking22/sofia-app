@@ -84,7 +84,15 @@ export function registerStudentsIpc(repos: Repositories): void {
             skipped += 1
             continue
           }
-          repos.students.create({ name, class_id: classId })
+          const cls = repos.classes.findById(classId)
+          repos.students.create({
+            name,
+            class_id: classId,
+            school_id: schoolId,
+            academic_level_id: cls?.academic_level_id ?? null,
+            admission_year: new Date().getFullYear(),
+            gender: row.gender ?? null,
+          })
           imported += 1
         }
 

@@ -1,5 +1,3 @@
-import React from "react";
-
 export type TeachingAssignmentPair = { class_id: string; subject_id: string };
 
 export function TeachingAssignmentPicker({

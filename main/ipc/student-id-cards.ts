@@ -281,7 +281,7 @@ export function registerStudentIdCardsIpc(repos: Repositories): void {
     'id-cards:template-action',
     (
       _e,
-      input: { id: string; action: 'duplicate' | 'activate' | 'archive' | 'delete' | 'rename'; name?: string }
+      input: { id: string; action: 'duplicate' | 'use' | 'activate' | 'archive' | 'delete' | 'rename'; name?: string }
     ): Result<unknown> => {
       const s = session()
       if (!s || !allow(repos, s, ['students.id_cards.manage', 'students.id_cards.edit_template'])) {
@@ -289,6 +289,11 @@ export function registerStudentIdCardsIpc(repos: Repositories): void {
       }
       const schoolId = sid(repos, s)
       return wrap(() => {
+        if (input.action === 'use') {
+          const created = cards().useTemplate(schoolId, input.id, s.userId)
+          audit(repos, s, schoolId, 'id_card.template.created', created.id, `Created school template ${created.name} from template ${input.id}`)
+          return created
+        }
         if (input.action === 'duplicate') {
           const d = cards().duplicateTemplate(schoolId, input.id, s.userId)
           audit(repos, s, schoolId, 'id_card.template.created', d.id, `Duplicated template`)
@@ -403,7 +408,14 @@ export function registerStudentIdCardsIpc(repos: Repositories): void {
           missing_photo_policy: input.missing_photo_policy || 'generate_without',
           userId: s.userId,
         })
-        audit(repos, s, schoolId, 'id_card.generated', String(job?.id || ''), `Generated ${(job as { successful?: number })?.successful || 0} cards`)
+        audit(
+          repos,
+          s,
+          schoolId,
+          'id_card.generated',
+          String((job as { id?: string })?.id || ''),
+          `Generated ${(job as { successful?: number })?.successful || 0} cards`
+        )
         return job
       }, 'Generation failed.')
     }

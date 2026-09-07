@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { enqueueSync } from '../../sync/queue'
+import { SQL_SECTION_SORT_CASE } from '../../domain/class-order'
 import type { Class } from '../types'
 import { BaseRepository, type CreateInput, type UpdateInput } from './base'
 
@@ -11,10 +12,15 @@ export class ClassRepository extends BaseRepository<Class> {
   findBySchool(schoolId: string): Class[] {
     return this.db
       .prepare(
-        `SELECT * FROM classes
-         WHERE deleted_at IS NULL
-           AND (school_id = ? OR school_id IS NULL)
-         ORDER BY name ASC`
+        `SELECT c.* FROM classes c
+         LEFT JOIN academic_levels al ON al.id = c.academic_level_id
+         LEFT JOIN sections sec ON sec.id = c.section_id
+         WHERE c.deleted_at IS NULL
+           AND (c.school_id = ? OR c.school_id IS NULL)
+         ORDER BY IFNULL(al.sort_order, 9999) ASC,
+                  ${SQL_SECTION_SORT_CASE} ASC,
+                  IFNULL(sec.name, '') COLLATE NOCASE ASC,
+                  c.name COLLATE NOCASE ASC`
       )
       .all(schoolId) as Class[]
   }
@@ -22,12 +28,17 @@ export class ClassRepository extends BaseRepository<Class> {
   findStructureClasses(schoolId: string): Class[] {
     return this.db
       .prepare(
-        `SELECT * FROM classes
-         WHERE deleted_at IS NULL
-           AND school_id = ?
-           AND academic_level_id IS NOT NULL
-           AND section_id IS NOT NULL
-         ORDER BY name ASC`
+        `SELECT c.* FROM classes c
+         LEFT JOIN academic_levels al ON al.id = c.academic_level_id
+         LEFT JOIN sections sec ON sec.id = c.section_id
+         WHERE c.deleted_at IS NULL
+           AND c.school_id = ?
+           AND c.academic_level_id IS NOT NULL
+           AND c.section_id IS NOT NULL
+         ORDER BY IFNULL(al.sort_order, 9999) ASC,
+                  ${SQL_SECTION_SORT_CASE} ASC,
+                  IFNULL(sec.name, '') COLLATE NOCASE ASC,
+                  c.name COLLATE NOCASE ASC`
       )
       .all(schoolId) as Class[]
   }

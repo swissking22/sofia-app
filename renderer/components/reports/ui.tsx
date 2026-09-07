@@ -9,6 +9,7 @@ import {
   SecondaryButton,
   StatusBadge,
   StudentTable,
+  TableSelectionBar,
   selectClass,
 } from "../students/ui";
 
@@ -21,6 +22,7 @@ export {
   SecondaryButton,
   StatusBadge,
   StudentTable,
+  TableSelectionBar,
   selectClass,
 };
 

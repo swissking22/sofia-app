@@ -9,6 +9,7 @@ import {
   type ExamPaperDto,
 } from "../../../lib/academic-mgmt";
 import { handleScoreGridKeyDown } from "../../../lib/score-entry";
+import { TableSelectionBar } from "../../../components/students/ui";
 
 const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -48,6 +49,43 @@ export default function ExamScoresPage() {
     }>
   >([]);
   const scoreInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
+
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const allSelected =
+    scores.length > 0 && selectedIds.length === scores.length;
+  function toggleRow(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelectedIds([]);
+    else setSelectedIds(scores.map((s) => s.id));
+  }
+  function bulkSetScore(val: number | null) {
+    setScores((prev) =>
+      prev.map((s) =>
+        selectedIds.includes(s.id) ? { ...s, score: val } : s,
+      ),
+    );
+  }
+  function exportSelected() {
+    const target = scores.filter((s) => selectedIds.includes(s.id));
+    if (!target.length) return;
+    const csv = [
+      ["Student ID", "Name", `Score (max ${maxScore})`].join(","),
+      ...target.map((s) =>
+        [`"${s.student_code || ""}"`, `"${s.name}"`, s.score ?? ""].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `exam-scores-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   React.useEffect(() => {
     if (!router.isReady) return;
@@ -235,58 +273,113 @@ export default function ExamScoresPage() {
           Choose an exam paper from the dropdown to load the student roster.
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Student ID</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Score (max {maxScore})</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {scores.length === 0 ? (
+        <>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
-                  <td
-                    colSpan={3}
-                    className="px-4 py-8 text-center text-slate-500"
-                  >
-                    No students in this class.
-                  </td>
+                  <th className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            selectedIds.length > 0 && !allSelected;
+                      }}
+                      onChange={toggleAll}
+                      aria-label="Select all"
+                    />
+                  </th>
+                  <th className="px-4 py-3">Student ID</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Score (max {maxScore})</th>
                 </tr>
-              ) : (
-                scores.map((s, index) => (
-                  <tr key={s.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                      {s.student_code || "—"}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      {s.name}
-                    </td>
-                    <td className="px-4 py-3">
-                      <input
-                        ref={(el) => {
-                          scoreInputRefs.current[index] = el;
-                        }}
-                        type="number"
-                        min={0}
-                        max={maxScore}
-                        step="0.01"
-                        className={inputClass}
-                        value={s.score ?? ""}
-                        onChange={(e) => updateScore(s.id, e.target.value)}
-                        onKeyDown={(e) =>
-                          handleScoreGridKeyDown(e, index, scoreInputRefs)
-                        }
-                        placeholder="—"
-                      />
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {scores.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      No students in this class.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  scores.map((s, index) => (
+                    <tr key={s.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(s.id)}
+                          onChange={() => toggleRow(s.id)}
+                        />
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                        {s.student_code || "—"}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {s.name}
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          ref={(el) => {
+                            scoreInputRefs.current[index] = el;
+                          }}
+                          type="number"
+                          min={0}
+                          max={maxScore}
+                          step="0.01"
+                          className={inputClass}
+                          value={s.score ?? ""}
+                          onChange={(e) => updateScore(s.id, e.target.value)}
+                          onKeyDown={(e) =>
+                            handleScoreGridKeyDown(e, index, scoreInputRefs)
+                          }
+                          placeholder="—"
+                        />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <TableSelectionBar
+            totalCount={scores.length}
+            selectedCount={selectedIds.length}
+            allSelected={allSelected}
+            onToggleAll={toggleAll}
+            onClear={() => setSelectedIds([])}
+            actions={
+              <>
+                <button
+                  type="button"
+                  onClick={() => bulkSetScore(maxScore)}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Set to max ({maxScore})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => bulkSetScore(null)}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                >
+                  Clear scores
+                </button>
+                <button
+                  type="button"
+                  onClick={exportSelected}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export selected ({selectedIds.length})
+                </button>
+              </>
+            }
+          />
+        </>
       )}
     </AppShell>
   );

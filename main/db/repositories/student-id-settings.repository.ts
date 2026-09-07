@@ -43,12 +43,26 @@ export class StudentIdSettingsRepository extends BaseRepository<StudentIdSetting
     const existing = this.findBySchool(schoolId)
     if (existing) return existing
 
+    let initialSequence = 1
+    try {
+      const maxRow = this.db
+        .prepare(
+          `SELECT MAX(sequence_number) as max_seq FROM students WHERE school_id = ? AND deleted_at IS NULL`
+        )
+        .get(schoolId) as { max_seq: number | null } | undefined
+      if (maxRow?.max_seq != null && maxRow.max_seq > 0) {
+        initialSequence = maxRow.max_seq + 1
+      }
+    } catch {
+      /* ignore if students table does not yet exist */
+    }
+
     const record: StudentIdSettings = {
       ...this.buildBaseFields(),
       school_id: schoolId,
       pattern: DEFAULT_STUDENT_ID_PATTERN,
-      sequence_scope: 'year',
-      next_sequence_number: 1,
+      sequence_scope: 'school',
+      next_sequence_number: initialSequence,
     }
 
     const tx = this.db.transaction(() => {
@@ -101,6 +115,7 @@ export class StudentIdSettingsRepository extends BaseRepository<StudentIdSetting
       throw new Error('Pattern must include the {SEQ} token.')
     }
     if (
+      input.sequence_scope !== 'school' &&
       input.sequence_scope !== 'year' &&
       input.sequence_scope !== 'year_level'
     ) {

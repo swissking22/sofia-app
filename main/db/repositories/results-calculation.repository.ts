@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
 import {
-  demoStandard4060,
+  cameroonStandardSecondary20,
   demoUpperSecondary,
   hashConfig,
   type CalculationConfig,
@@ -356,6 +356,7 @@ export class ResultsCalculationRepository {
     academicLevelId: string | null,
     academicYearId: string | null
   ): ProfileDto | null {
+    // 1. Specific class or level assignments
     const rows = this.db
       .prepare(
         `SELECT p.* FROM result_calculation_profiles p
@@ -378,7 +379,23 @@ export class ResultsCalculationRepository {
         academicLevelId
       ) as CalculationProfileRow[]
     const first = rows[0]
-    return first ? this.toDto(schoolId, first) : null
+    if (first) return this.toDto(schoolId, first)
+
+    // 2. School Default: Active profile with NO assignments (or general active profile)
+    const defaults = this.db
+      .prepare(
+        `SELECT p.* FROM result_calculation_profiles p
+         LEFT JOIN result_calculation_class_assignments a
+           ON a.profile_id = p.id AND a.school_id = p.school_id AND a.deleted_at IS NULL
+         WHERE p.school_id = ? AND p.status = 'active' AND p.deleted_at IS NULL
+           AND (p.academic_year_id IS NULL OR p.academic_year_id = ?)
+         GROUP BY p.id
+         ORDER BY COUNT(a.id) ASC, p.created_at ASC`
+      )
+      .all(schoolId, academicYearId) as CalculationProfileRow[]
+
+    const fallback = defaults[0]
+    return fallback ? this.toDto(schoolId, fallback) : null
   }
 
   ensureDemo(schoolId: string, createdBy?: string | null): void {
@@ -389,18 +406,22 @@ export class ResultsCalculationRepository {
       )
       .get(schoolId) as { n: number }
     if (count.n > 0) return
-    this.create({
+
+    // Cameroon Secondary Standard 40/60 out of 20 with 10 pass mark
+    const p1 = this.create({
       school_id: schoolId,
-      name: 'Standard Secondary - 40/60',
+      name: 'Cameroon Secondary Standard (40% CA + 60% Exam)',
       description:
-        'Continuous assessment 40% and final examination 60%. Pass mark 50%. Ranking on. Promotion: average at least 50% and at most two failed subjects.',
+        'Official standard: Continuous Assessment 40% (average of sequences), Final Examination 60%, Pass Mark 10/20, Rounding 2 decimal places, Subject coefficients.',
       created_by: createdBy ?? null,
-      config: demoStandard4060(),
+      config: cameroonStandardSecondary20(),
       assignments: [],
     })
+    this.setStatus(schoolId, p1.profile.id, 'active')
+
     this.create({
       school_id: schoolId,
-      name: 'Upper Secondary - Tests + Exam',
+      name: 'Upper Secondary - Tests + Exam (100pt Scale)',
       description:
         'Test 1, Test 2, assignment and classwork at 10% each, plus a 60% final exam. GCE-style grades. GPA on. Promotion: average at least 60% and at most one failed subject.',
       created_by: createdBy ?? null,

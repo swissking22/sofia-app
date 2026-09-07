@@ -5,7 +5,11 @@ import type {
   StudentIdSettingsDto,
   StudentIdSettingsSaveInput,
 } from '../db/repositories/student-id-settings.repository'
-import { buildStudentId, padSequence } from '../helpers/student-id'
+import {
+  DEFAULT_STUDENT_ID_PATTERN,
+  buildStudentId,
+  padSequence,
+} from '../helpers/student-id'
 import { generateStudentId } from '../services/student-id'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -81,7 +85,7 @@ export function registerStudentIdIpc(repos: Repositories): void {
       const levelShort =
         input.levelShort?.trim() || levels[0]?.short_name || 'F1'
       const preview = buildStudentId(
-        input.pattern || '{SCHOOL}-{YEAR}-{SEQ}',
+        input.pattern || DEFAULT_STUDENT_ID_PATTERN,
         {
           SCHOOL: school.short_code,
           YEAR: year,

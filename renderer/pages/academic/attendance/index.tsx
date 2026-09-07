@@ -10,6 +10,7 @@ import {
   type AcademicMeta,
   type AttendanceSessionDto,
 } from "../../../lib/academic-mgmt";
+import { TableSelectionBar } from "../../../components/students/ui";
 
 const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -66,6 +67,42 @@ export default function AttendanceIndexPage() {
         formatDate(s.session_date).toLowerCase().includes(q),
     );
   }, [sessions, search]);
+
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const allSelected =
+    filtered.length > 0 && selectedIds.length === filtered.length;
+  function toggleRow(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelectedIds([]);
+    else setSelectedIds(filtered.map((s) => s.id));
+  }
+  function exportSelected() {
+    const target = filtered.filter((s) => selectedIds.includes(s.id));
+    if (!target.length) return;
+    const csv = [
+      ["Date", "Class", "Present", "Absent", "Total"].join(","),
+      ...target.map((s) =>
+        [
+          `"${formatDate(s.session_date)}"`,
+          `"${s.class_name || ""}"`,
+          s.present,
+          s.absent,
+          s.total,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance-sessions-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <AppShell
@@ -137,62 +174,101 @@ export default function AttendanceIndexPage() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading sessions…</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">Class</th>
-                <th className="px-4 py-3 text-center">Present</th>
-                <th className="px-4 py-3 text-center">Absent</th>
-                <th className="px-4 py-3 text-center">Total</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.length === 0 ? (
+        <>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-8 text-center text-slate-500"
-                  >
-                    No attendance sessions match these filters.
-                  </td>
+                  <th className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            selectedIds.length > 0 && !allSelected;
+                      }}
+                      onChange={toggleAll}
+                      aria-label="Select all"
+                    />
+                  </th>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Class</th>
+                  <th className="px-4 py-3 text-center">Present</th>
+                  <th className="px-4 py-3 text-center">Absent</th>
+                  <th className="px-4 py-3 text-center">Total</th>
+                  <th className="px-4 py-3">Actions</th>
                 </tr>
-              ) : (
-                filtered.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 text-slate-700">
-                      {formatDate(s.session_date)}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-800">
-                      {s.class_name || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-center text-emerald-600">
-                      {s.present}
-                    </td>
-                    <td className="px-4 py-3 text-center text-red-600">
-                      {s.absent}
-                    </td>
-                    <td className="px-4 py-3 text-center text-slate-600">
-                      {s.total}
-                    </td>
-                    <td className="px-4 py-3">
-                      <TableActionGroup>
-                        <TableIconButton
-                          icon={PencilEdit01Icon}
-                          label="Edit attendance"
-                          tone="primary"
-                          href={`/academic/attendance/take?class_id=${encodeURIComponent(s.class_id)}&date=${encodeURIComponent(s.session_date)}`}
-                        />
-                      </TableActionGroup>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-4 py-8 text-center text-slate-500"
+                    >
+                      No attendance sessions match these filters.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : (
+                  filtered.map((s) => (
+                    <tr key={s.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(s.id)}
+                          onChange={() => toggleRow(s.id)}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {formatDate(s.session_date)}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-800">
+                        {s.class_name || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-center text-emerald-600">
+                        {s.present}
+                      </td>
+                      <td className="px-4 py-3 text-center text-red-600">
+                        {s.absent}
+                      </td>
+                      <td className="px-4 py-3 text-center text-slate-600">
+                        {s.total}
+                      </td>
+                      <td className="px-4 py-3">
+                        <TableActionGroup>
+                          <TableIconButton
+                            icon={PencilEdit01Icon}
+                            label="Edit attendance"
+                            tone="primary"
+                            href={`/academic/attendance/take?class_id=${encodeURIComponent(s.class_id)}&date=${encodeURIComponent(s.session_date)}`}
+                          />
+                        </TableActionGroup>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <TableSelectionBar
+            totalCount={filtered.length}
+            selectedCount={selectedIds.length}
+            allSelected={allSelected}
+            onToggleAll={toggleAll}
+            onClear={() => setSelectedIds([])}
+            actions={
+              <button
+                type="button"
+                onClick={exportSelected}
+                className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Export selected ({selectedIds.length})
+              </button>
+            }
+          />
+        </>
       )}
     </AppShell>
   );

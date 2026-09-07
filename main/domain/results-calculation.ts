@@ -111,6 +111,11 @@ export interface AnnualConfig {
 }
 
 export interface CalculationConfig {
+  scale?: number
+  ca_weight?: number
+  exam_weight?: number
+  expected_sequences?: number
+  sequence_method?: GroupMethod
   method: GroupMethod
   best_n: number | null
   components: AssessmentComponentConfig[]
@@ -290,8 +295,9 @@ export function canActivateProfile(config: CalculationConfig): {
   const w = validateWeights(config)
   if (!w.ok && w.error) errors.push(w.error)
   if (!config.grading.length) errors.push('Add at least one grade band.')
-  if (config.pass_mark < 0 || config.pass_mark > 100) {
-    errors.push('Pass mark must be between 0 and 100.')
+  const maxMark = config.scale || 100
+  if (config.pass_mark < 0 || config.pass_mark > maxMark) {
+    errors.push(`Pass mark must be between 0 and ${maxMark}.`)
   }
   for (const band of config.grading) {
     if (band.min_score > band.max_score) {
@@ -669,6 +675,77 @@ export const GCE_STYLE_BANDS: GradeBandConfig[] = [
   { grade: 'D', min_score: 50, max_score: 59, grade_point: 1, is_pass: true, remark: 'Pass', order: 5 },
   { grade: 'F', min_score: 0, max_score: 49, grade_point: 0, is_pass: false, remark: 'Fail', order: 6 },
 ]
+
+export const CAMEROON_20_BANDS: GradeBandConfig[] = [
+  { grade: 'A', min_score: 16, max_score: 20, grade_point: 4, is_pass: true, remark: 'Excellent', order: 1 },
+  { grade: 'B', min_score: 14, max_score: 15.999, grade_point: 3, is_pass: true, remark: 'Very Good', order: 2 },
+  { grade: 'C', min_score: 12, max_score: 13.999, grade_point: 2, is_pass: true, remark: 'Good', order: 3 },
+  { grade: 'D', min_score: 10, max_score: 11.999, grade_point: 1, is_pass: true, remark: 'Pass', order: 4 },
+  { grade: 'E', min_score: 8, max_score: 9.999, grade_point: 0, is_pass: false, remark: 'Weak', order: 5 },
+  { grade: 'F', min_score: 0, max_score: 7.999, grade_point: 0, is_pass: false, remark: 'Fail', order: 6 },
+]
+
+export function cameroonStandardSecondary20(overrides?: Partial<CalculationConfig>): CalculationConfig {
+  const caWeight = overrides?.ca_weight ?? 40
+  const examWeight = overrides?.exam_weight ?? 60
+  return {
+    scale: 20,
+    ca_weight: caWeight,
+    exam_weight: examWeight,
+    expected_sequences: 3,
+    sequence_method: 'simple_average',
+    method: 'weighted',
+    best_n: null,
+    pass_mark: 10,
+    rounding: { places: 2, half: 'standard' },
+    missing_policy: 'exclude',
+    absent_policy: 'exclude',
+    overall: { method: 'credit', default_credit: 1 },
+    ranking: { enabled: true, by: 'average', scope: 'class', ties: 'competition' },
+    promotion: {
+      enabled: true,
+      automatic: false,
+      min_average: 10,
+      max_failed_subjects: 3,
+      min_passed_subjects: null,
+      min_subject_score: null,
+      required_subject_ids: [],
+      attendance_threshold: null,
+    },
+    annual: { method: 'average', term_weights: [], best_n: null },
+    subject_overrides: [],
+    grading: CAMEROON_20_BANDS,
+    use_gpa: false,
+    groups: [],
+    components: [
+      {
+        id: 'ca',
+        name: 'Continuous Assessment',
+        code: 'CA',
+        type: 'continuous_assessment',
+        source: 'ca',
+        max_score: 20,
+        weight_percent: caWeight,
+        order: 1,
+        required: true,
+        group_id: null,
+      },
+      {
+        id: 'exam',
+        name: 'Final Examination',
+        code: 'EXAM',
+        type: 'final_exam',
+        source: 'exam',
+        max_score: 20,
+        weight_percent: examWeight,
+        order: 2,
+        required: true,
+        group_id: null,
+      },
+    ],
+    ...overrides,
+  }
+}
 
 function baseConfig(partial: Partial<CalculationConfig>): CalculationConfig {
   return {

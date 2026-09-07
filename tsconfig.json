@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
+    "target": "ES2022",
     "module": "preserve",
+    "jsx": "preserve",
     "strict": true,
     "noEmit": true,
     "allowJs": true,

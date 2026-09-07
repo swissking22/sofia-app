@@ -7,6 +7,7 @@ import {
   FilterBar,
   FilterField,
   FinanceTable,
+  TableSelectionBar,
   PageAlert,
   PrimaryButton,
   SecondaryButton,
@@ -112,6 +113,35 @@ export default function OutstandingPage() {
   }
 
   const studentIds = studentRows.map((r) => r.student_id);
+  const allStudentsSelected =
+    studentIds.length > 0 && studentIds.every((id) => selected.has(id));
+
+  function exportSelectedStudents() {
+    const target = studentRows.filter((r) => selected.has(r.student_id));
+    if (!target.length) return;
+    const csv = [
+      ["Student", "ID", "Class", "Outstanding", "Current", "1-30 days", "60+ days", "Invoices Count"].join(","),
+      ...target.map((r) =>
+        [
+          `"${r.student_name}"`,
+          `"${r.student_code || ""}"`,
+          `"${r.class_name || ""}"`,
+          r.outstanding,
+          r.aging_current,
+          r.aging_30,
+          r.aging_60,
+          r.invoice_ids.length,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `outstanding-students-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <AppShell
@@ -167,41 +197,36 @@ export default function OutstandingPage() {
       />
 
       {groupBy === "student" ? (
-        <FinanceTable
-          columns={[
-            "",
-            "Student",
-            "Class",
-            "Outstanding",
-            "Current",
-            "1–30 days",
-            "60+ days",
-            "Invoices",
-          ]}
-          loading={loading}
-        >
-          {studentRows.length === 0 ? (
-            <EmptyRow colSpan={8} message="No outstanding balances." />
-          ) : (
-            <>
-              <tr className="border-t border-slate-100 bg-slate-50/80">
-                <td className="px-4 py-2">
-                  <input
-                    type="checkbox"
-                    checked={
-                      studentIds.length > 0 &&
-                      studentIds.every((id) => selected.has(id))
-                    }
-                    onChange={() => toggleAll(studentIds)}
-                    aria-label="Select all"
-                  />
-                </td>
-                <td colSpan={7} className="px-4 py-2 text-xs text-slate-500">
-                  Select all on this list
-                </td>
-              </tr>
-              {studentRows.map((r) => (
-                <tr key={r.student_id} className="border-t border-slate-100">
+        <>
+          <FinanceTable
+            columns={[
+              <input
+                key="select-all-header"
+                type="checkbox"
+                checked={allStudentsSelected}
+                ref={(el) => {
+                  if (el)
+                    el.indeterminate =
+                      selected.size > 0 && !allStudentsSelected;
+                }}
+                onChange={() => toggleAll(studentIds)}
+                aria-label="Select all"
+              />,
+              "Student",
+              "Class",
+              "Outstanding",
+              "Current",
+              "1–30 days",
+              "60+ days",
+              "Invoices",
+            ]}
+            loading={loading}
+          >
+            {studentRows.length === 0 ? (
+              <EmptyRow colSpan={8} message="No outstanding balances." />
+            ) : (
+              studentRows.map((r) => (
+                <tr key={r.student_id} className="border-t border-slate-100 hover:bg-slate-50/80">
                   <td className="px-4 py-3">
                     <input
                       type="checkbox"
@@ -237,10 +262,38 @@ export default function OutstandingPage() {
                     {r.invoice_ids.length}
                   </td>
                 </tr>
-              ))}
-            </>
-          )}
-        </FinanceTable>
+              ))
+            )}
+          </FinanceTable>
+
+          <TableSelectionBar
+            totalCount={studentRows.length}
+            selectedCount={selected.size}
+            allSelected={allStudentsSelected}
+            onToggleAll={() => toggleAll(studentIds)}
+            onClear={() => setSelected(new Set())}
+            actions={
+              <>
+                {canManage ? (
+                  <button
+                    type="button"
+                    onClick={() => setRemindOpen(true)}
+                    className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+                  >
+                    Send reminders ({selected.size})
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={exportSelectedStudents}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export selected ({selected.size})
+                </button>
+              </>
+            }
+          />
+        </>
       ) : (
         <FinanceTable
           columns={[

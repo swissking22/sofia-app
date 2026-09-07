@@ -38,6 +38,14 @@ export interface StudentListResult {
     years: number[]
     levels: Array<{ id: string; name: string; sort_order: number }>
     sections: Array<{ id: string; name: string }>
+    classes: Array<{
+      id: string
+      name: string
+      academic_level_id: string | null
+      section_id: string | null
+      level_sort_order?: number | null
+      section_name?: string | null
+    }>
   }
 }
 
@@ -140,12 +148,68 @@ export async function fetchStudentList(filters?: {
   admissionYear?: number | null
   academicLevelId?: string | null
   sectionId?: string | null
+  classId?: string | null
   search?: string | null
 }): Promise<Result<StudentListResult>> {
   return (await window.ipc.invoke(
     'students:mgmt-list',
     filters ?? {}
   )) as Result<StudentListResult>
+}
+
+export interface ClassListDto {
+  title: string
+  generated_at: string
+  all_classes: boolean
+  school: {
+    name: string
+    address: string | null
+    phone: string | null
+    email: string | null
+    school_code: string
+    region: string | null
+    division: string | null
+    logo_url: string | null
+  }
+  academic_year: { id: string; name: string } | null
+  class: {
+    id: string
+    name: string
+    level_name: string | null
+    level_sort_order?: number | null
+    section_name: string | null
+  } | null
+  students: StudentDto[]
+  groups: Array<{
+    class: {
+      id: string
+      name: string
+      level_name: string | null
+      level_sort_order?: number | null
+      section_name: string | null
+    } | null
+    students: StudentDto[]
+  }>
+}
+
+export async function fetchClassList(input: {
+  class_id?: string | null
+  student_ids?: string[]
+}): Promise<Result<ClassListDto>> {
+  return (await window.ipc.invoke(
+    'students:class-list',
+    input
+  )) as Result<ClassListDto>
+}
+
+export function downloadCsv(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export async function fetchStudent(

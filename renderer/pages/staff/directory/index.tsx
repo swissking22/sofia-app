@@ -14,6 +14,7 @@ import {
   SecondaryButton,
   StatusBadge,
   StaffTable,
+  TableSelectionBar,
   fieldClass,
   selectClass,
   useDebouncedValue,
@@ -125,6 +126,43 @@ export default function StaffDirectoryPage() {
   }
 
   const canManage = meta?.can_manage ?? false;
+  const [selected, setSelected] = React.useState<string[]>([]);
+
+  const allSelected = staff.length > 0 && selected.length === staff.length;
+  function toggle(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelected([]);
+    else setSelected(staff.map((s) => s.id));
+  }
+  function exportSelected() {
+    const target = staff.filter((s) => selected.includes(s.id));
+    if (!target.length) return;
+    const csv = [
+      ["Name", "Type", "Role", "Department", "Phone", "Email", "Status"].join(","),
+      ...target.map((s) =>
+        [
+          `"${s.full_name}"`,
+          `"${s.staff_type}"`,
+          `"${s.job_role ? (JOB_ROLE_LABELS[s.job_role] || s.job_role) : ""}"`,
+          `"${s.department_name || ""}"`,
+          `"${s.phone || ""}"`,
+          `"${s.email || ""}"`,
+          `"${s.status}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `staff-directory-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <AppShell
@@ -205,10 +243,27 @@ export default function StaffDirectoryPage() {
 
       <StaffTable
         loading={loading}
-        columns={["Name", "Role", "Department", "Contact", "Status", ""]}
+        columns={[
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
+          "Name",
+          "Role",
+          "Department",
+          "Contact",
+          "Status",
+          "",
+        ]}
       >
         {staff.length === 0 ? (
-          <EmptyRow colSpan={6}>No staff match these filters.</EmptyRow>
+          <EmptyRow colSpan={7}>No staff match these filters.</EmptyRow>
         ) : (
           staff.map((s) => (
             <tr
@@ -216,6 +271,13 @@ export default function StaffDirectoryPage() {
               className="cursor-pointer hover:bg-slate-50/80"
               onClick={() => void router.push(`/staff/directory/${s.id}`)}
             >
+              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selected.includes(s.id)}
+                  onChange={() => toggle(s.id)}
+                />
+              </td>
               <td className="px-4 py-3">
                 <Link
                   href={`/staff/directory/${s.id}`}
@@ -251,6 +313,23 @@ export default function StaffDirectoryPage() {
           ))
         )}
       </StaffTable>
+
+      <TableSelectionBar
+        totalCount={staff.length}
+        selectedCount={selected.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportSelected}
+            className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Export selected ({selected.length})
+          </button>
+        }
+      />
 
       <FormModal
         open={createOpen}

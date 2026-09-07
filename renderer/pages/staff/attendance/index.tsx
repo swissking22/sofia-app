@@ -9,6 +9,7 @@ import {
   SecondaryButton,
   StatusBadge,
   StaffTable,
+  TableSelectionBar,
   selectClass,
 } from "../../../components/staff/ui";
 import {
@@ -217,6 +218,55 @@ export default function TeacherAttendancePage() {
     month: "long",
   });
 
+  const [selectedDay, setSelectedDay] = React.useState<string[]>([]);
+  const allDaySelected =
+    dayRows.length > 0 && selectedDay.length === dayRows.length;
+  function toggleDay(id: string) {
+    setSelectedDay((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAllDay() {
+    if (allDaySelected) setSelectedDay([]);
+    else setSelectedDay(dayRows.map((r) => r.staff_id));
+  }
+  function markSelectedStatus(status: StaffAttendanceStatus | "") {
+    setDayRows((prev) =>
+      prev.map((r) =>
+        selectedDay.includes(r.staff_id)
+          ? { ...r, status: status || null }
+          : r,
+      ),
+    );
+  }
+
+  const [selectedMonth, setSelectedMonth] = React.useState<string[]>([]);
+  const allMonthSelected =
+    monthRows.length > 0 && selectedMonth.length === monthRows.length;
+  function toggleMonth(id: string) {
+    setSelectedMonth((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAllMonth() {
+    if (allMonthSelected) setSelectedMonth([]);
+    else setSelectedMonth(monthRows.map((r) => r.staff_id));
+  }
+  function exportSelectedMonthCsv() {
+    const target = monthRows.filter((r) => selectedMonth.includes(r.staff_id));
+    if (!target.length) return;
+    const csv = [
+      ["Teacher", "Present", "Absent", "Late", "Half day"].join(","),
+      ...target.map((r) =>
+        [`"${r.full_name}"`, r.present, r.absent, r.late, r.half_day].join(","),
+      ),
+    ].join("\n");
+    downloadCsv(
+      `teacher-attendance-${year}-${String(month).padStart(2, "0")}.csv`,
+      csv,
+    );
+  }
+
   return (
     <AppShell
       title="Teacher Attendance"
@@ -280,13 +330,42 @@ export default function TeacherAttendancePage() {
 
           <StaffTable
             loading={dayLoading}
-            columns={["Teacher", "Employee ID", "Status"]}
+            columns={[
+              canManage ? (
+                <input
+                  key="select-all-day"
+                  type="checkbox"
+                  checked={allDaySelected}
+                  ref={(el) => {
+                    if (el)
+                      el.indeterminate =
+                        selectedDay.length > 0 && !allDaySelected;
+                  }}
+                  onChange={toggleAllDay}
+                  aria-label="Select all"
+                />
+              ) : (
+                ""
+              ),
+              "Teacher",
+              "Employee ID",
+              "Status",
+            ]}
           >
             {dayRows.length === 0 ? (
-              <EmptyRow colSpan={3}>No active teachers to mark.</EmptyRow>
+              <EmptyRow colSpan={4}>No active teachers to mark.</EmptyRow>
             ) : (
               dayRows.map((row) => (
                 <tr key={row.staff_id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    {canManage ? (
+                      <input
+                        type="checkbox"
+                        checked={selectedDay.includes(row.staff_id)}
+                        onChange={() => toggleDay(row.staff_id)}
+                      />
+                    ) : null}
+                  </td>
                   <td className="px-4 py-3 font-medium text-slate-900">
                     {row.full_name}
                   </td>
@@ -329,6 +408,55 @@ export default function TeacherAttendancePage() {
               ))
             )}
           </StaffTable>
+
+          {canManage ? (
+            <TableSelectionBar
+              totalCount={dayRows.length}
+              selectedCount={selectedDay.length}
+              allSelected={allDaySelected}
+              onToggleAll={toggleAllDay}
+              onClear={() => setSelectedDay([])}
+              actions={
+                <>
+                  <button
+                    type="button"
+                    onClick={() => markSelectedStatus("present")}
+                    className="cursor-pointer rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                  >
+                    Mark Present ({selectedDay.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => markSelectedStatus("late")}
+                    className="cursor-pointer rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-600"
+                  >
+                    Mark Late ({selectedDay.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => markSelectedStatus("absent")}
+                    className="cursor-pointer rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700"
+                  >
+                    Mark Absent ({selectedDay.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => markSelectedStatus("half_day")}
+                    className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Mark Half day ({selectedDay.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => markSelectedStatus("")}
+                    className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                  >
+                    Clear status
+                  </button>
+                </>
+              }
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -388,6 +516,18 @@ export default function TeacherAttendancePage() {
             <StaffTable
               loading={monthLoading}
               columns={[
+                <input
+                  key="select-all-month"
+                  type="checkbox"
+                  checked={allMonthSelected}
+                  ref={(el) => {
+                    if (el)
+                      el.indeterminate =
+                        selectedMonth.length > 0 && !allMonthSelected;
+                  }}
+                  onChange={toggleAllMonth}
+                  aria-label="Select all"
+                />,
                 "Teacher",
                 "Present",
                 "Absent",
@@ -396,10 +536,17 @@ export default function TeacherAttendancePage() {
               ]}
             >
               {monthRows.length === 0 ? (
-                <EmptyRow colSpan={5}>No attendance for this month.</EmptyRow>
+                <EmptyRow colSpan={6}>No attendance for this month.</EmptyRow>
               ) : (
                 monthRows.map((row) => (
                   <tr key={row.staff_id} className="hover:bg-slate-50/80">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedMonth.includes(row.staff_id)}
+                        onChange={() => toggleMonth(row.staff_id)}
+                      />
+                    </td>
                     <td className="px-4 py-3 font-medium text-slate-900">
                       {row.full_name}
                     </td>
@@ -411,6 +558,23 @@ export default function TeacherAttendancePage() {
                 ))
               )}
             </StaffTable>
+
+            <TableSelectionBar
+              totalCount={monthRows.length}
+              selectedCount={selectedMonth.length}
+              allSelected={allMonthSelected}
+              onToggleAll={toggleAllMonth}
+              onClear={() => setSelectedMonth([])}
+              actions={
+                <button
+                  type="button"
+                  onClick={exportSelectedMonthCsv}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export selected CSV ({selectedMonth.length})
+                </button>
+              }
+            />
           </div>
         </>
       ) : null}

@@ -9,6 +9,7 @@ import {
   PageAlert,
   PrimaryButton,
   StudentTable,
+  TableSelectionBar,
   selectClass,
   useDebouncedValue,
 } from "../../../components/students/ui";
@@ -16,6 +17,7 @@ import { Icon } from "../../../components/ui/Icon";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
   DOCUMENT_TYPE_OPTIONS,
+  downloadCsv,
   fetchDocuments,
   type StudentDocumentDto,
 } from "../../../lib/student-mgmt";
@@ -52,6 +54,36 @@ export default function StudentDocumentsPage() {
       (r.student_name || "").toLowerCase().includes(q)
     );
   });
+
+  const [selected, setSelected] = React.useState<string[]>([]);
+
+  const allSelected = filtered.length > 0 && selected.length === filtered.length;
+  function toggle(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelected([]);
+    else setSelected(filtered.map((d) => d.id));
+  }
+  function exportSelected() {
+    const target = filtered.filter((d) => selected.includes(d.id));
+    if (!target.length) return;
+    const csv = [
+      ["Title", "Student", "Type", "Uploaded Date", "File URL"].join(","),
+      ...target.map((d) =>
+        [
+          `"${d.title}"`,
+          `"${d.student_name || ""}"`,
+          `"${docTypeLabel(d.document_type)}"`,
+          `"${d.created_at?.slice(0, 10) || ""}"`,
+          `"${d.file_url || ""}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    downloadCsv(`student-documents-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+  }
 
   return (
     <AppShell
@@ -98,14 +130,37 @@ export default function StudentDocumentsPage() {
       />
 
       <StudentTable
-        columns={["Title", "Student", "Type", "Uploaded", ""]}
+        columns={[
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
+          "Title",
+          "Student",
+          "Type",
+          "Uploaded",
+          "",
+        ]}
         loading={loading}
       >
         {filtered.length === 0 ? (
-          <EmptyRow colSpan={5}>No documents found.</EmptyRow>
+          <EmptyRow colSpan={6}>No documents found.</EmptyRow>
         ) : (
           filtered.map((d) => (
             <tr key={d.id} className="hover:bg-slate-50/80">
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(d.id)}
+                  onChange={() => toggle(d.id)}
+                />
+              </td>
               <td className="px-4 py-3 font-medium text-slate-800">{d.title}</td>
               <td className="px-4 py-3">
                 {d.student_id ? (
@@ -144,6 +199,23 @@ export default function StudentDocumentsPage() {
           ))
         )}
       </StudentTable>
+
+      <TableSelectionBar
+        totalCount={filtered.length}
+        selectedCount={selected.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportSelected}
+            className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Export selected ({selected.length})
+          </button>
+        }
+      />
     </AppShell>
   );
 }

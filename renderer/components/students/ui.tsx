@@ -114,34 +114,109 @@ export function StudentTable({
   columns,
   loading,
   children,
+  selectionBar,
 }: {
-  columns: string[];
+  columns: (string | React.ReactNode)[];
   loading?: boolean;
   children: React.ReactNode;
+  selectionBar?: React.ReactNode;
 }) {
   if (loading) {
     return <p className="text-sm text-slate-500">Loading…</p>;
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <tr>
-              {columns.map((col, i) => (
-                <th
-                  key={`${col || "col"}-${i}`}
-                  className="whitespace-nowrap px-4 py-3"
-                >
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">{children}</tbody>
-        </table>
+    <>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                {columns.map((col, i) => (
+                  <th
+                    key={typeof col === "string" ? `${col || "col"}-${i}` : `col-${i}`}
+                    className="whitespace-nowrap px-4 py-3"
+                  >
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">{children}</tbody>
+          </table>
+        </div>
       </div>
+      {selectionBar}
+    </>
+  );
+}
+
+export function TableSelectionBar({
+  selectedCount,
+  totalCount,
+  onToggleAll,
+  allSelected,
+  onClear,
+  actions,
+  label,
+  className = "",
+}: {
+  selectedCount: number;
+  totalCount: number;
+  onToggleAll: () => void;
+  allSelected: boolean;
+  onClear?: () => void;
+  actions?: React.ReactNode;
+  label?: string;
+  className?: string;
+}) {
+  if (totalCount === 0) return null;
+
+  return (
+    <div
+      className={`mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-xs transition ${
+        selectedCount > 0
+          ? "border-(--sofia-primary)/30 bg-(--sofia-primary)/5 text-slate-800 shadow-xs"
+          : "border-slate-200 bg-slate-50/80 text-slate-600"
+      } ${className}`}
+    >
+      <div className="flex items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-2 font-medium select-none">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) {
+                el.indeterminate = selectedCount > 0 && !allSelected;
+              }
+            }}
+            onChange={onToggleAll}
+            className="h-4 w-4 rounded border-slate-300 text-(--sofia-primary) focus:ring-(--sofia-primary)/20"
+          />
+          {selectedCount > 0 ? (
+            <span>
+              <strong className="text-slate-900">{selectedCount}</strong> of{" "}
+              {totalCount} selected
+            </span>
+          ) : (
+            <span>{label ?? `Select all on this page (${totalCount})`}</span>
+          )}
+        </label>
+
+        {selectedCount > 0 && onClear ? (
+          <button
+            type="button"
+            onClick={onClear}
+            className="cursor-pointer font-semibold text-(--sofia-primary) hover:underline"
+          >
+            Clear selection
+          </button>
+        ) : null}
+      </div>
+
+      {selectedCount > 0 && actions ? (
+        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+      ) : null}
     </div>
   );
 }

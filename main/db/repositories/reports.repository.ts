@@ -65,8 +65,19 @@ export class ReportsRepository {
     }>
     const classes = this.db
       .prepare(
-        `SELECT id, name, section_id, academic_level_id FROM classes
-         WHERE school_id = ? AND deleted_at IS NULL ORDER BY name`
+        `SELECT c.id, c.name, c.section_id, c.academic_level_id FROM classes c
+         LEFT JOIN academic_levels al ON al.id = c.academic_level_id
+         LEFT JOIN sections sec ON sec.id = c.section_id
+         WHERE c.school_id = ? AND c.deleted_at IS NULL
+         ORDER BY IFNULL(al.sort_order, 9999) ASC,
+           CASE LOWER(IFNULL(sec.name, ''))
+             WHEN 'general' THEN 0
+             WHEN 'commercial' THEN 1
+             WHEN 'technical' THEN 2
+             ELSE 50
+           END ASC,
+           IFNULL(sec.name, '') COLLATE NOCASE ASC,
+           c.name COLLATE NOCASE ASC`
       )
       .all(schoolId) as Array<{
       id: string
@@ -77,7 +88,15 @@ export class ReportsRepository {
     const departments = this.db
       .prepare(
         `SELECT id, name FROM sections
-         WHERE school_id = ? AND deleted_at IS NULL ORDER BY name`
+         WHERE school_id = ? AND deleted_at IS NULL
+         ORDER BY
+           CASE LOWER(name)
+             WHEN 'general' THEN 0
+             WHEN 'commercial' THEN 1
+             WHEN 'technical' THEN 2
+             ELSE 50
+           END ASC,
+           name COLLATE NOCASE ASC`
       )
       .all(schoolId) as Array<{ id: string; name: string }>
     const subjects = this.db

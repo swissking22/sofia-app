@@ -14,7 +14,14 @@ export class SectionRepository extends BaseRepository<Section> {
       .prepare(
         `SELECT * FROM sections
          WHERE school_id = ? AND deleted_at IS NULL
-         ORDER BY name ASC`
+         ORDER BY
+           CASE LOWER(name)
+             WHEN 'general' THEN 0
+             WHEN 'commercial' THEN 1
+             WHEN 'technical' THEN 2
+             ELSE 50
+           END ASC,
+           name COLLATE NOCASE ASC`
       )
       .all(schoolId) as Section[]
   }

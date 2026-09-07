@@ -9,6 +9,7 @@ import {
   PrimaryButton,
   SecondaryButton,
   StudentTable,
+  TableSelectionBar,
   selectClass,
 } from "../../../components/students/ui";
 import {
@@ -26,6 +27,7 @@ export default function PromotionPage() {
   const [toYear, setToYear] = React.useState("");
   const [preview, setPreview] = React.useState<PromotionPreview | null>(null);
   const [mappings, setMappings] = React.useState<Record<string, string>>({});
+  const [selectedClasses, setSelectedClasses] = React.useState<string[]>([]);
 
   React.useEffect(() => {
     void (async () => {
@@ -146,16 +148,57 @@ export default function PromotionPage() {
       {preview ? (
         <>
           <StudentTable
-            columns={["From class", "Level", "Students", "Promote to"]}
+            columns={[
+              <input
+                key="select-all-header"
+                type="checkbox"
+                checked={
+                  sourceClasses.length > 0 &&
+                  selectedClasses.length === sourceClasses.length
+                }
+                ref={(el) => {
+                  if (el) {
+                    el.indeterminate =
+                      selectedClasses.length > 0 &&
+                      selectedClasses.length < sourceClasses.length;
+                  }
+                }}
+                onChange={() => {
+                  if (selectedClasses.length === sourceClasses.length) {
+                    setSelectedClasses([]);
+                  } else {
+                    setSelectedClasses(sourceClasses.map((c) => c.class_id));
+                  }
+                }}
+                aria-label="Select all"
+              />,
+              "From class",
+              "Level",
+              "Students",
+              "Promote to",
+            ]}
             loading={false}
           >
             {sourceClasses.length === 0 ? (
-              <EmptyRow colSpan={4}>
+              <EmptyRow colSpan={5}>
                 No active students in classes for this year.
               </EmptyRow>
             ) : (
               sourceClasses.map((c) => (
                 <tr key={c.class_id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedClasses.includes(c.class_id)}
+                      onChange={() =>
+                        setSelectedClasses((prev) =>
+                          prev.includes(c.class_id)
+                            ? prev.filter((x) => x !== c.class_id)
+                            : [...prev, c.class_id],
+                        )
+                      }
+                    />
+                  </td>
                   <td className="px-4 py-3 font-medium text-slate-800">
                     {c.class_name}
                   </td>
@@ -196,6 +239,57 @@ export default function PromotionPage() {
               ))
             )}
           </StudentTable>
+
+          <TableSelectionBar
+            totalCount={sourceClasses.length}
+            selectedCount={selectedClasses.length}
+            allSelected={
+              sourceClasses.length > 0 &&
+              selectedClasses.length === sourceClasses.length
+            }
+            onToggleAll={() => {
+              if (selectedClasses.length === sourceClasses.length) {
+                setSelectedClasses([]);
+              } else {
+                setSelectedClasses(sourceClasses.map((c) => c.class_id));
+              }
+            }}
+            onClear={() => setSelectedClasses([])}
+            actions={
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = { ...mappings };
+                    for (const c of sourceClasses) {
+                      if (selectedClasses.includes(c.class_id) && c.suggested_to_class_id) {
+                        next[c.class_id] = c.suggested_to_class_id;
+                      }
+                    }
+                    setMappings(next);
+                  }}
+                  className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+                >
+                  Apply suggested to selected ({selectedClasses.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = { ...mappings };
+                    for (const c of sourceClasses) {
+                      if (selectedClasses.includes(c.class_id)) {
+                        next[c.class_id] = "";
+                      }
+                    }
+                    setMappings(next);
+                  }}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Skip selected ({selectedClasses.length})
+                </button>
+              </>
+            }
+          />
 
           <div className="mt-4 flex flex-wrap gap-3">
             <PrimaryButton onClick={continueToRun}>

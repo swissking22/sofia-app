@@ -14,6 +14,7 @@ import {
   SecondaryButton,
   StatusBadge,
   StudentTable,
+  TableSelectionBar,
   fieldClass,
 } from "../../../components/students/ui";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
@@ -38,6 +39,55 @@ export default function AdminRolesPage() {
     description: string;
     permission_ids: string[];
   } | null>(null);
+
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const allSelected =
+    roles.length > 0 && selectedIds.length === roles.length;
+  function toggleRow(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelectedIds([]);
+    else setSelectedIds(roles.map((r) => String(r.id)));
+  }
+  async function bulkSetRoleState(enabled: boolean) {
+    if (!selectedIds.length) return;
+    setError("");
+    try {
+      for (const id of selectedIds) {
+        await setAdminRoleEnabled(id, enabled);
+      }
+      setSelectedIds([]);
+      await load();
+    } catch {
+      setError("Failed to update role statuses.");
+    }
+  }
+  function exportSelected() {
+    const target = roles.filter((r) => selectedIds.includes(String(r.id)));
+    if (!target.length) return;
+    const csv = [
+      ["Role", "Description", "Users", "Permissions", "Status"].join(","),
+      ...target.map((r) =>
+        [
+          `"${String(r.name)}"`,
+          `"${String(r.description || "")}"`,
+          r.user_count,
+          r.permission_count,
+          r.is_enabled === false ? "Inactive" : "Active",
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `admin-roles-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const load = React.useCallback(async () => {
     const [list, cat] = await Promise.all([fetchAdminRoles(), fetchPermissionCatalog()]);
@@ -65,12 +115,38 @@ export default function AdminRolesPage() {
           Create role
         </PrimaryButton>
       </div>
-      <StudentTable columns={["Role", "Users", "Permissions", "Status", "Actions"]}>
+      <StudentTable
+        columns={[
+          <input
+            key="select-all"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el)
+                el.indeterminate = selectedIds.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
+          "Role",
+          "Users",
+          "Permissions",
+          "Status",
+          "Actions",
+        ]}
+      >
         {roles.length === 0 ? (
-          <EmptyRow colSpan={5} message="No roles yet." />
+          <EmptyRow colSpan={6} message="No roles yet." />
         ) : (
           roles.map((r) => (
             <tr key={String(r.id)}>
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(String(r.id))}
+                  onChange={() => toggleRow(String(r.id))}
+                />
+              </td>
               <td className="px-4 py-3">
                 <p className="font-medium">{String(r.name)}</p>
                 <p className="text-xs text-slate-500">{String(r.description || "")}</p>
@@ -117,6 +193,39 @@ export default function AdminRolesPage() {
           ))
         )}
       </StudentTable>
+
+      <TableSelectionBar
+        totalCount={roles.length}
+        selectedCount={selectedIds.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelectedIds([])}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => void bulkSetRoleState(true)}
+              className="cursor-pointer rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+            >
+              Activate selected
+            </button>
+            <button
+              type="button"
+              onClick={() => void bulkSetRoleState(false)}
+              className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Deactivate selected
+            </button>
+            <button
+              type="button"
+              onClick={exportSelected}
+              className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Export selected ({selectedIds.length})
+            </button>
+          </>
+        }
+      />
       {editing ? (
         <FormModal
           open

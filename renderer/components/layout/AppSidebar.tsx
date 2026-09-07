@@ -87,7 +87,7 @@ export function AppSidebar({
 
   return (
     <aside
-      className={`relative flex h-screen shrink-0 flex-col border-r border-slate-200 bg-[#f3f4f6] transition-[width] duration-200 ${
+      className={`relative flex h-screen shrink-0 flex-col border-r border-slate-200 bg-[#f3f4f6] transition-[width] duration-200 print:hidden ${
         collapsed ? "w-18" : "w-67"
       }`}
     >

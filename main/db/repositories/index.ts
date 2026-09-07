@@ -27,6 +27,7 @@ import { StudentTransferRepository } from './student-transfer.repository'
 import { StudentDocumentRepository } from './student-document.repository'
 import { PromotionRepository } from './promotion.repository'
 import { ResultsCalculationRepository } from './results-calculation.repository'
+import { SubjectCoefficientsRepository } from './subject-coefficients.repository'
 import {
   AttendanceRepository,
   CaRepository,
@@ -92,6 +93,7 @@ export function createRepositories(db: Database.Database) {
     exams: new ExamRepository(db),
     results: new ResultsRepository(db),
     resultCalc: new ResultsCalculationRepository(db),
+    subjectCoefficients: new SubjectCoefficientsRepository(db),
     reportCards: new ReportCardRepository(db),
     staffAttendance: new StaffAttendanceRepository(db),
     leave: new LeaveRepository(db),
@@ -133,6 +135,8 @@ export {
   CaRepository,
   ExamRepository,
   ResultsRepository,
+  ResultsCalculationRepository,
+  SubjectCoefficientsRepository,
   ReportCardRepository,
   StaffAttendanceRepository,
   LeaveRepository,

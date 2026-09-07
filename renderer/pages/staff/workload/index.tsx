@@ -8,6 +8,7 @@ import {
   SecondaryButton,
   StatusBadge,
   StaffTable,
+  TableSelectionBar,
 } from "../../../components/staff/ui";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
@@ -56,6 +57,43 @@ export default function TeacherWorkloadPage() {
   const [detail, setDetail] = React.useState<WorkloadDetail | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
 
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const allSelected = rows.length > 0 && selectedIds.length === rows.length;
+  function toggleRow(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelectedIds([]);
+    else setSelectedIds(rows.map((r) => r.staff_id));
+  }
+  function exportSelected() {
+    const target = rows.filter((r) => selectedIds.includes(r.staff_id));
+    if (!target.length) return;
+    const csv = [
+      ["Teacher", "Employee ID", "Periods", "Subjects", "Classes", "Over Max", "Conflict"].join(","),
+      ...target.map((r) =>
+        [
+          `"${r.full_name}"`,
+          `"${r.employee_code || ""}"`,
+          r.period_count,
+          r.subject_count,
+          r.class_count,
+          r.over_max ? "Yes" : "No",
+          r.has_conflict ? "Yes" : "No",
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `teacher-workload-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   React.useEffect(() => {
     void (async () => {
       const res = await fetchWorkloadSummary();
@@ -96,6 +134,17 @@ export default function TeacherWorkloadPage() {
       <StaffTable
         loading={loading}
         columns={[
+          <input
+            key="select-all"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el)
+                el.indeterminate = selectedIds.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
           "Teacher",
           "Periods",
           "Subjects",
@@ -105,15 +154,24 @@ export default function TeacherWorkloadPage() {
         ]}
       >
         {rows.length === 0 ? (
-          <EmptyRow colSpan={6}>No teaching staff with workload data.</EmptyRow>
+          <EmptyRow colSpan={7}>No teaching staff with workload data.</EmptyRow>
         ) : (
           rows.map((row) => (
             <tr
               key={row.staff_id}
-              className="cursor-pointer hover:bg-slate-50/80"
-              onClick={() => void openDetail(row)}
+              className="hover:bg-slate-50/80"
             >
-              <td className="px-4 py-3">
+              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(row.staff_id)}
+                  onChange={() => toggleRow(row.staff_id)}
+                />
+              </td>
+              <td
+                className="cursor-pointer px-4 py-3"
+                onClick={() => void openDetail(row)}
+              >
                 <div className="font-medium text-slate-900">{row.full_name}</div>
                 <div className="font-mono text-xs text-slate-500">
                   {row.employee_code || "—"}
@@ -149,6 +207,23 @@ export default function TeacherWorkloadPage() {
           ))
         )}
       </StaffTable>
+
+      <TableSelectionBar
+        totalCount={rows.length}
+        selectedCount={selectedIds.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelectedIds([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportSelected}
+            className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Export selected ({selectedIds.length})
+          </button>
+        }
+      />
 
       <FormModal
         open={!!selected}

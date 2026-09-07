@@ -7,6 +7,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { Icon } from "../ui/Icon";
 import { TableActionGroup, TableIconButton } from "../ui/TableActions";
+export { TableSelectionBar } from "../students/ui";
 
 interface SetupTabsProps {
   tabs: Array<{ id: string; label: string }>;
@@ -80,10 +81,11 @@ export function DataTableToolbar({
 }
 
 interface DataTableProps {
-  headers: string[];
+  headers: (string | React.ReactNode)[];
   children: React.ReactNode;
   emptyMessage?: string;
   isEmpty?: boolean;
+  selectionBar?: React.ReactNode;
 }
 
 export function DataTable({
@@ -91,38 +93,45 @@ export function DataTable({
   children,
   emptyMessage = "No records yet.",
   isEmpty,
+  selectionBar,
 }: DataTableProps) {
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <tr>
-              {headers.map((h) => (
-                <th key={h} className="px-4 py-3">
-                  {h}
-                </th>
-              ))}
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {isEmpty ? (
+    <>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
-                <td
-                  colSpan={headers.length + 1}
-                  className="px-4 py-10 text-center text-slate-500"
-                >
-                  {emptyMessage}
-                </td>
+                {headers.map((h, i) => (
+                  <th
+                    key={typeof h === "string" ? h : `col-${i}`}
+                    className="px-4 py-3"
+                  >
+                    {h}
+                  </th>
+                ))}
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
-            ) : (
-              children
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isEmpty ? (
+                <tr>
+                  <td
+                    colSpan={headers.length + 1}
+                    className="px-4 py-10 text-center text-slate-500"
+                  >
+                    {emptyMessage}
+                  </td>
+                </tr>
+              ) : (
+                children
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+      {selectionBar}
+    </>
   );
 }
 

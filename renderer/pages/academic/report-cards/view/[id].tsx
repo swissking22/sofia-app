@@ -8,8 +8,12 @@ interface ReportSubject {
   subject_name?: string;
   ca_score?: number;
   exam_score?: number;
+  subject_mark?: number;
   total?: number;
+  coefficient?: number;
+  weighted_mark?: number;
   grade?: string | null;
+  remark?: string | null;
 }
 
 interface ReportPayload {
@@ -21,10 +25,13 @@ interface ReportPayload {
   class_name?: string;
   term_name?: string;
   year_name?: string | null;
+  total_weighted_marks?: number;
+  total_coefficients?: number;
   average?: number;
   total?: number;
   grade?: string | null;
   position?: number | null;
+  status?: string | null;
   remark?: string | null;
   subjects?: ReportSubject[];
 }
@@ -55,6 +62,16 @@ function asPayload(raw: Record<string, unknown> | null): ReportPayload {
       typeof raw.year_name === "string" || raw.year_name === null
         ? (raw.year_name as string | null)
         : undefined,
+    total_weighted_marks:
+      typeof raw.total_weighted_marks === "number"
+        ? raw.total_weighted_marks
+        : typeof raw.total === "number"
+          ? raw.total
+          : undefined,
+    total_coefficients:
+      typeof raw.total_coefficients === "number"
+        ? raw.total_coefficients
+        : undefined,
     average: typeof raw.average === "number" ? raw.average : undefined,
     total: typeof raw.total === "number" ? raw.total : undefined,
     grade:
@@ -64,6 +81,10 @@ function asPayload(raw: Record<string, unknown> | null): ReportPayload {
     position:
       typeof raw.position === "number" || raw.position === null
         ? (raw.position as number | null)
+        : undefined,
+    status:
+      typeof raw.status === "string" || raw.status === null
+        ? (raw.status as string | null)
         : undefined,
     remark:
       typeof raw.remark === "string" || raw.remark === null
@@ -179,17 +200,20 @@ export default function ReportCardViewPage() {
               <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Subject</th>
-                  <th className="px-4 py-3 text-right">CA</th>
+                  <th className="px-4 py-3 text-right">CA Avg</th>
                   <th className="px-4 py-3 text-right">Exam</th>
-                  <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3 text-right">Grade</th>
+                  <th className="px-4 py-3 text-right">Subject Mark</th>
+                  <th className="px-4 py-3 text-center">Coeff</th>
+                  <th className="px-4 py-3 text-right">Weighted</th>
+                  <th className="px-4 py-3 text-center">Grade</th>
+                  <th className="px-4 py-3 text-left">Remark</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {(payload.subjects ?? []).length === 0 ? (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={8}
                       className="px-4 py-6 text-center text-slate-500"
                     >
                       No subject scores recorded.
@@ -208,10 +232,19 @@ export default function ReportCardViewPage() {
                         {formatScore(subject.exam_score)}
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-slate-800">
-                        {formatScore(subject.total)}
+                        {formatScore(subject.subject_mark ?? subject.total)}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                      <td className="px-4 py-3 text-center text-slate-600 font-mono text-xs">
+                        {subject.coefficient ?? 1}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                        {formatScore(subject.weighted_mark ?? (subject.total ? subject.total * (subject.coefficient ?? 1) : undefined))}
+                      </td>
+                      <td className="px-4 py-3 text-center font-semibold text-slate-800">
                         {subject.grade ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-left text-xs text-slate-600">
+                        {subject.remark || "—"}
                       </td>
                     </tr>
                   ))
@@ -220,37 +253,53 @@ export default function ReportCardViewPage() {
             </table>
           </section>
 
-          <section className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4 text-sm">
+          <section className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-5 text-sm">
             <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Average
+                Total Weighted
               </p>
               <p className="mt-1 text-lg font-bold text-slate-900">
-                {formatScore(payload.average)}
+                {formatScore(payload.total_weighted_marks ?? payload.total)}
               </p>
             </div>
             <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Total
+                Total Coeff
               </p>
               <p className="mt-1 text-lg font-bold text-slate-900">
-                {formatScore(payload.total)}
+                {payload.total_coefficients != null ? formatScore(payload.total_coefficients) : "—"}
               </p>
             </div>
             <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Grade
+                Term Average
               </p>
-              <p className="mt-1 text-lg font-bold text-slate-900">
-                {payload.grade ?? "—"}
+              <p className="mt-1 text-lg font-bold text-(--sofia-primary)">
+                {formatScore(payload.average)} <span className="text-xs font-normal text-slate-500">/ 20</span>
               </p>
             </div>
             <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Position
+                Rank
               </p>
               <p className="mt-1 text-lg font-bold text-slate-900">
-                {payload.position ?? "—"}
+                {payload.position != null ? `${payload.position}${payload.position === 1 ? 'st' : payload.position === 2 ? 'nd' : payload.position === 3 ? 'rd' : 'th'}` : "—"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Status
+              </p>
+              <p className="mt-1">
+                <span
+                  className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                    payload.status === "PASSED" || (payload.average != null && payload.average >= 10 && payload.status !== "FAILED")
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : "bg-red-50 text-red-700 border border-red-200"
+                  }`}
+                >
+                  {payload.status ?? (payload.average != null && payload.average >= 10 ? "PASSED" : "FAILED")}
+                </span>
               </p>
             </div>
           </section>

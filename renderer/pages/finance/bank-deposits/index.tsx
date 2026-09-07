@@ -11,15 +11,18 @@ import {
   EmptyRow,
   FilterBar,
   FinanceTable,
+  TableSelectionBar,
   FormModal,
   PageAlert,
   PrimaryButton,
   SecondaryButton,
   StatusBadge,
   fieldClass,
-  selectClass,
 } from "../../../components/finance/ui";
-import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import {
   createBankDeposit,
   fetchBankDeposits,
@@ -79,6 +82,45 @@ export default function BankDepositsPage() {
   } | null>(null);
 
   const [amount, setAmount] = React.useState("");
+  const [selected, setSelected] = React.useState<string[]>([]);
+
+  const allSelected = rows.length > 0 && selected.length === rows.length;
+  function toggle(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelected([]);
+    else setSelected(rows.map((r) => r.id));
+  }
+  function exportSelected() {
+    const target = rows.filter((r) => selected.includes(r.id));
+    if (!target.length) return;
+    const csv = [
+      ["Reference", "Amount", "Bank", "Account", "Date", "Deposited By", "Status", "Reconciled", "Unreconciled"].join(","),
+      ...target.map((r) =>
+        [
+          `"${r.deposit_reference || r.deposit_number}"`,
+          r.amount,
+          `"${r.bank_name}"`,
+          `"${r.bank_account || ""}"`,
+          `"${r.deposit_date}"`,
+          `"${r.deposited_by || ""}"`,
+          `"${r.status}"`,
+          r.reconciled,
+          r.unreconciled,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `bank-deposits-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
   const [source, setSource] = React.useState("Cash collections");
   const [collectionDate, setCollectionDate] = React.useState("");
   const [depositDate, setDepositDate] = React.useState("");
@@ -249,6 +291,16 @@ export default function BankDepositsPage() {
 
       <FinanceTable
         columns={[
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
           "Reference",
           "Amount",
           "Bank",
@@ -261,10 +313,17 @@ export default function BankDepositsPage() {
         loading={loading}
       >
         {rows.length === 0 ? (
-          <EmptyRow colSpan={8} message="No bank deposits recorded." />
+          <EmptyRow colSpan={9} message="No bank deposits recorded." />
         ) : (
           rows.map((r) => (
-            <tr key={r.id} className="border-t border-slate-100">
+            <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(r.id)}
+                  onChange={() => toggle(r.id)}
+                />
+              </td>
               <td className="px-4 py-3 font-medium text-slate-900">
                 {r.deposit_reference || r.deposit_number}
               </td>
@@ -332,6 +391,23 @@ export default function BankDepositsPage() {
           ))
         )}
       </FinanceTable>
+
+      <TableSelectionBar
+        totalCount={rows.length}
+        selectedCount={selected.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportSelected}
+            className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Export selected ({selected.length})
+          </button>
+        }
+      />
 
       <FormModal
         open={open}

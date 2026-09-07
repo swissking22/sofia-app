@@ -6,15 +6,14 @@ import type {
   ExamSessionStatus,
   ResultRunStatus,
 } from '../db/types'
-import { hasPermission, profileLabel } from '../domain/results-calculation'
+import { cameroonStandardSecondary20, hasPermission, profileLabel } from '../domain/results-calculation'
 import {
   describeTeacherClash,
   fanOutClassIds,
   findTeacherClashes,
   isCommonSubjectAtLevel,
 } from '../domain/timetable'
-import { calculateClass } from '../services/results/calculation-engine'
-import { collectClassScores } from './results-calculation'
+import { calculateClassResults } from '../services/results/result-calculation.service'
 
 const DAY_LABELS: Record<number, string> = {
   1: 'Monday',
@@ -31,29 +30,6 @@ function resolveSchoolId(repos: Repositories): string | null {
   if (session?.schoolId) return session.schoolId
   const schools = repos.schools.findAll()
   return schools[0]?.id ?? null
-}
-
-function gradeForScore(
-  score: number,
-  bands: Array<{ grade: string; min_score: number; max_score: number }>
-): string | null {
-  const match = bands.find((b) => score >= b.min_score && score <= b.max_score)
-  return match?.grade ?? null
-}
-
-function assessmentWeights(repos: Repositories, schoolId: string) {
-  const setup = repos.gradingSystems.getSetupDto(schoolId)
-  const types = setup?.assessment_types ?? []
-  const ca =
-    types.find((t) => /continuous|ca|c\.?a/i.test(t.name))?.weight_percent ?? 30
-  const exam =
-    types.find((t) => /exam/i.test(t.name))?.weight_percent ?? 70
-  return {
-    caWeight: ca,
-    examWeight: exam,
-    bands: setup?.grade_bands ?? [],
-    enableRanking: setup?.enable_ranking ?? true,
-  }
 }
 
 export function registerAcademicMgmtIpc(repos: Repositories): void {
@@ -988,6 +964,7 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         status: string
         computed_at: string | null
         published_at: string | null
+        calculation_version?: number | null
       } | null
       summaries: Array<{
         student_id: string
@@ -998,6 +975,10 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         grade: string | null
         position: number | null
         remark: string | null
+        total_coefficients?: number | null
+        total_weighted_marks?: number | null
+        passed_subjects?: number | null
+        status?: string | null
       }>
       subject_rows: Array<{
         student_id: string
@@ -1007,9 +988,83 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         exam_score: number
         total: number
         grade: string | null
+        ca_average?: number | null
+        subject_mark?: number | null
+        coefficient?: number
+        weighted_mark?: number
+        sequence_scores?: unknown[]
+        remark?: string | null
       }>
+      class_summary?: {
+        total_students: number
+        processed_students: number
+        incomplete_students: number
+        passed_students: number
+        failed_students: number
+        class_average: number | null
+        highest_average: number | null
+        lowest_average: number | null
+      } | null
+      calculation_profile?: {
+        id: string
+        name: string
+        version: number
+        ca_weight: number
+        exam_weight: number
+        pass_mark: number
+        sequence_method: string
+        rounding_places: number | string
+        scale: number
+        status: string
+      } | null
     }> => {
       if (!input?.class_id) return { ok: false, error: 'Class is required.' }
+      const schoolId = resolveSchoolId(repos)
+      const classRow = repos.classes.findById(input.class_id)
+      const year = schoolId ? repos.academicYears.getSetupDto(schoolId) : null
+
+      const profile = schoolId
+        ? repos.resultCalc.resolveForClass(
+            schoolId,
+            input.class_id,
+            classRow?.academic_level_id ?? null,
+            year?.id ?? null
+          )
+        : null
+
+      const caWeight = profile?.config.ca_weight ?? 40
+      const examWeight = profile?.config.exam_weight ?? 60
+      const passMark = profile?.config.pass_mark ?? 10
+      const seqMethod = profile?.config.sequence_method ?? 'simple_average'
+      const roundingPlaces = profile?.config.rounding?.places ?? 2
+      const scale = profile?.config.scale ?? 20
+
+      const profileSummary = profile
+        ? {
+            id: profile.profile.id,
+            name: profile.profile.name,
+            version: profile.version_number,
+            ca_weight: caWeight,
+            exam_weight: examWeight,
+            pass_mark: passMark,
+            sequence_method: seqMethod,
+            rounding_places: roundingPlaces,
+            scale,
+            status: profile.profile.status,
+          }
+        : {
+            id: 'default',
+            name: 'Cameroon Secondary Standard (40/60)',
+            version: 1,
+            ca_weight: 40,
+            exam_weight: 60,
+            pass_mark: 10,
+            sequence_method: 'simple_average',
+            rounding_places: 2,
+            scale: 20,
+            status: 'active',
+          }
+
       const run = repos.results.findByClassTerm(
         input.class_id,
         input.term_id ?? null
@@ -1017,9 +1072,85 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
       if (!run) {
         return {
           ok: true,
-          data: { run: null, summaries: [], subject_rows: [] },
+          data: {
+            run: null,
+            summaries: [],
+            subject_rows: [],
+            class_summary: null,
+            calculation_profile: profileSummary,
+          },
         }
       }
+
+      const summaries = repos.results.findSummaries(run.id).map((s) => {
+        const student = repos.students.findById(s.student_id)
+        return {
+          student_id: s.student_id,
+          student_name: student?.name ?? '—',
+          student_code: student?.student_code ?? null,
+          average: s.average,
+          total: s.total,
+          grade: s.grade,
+          position: s.position,
+          remark: s.remark,
+          total_coefficients: s.total_coefficients ?? null,
+          total_weighted_marks: s.total_weighted_marks ?? null,
+          passed_subjects: s.passed_subjects ?? null,
+          status: s.status ?? (s.average >= passMark ? 'PASSED' : 'FAILED'),
+        }
+      })
+
+      const subjectRows = repos.results.findSubjectRows(run.id).map((r) => {
+        let seqScores: unknown[] = []
+        if (r.sequence_scores_json) {
+          try {
+            seqScores = JSON.parse(r.sequence_scores_json)
+          } catch {
+            seqScores = []
+          }
+        }
+        return {
+          student_id: r.student_id,
+          subject_id: r.subject_id,
+          subject_name: repos.subjects.findById(r.subject_id)?.name ?? null,
+          ca_score: r.ca_score,
+          exam_score: r.exam_score,
+          total: r.total,
+          grade: r.grade,
+          ca_average: r.ca_average ?? r.ca_score,
+          subject_mark: r.subject_mark ?? r.total,
+          coefficient: r.coefficient ?? 1,
+          weighted_mark: r.weighted_mark ?? r.total * (r.coefficient ?? 1),
+          sequence_scores: seqScores,
+          remark: r.remark ?? null,
+        }
+      })
+
+      const avgs = summaries.map((s) => s.average).filter((v) => v != null)
+      const passedCount = summaries.filter(
+        (s) => s.status === 'PASSED' || (s.average >= passMark && s.status !== 'FAILED')
+      ).length
+      const failedCount = summaries.filter(
+        (s) => s.status === 'FAILED' || (s.average < passMark && s.status !== 'PASSED')
+      ).length
+      const incompleteCount = summaries.filter(
+        (s) => s.status === 'INCOMPLETE'
+      ).length
+
+      const classSummary = {
+        total_students: summaries.length,
+        processed_students: summaries.length,
+        incomplete_students: incompleteCount,
+        passed_students: passedCount,
+        failed_students: failedCount,
+        class_average:
+          avgs.length > 0
+            ? Number((avgs.reduce((a, b) => a + b, 0) / avgs.length).toFixed(2))
+            : null,
+        highest_average: avgs.length > 0 ? Math.max(...avgs) : null,
+        lowest_average: avgs.length > 0 ? Math.min(...avgs) : null,
+      }
+
       return {
         ok: true,
         data: {
@@ -1028,29 +1159,12 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
             status: run.status,
             computed_at: run.computed_at,
             published_at: run.published_at,
+            calculation_version: run.calculation_version ?? profile?.version_number ?? 1,
           },
-          summaries: repos.results.findSummaries(run.id).map((s) => {
-            const student = repos.students.findById(s.student_id)
-            return {
-              student_id: s.student_id,
-              student_name: student?.name ?? '—',
-              student_code: student?.student_code ?? null,
-              average: s.average,
-              total: s.total,
-              grade: s.grade,
-              position: s.position,
-              remark: s.remark,
-            }
-          }),
-          subject_rows: repos.results.findSubjectRows(run.id).map((r) => ({
-            student_id: r.student_id,
-            subject_id: r.subject_id,
-            subject_name: repos.subjects.findById(r.subject_id)?.name ?? null,
-            ca_score: r.ca_score,
-            exam_score: r.exam_score,
-            total: r.total,
-            grade: r.grade,
-          })),
+          summaries,
+          subject_rows: subjectRows,
+          class_summary: classSummary,
+          calculation_profile: profileSummary,
         },
       }
     }
@@ -1136,91 +1250,37 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         year?.id ?? null
       )
 
-      if (profile) {
-        const packed = collectClassScores(
-          repos,
-          input.class_id,
-          input.term_id ?? null,
-          students,
-          subjects
-        )
-        const out = calculateClass(
-          profile.config,
-          students,
-          subjects,
-          packed
-        )
-        for (const row of out.subject_rows) {
-          repos.results.insertSubjectRow({
-            result_run_id: run.id,
-            student_id: row.student_id,
-            subject_id: row.subject_id,
-            ca_score: row.ca_score,
-            exam_score: row.exam_score,
-            total: row.total,
-            grade: row.grade,
-          })
-        }
-        for (const row of out.summaries) {
-          repos.results.insertSummary({
-            result_run_id: run.id,
-            student_id: row.student_id,
-            average: row.average,
-            total: row.total,
-            grade: row.grade,
-            position: row.position,
-            remark: row.remark,
-            promotion_outcome: row.promotion_outcome,
-            gpa: row.gpa,
-            failed_subjects: row.failed_subjects,
-          })
-        }
-        repos.results.attachCalculationSnapshot(run.id, {
-          calculation_profile_id: profile.profile.id,
-          calculation_version: profile.version_number,
-          calculation_hash: out.hash,
-          snapshot_json: JSON.stringify({
-            label: profileLabel(
-              profile.profile.name,
-              year?.name ?? null,
-              profile.version_number
-            ),
-            config: profile.config,
-          }),
-          calculated_by: session?.userId ?? null,
-        })
-        repos.results.updateStatus(run.id, 'computed', {
-          computed_at: new Date().toISOString(),
-        })
-        try {
-          repos.systemAdmin.writeAudit({
-            school_id: schoolId,
-            actor_user_id: session?.userId ?? null,
-            action: 'results.calculate',
-            module_key: 'results',
-            entity_type: 'result_run',
-            entity_id: run.id,
-            description: 'Calculated class results from configuration profile',
-          })
-        } catch {
-          /* ignore */
-        }
-        return {
-          ok: true,
-          data: {
-            run_id: run.id,
-            students: students.length,
-            subjects: subjects.length,
-            profile: profileLabel(
-              profile.profile.name,
-              year?.name ?? null,
-              profile.version_number
-            ),
-          },
-        }
+      const effectiveProfile = profile ?? {
+        profile: {
+          id: 'default-profile',
+          school_id: schoolId,
+          name: 'Cameroon Secondary Standard (40% CA + 60% Exam)',
+          description: 'Default calculation profile',
+          academic_year_id: year?.id ?? null,
+          period_mode: 'term' as const,
+          status: 'active' as const,
+          created_by: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          deleted_at: null,
+          sync_status: 'synced',
+          version: 1,
+        },
+        version_number: 1,
+        config_hash: '',
+        config: cameroonStandardSecondary20(),
+        assignments: [],
+        used_in_results: false,
       }
 
-      const weights = assessmentWeights(repos, schoolId)
+      const coeffMap = repos.subjectCoefficients.resolveCoefficientsMap(
+        schoolId,
+        subjects.map((s) => s.id),
+        input.class_id,
+        classRow?.academic_level_id ?? null,
+        year?.id ?? null
+      )
+
       const caAssessments = repos.ca.findScoresForClassTerm(
         input.class_id,
         input.term_id ?? null
@@ -1230,75 +1290,135 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         input.term_id ?? null
       )
 
-      const caByStudentSubject = new Map<string, number>()
-      for (const a of caAssessments) {
-        for (const sc of a.scores) {
-          if (sc.score == null) continue
-          const key = `${sc.student_id}:${a.subject_id}`
-          const pct = (sc.score / (a.max_score || 100)) * 100
-          const existing = caByStudentSubject.get(key)
-          if (existing == null) caByStudentSubject.set(key, pct)
-          else caByStudentSubject.set(key, (existing + pct) / 2)
+      const scoresLookup = new Map<
+        string,
+        {
+          sequences: Array<{ name: string; max: number; raw: number | null; status?: any }>
+          exam: { name: string; max: number; raw: number | null; status?: any } | null
         }
-      }
-
-      const examByStudentSubject = new Map<string, number>()
-      for (const paper of examPapers) {
-        const scores = repos.exams.findScores(paper.id)
-        for (const sc of scores) {
-          if (sc.score == null) continue
-          const key = `${sc.student_id}:${paper.subject_id}`
-          const pct = (sc.score / (paper.max_score || 100)) * 100
-          examByStudentSubject.set(key, pct)
-        }
-      }
-
-      const averages: Array<{ student_id: string; average: number; total: number }> =
-        []
+      >()
 
       for (const student of students) {
-        let sum = 0
-        let count = 0
         for (const subject of subjects) {
-          const key = `${student.id}:${subject.id}`
-          const caRaw = caByStudentSubject.get(key) ?? 0
-          const examRaw = examByStudentSubject.get(key) ?? 0
-          const caScore = (caRaw * weights.caWeight) / 100
-          const examScore = (examRaw * weights.examWeight) / 100
-          const total = Math.round((caScore + examScore) * 10) / 10
-          const grade = gradeForScore(total, weights.bands)
-          repos.results.insertSubjectRow({
-            result_run_id: run.id,
-            student_id: student.id,
-            subject_id: subject.id,
-            ca_score: Math.round(caScore * 10) / 10,
-            exam_score: Math.round(examScore * 10) / 10,
-            total,
-            grade,
-          })
-          sum += total
-          count += 1
+          const ca = caAssessments
+            .filter((a) => a.subject_id === subject.id)
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+            .map((a) => {
+              const row = a.scores.find((x) => x.student_id === student.id)
+              return {
+                name: a.name,
+                max: a.max_score,
+                raw: row?.score ?? null,
+                status: (row?.score_status as never) ?? undefined,
+              }
+            })
+
+          const paper = examPapers.find((p) => p.subject_id === subject.id)
+          let exam = null
+          if (paper) {
+            const row = repos.exams
+              .findScores(paper.id)
+              .find((x) => x.student_id === student.id)
+            exam = {
+              name: 'Exam',
+              max: paper.max_score,
+              raw: row?.score ?? null,
+              status: (row?.score_status as never) ?? undefined,
+            }
+          }
+
+          scoresLookup.set(`${student.id}:${subject.id}`, { sequences: ca, exam })
         }
-        const average = count ? Math.round((sum / count) * 10) / 10 : 0
-        averages.push({ student_id: student.id, average, total: sum })
       }
 
-      averages.sort((a, b) => b.average - a.average)
-      averages.forEach((row, idx) => {
+      const out = calculateClassResults({
+        classId: input.class_id,
+        termId: input.term_id ?? null,
+        academicYearId: year?.id ?? null,
+        config: effectiveProfile.config,
+        students: students.map((s) => ({
+          id: s.id,
+          name: s.name,
+          student_code: s.student_code,
+        })),
+        subjects: subjects.map((s) => ({
+          id: s.id,
+          name: s.name,
+          department_id: s.department_id,
+        })),
+        coefficientsMap: coeffMap,
+        scoresLookup,
+      })
+
+      for (const st of out.student_results) {
+        for (const sr of st.subject_results) {
+          repos.results.insertSubjectRow({
+            result_run_id: run.id,
+            student_id: st.student_id,
+            subject_id: sr.subject_id,
+            ca_score: sr.ca_contribution ?? sr.ca_average ?? 0,
+            exam_score: sr.exam_contribution ?? sr.exam_normalized ?? 0,
+            total: sr.subject_mark_rounded ?? sr.subject_mark ?? 0,
+            grade: sr.grade,
+            sequence_scores_json: JSON.stringify(sr.sequence_details),
+            ca_average: sr.ca_average,
+            subject_mark: sr.subject_mark_rounded ?? sr.subject_mark ?? 0,
+            coefficient: sr.coefficient,
+            weighted_mark: sr.weighted_mark_rounded ?? sr.weighted_mark ?? 0,
+            remark: sr.remark,
+          })
+        }
+
         repos.results.insertSummary({
-          result_run_id: run!.id,
-          student_id: row.student_id,
-          average: row.average,
-          total: Math.round(row.total * 10) / 10,
-          grade: gradeForScore(row.average, weights.bands),
-          position: weights.enableRanking ? idx + 1 : null,
-          remark: null,
+          result_run_id: run.id,
+          student_id: st.student_id,
+          average: st.term_average_rounded ?? st.term_average ?? 0,
+          total: st.total_weighted_marks,
+          grade: st.grade,
+          position: st.position,
+          remark: st.remark,
+          promotion_outcome: st.promotion_outcome,
+          gpa: st.gpa,
+          failed_subjects: st.failed_subjects,
+          total_coefficients: st.total_coefficients,
+          total_weighted_marks: st.total_weighted_marks,
+          passed_subjects: st.passed_subjects,
+          status: st.status,
         })
+      }
+
+      repos.results.attachCalculationSnapshot(run.id, {
+        calculation_profile_id: effectiveProfile.profile.id,
+        calculation_version: effectiveProfile.version_number,
+        calculation_hash: out.config_hash,
+        snapshot_json: JSON.stringify({
+          label: profileLabel(
+            effectiveProfile.profile.name,
+            year?.name ?? null,
+            effectiveProfile.version_number
+          ),
+          config: effectiveProfile.config,
+        }),
+        calculated_by: session?.userId ?? null,
       })
 
       repos.results.updateStatus(run.id, 'computed', {
         computed_at: new Date().toISOString(),
       })
+
+      try {
+        repos.systemAdmin.writeAudit({
+          school_id: schoolId,
+          actor_user_id: session?.userId ?? null,
+          action: run ? 'results.recalculate' : 'results.calculate',
+          module_key: 'results',
+          entity_type: 'result_run',
+          entity_id: run.id,
+          description: `Calculated results for ${students.length} students using ${effectiveProfile.profile.name}`,
+        })
+      } catch {
+        /* ignore */
+      }
 
       return {
         ok: true,
@@ -1306,6 +1426,11 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
           run_id: run.id,
           students: students.length,
           subjects: subjects.length,
+          profile: profileLabel(
+            effectiveProfile.profile.name,
+            year?.name ?? null,
+            effectiveProfile.version_number
+          ),
         },
       }
     }
@@ -1491,10 +1616,14 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
           .map((r) => ({
             subject_id: r.subject_id,
             subject_name: repos.subjects.findById(r.subject_id)?.name ?? '—',
-            ca_score: r.ca_score,
+            ca_score: r.ca_average ?? r.ca_score,
             exam_score: r.exam_score,
-            total: r.total,
+            subject_mark: r.subject_mark ?? r.total,
+            total: r.subject_mark ?? r.total,
+            coefficient: r.coefficient ?? 1,
+            weighted_mark: r.weighted_mark ?? (r.total * (r.coefficient ?? 1)),
             grade: r.grade,
+            remark: r.remark ?? '',
           }))
 
         const payload = JSON.stringify({
@@ -1506,10 +1635,13 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
           class_name: className,
           term_name: termName,
           year_name: year?.name ?? null,
+          total_weighted_marks: summary.total_weighted_marks ?? summary.total,
+          total_coefficients: summary.total_coefficients ?? null,
           average: summary.average,
           total: summary.total,
           grade: summary.grade,
           position: summary.position,
+          status: summary.status ?? (summary.average >= 10 ? 'PASSED' : 'FAILED'),
           remark: summary.remark,
           subjects,
         })

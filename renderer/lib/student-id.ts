@@ -1,6 +1,6 @@
 /** Student ID settings types + IPC helpers (mirrors main helpers). */
 
-export type SequenceScope = 'year' | 'year_level'
+export type SequenceScope = 'school' | 'year' | 'year_level'
 
 export type StudentIdToken =
   | 'SCHOOL'
@@ -34,7 +34,7 @@ export const STUDENT_ID_TOKENS: Array<{ key: StudentIdToken; label: string }> = 
   { key: 'SEQ', label: 'Sequence' },
 ]
 
-export const DEFAULT_STUDENT_ID_PATTERN = '{SCHOOL}-{YEAR}-{SEQ}'
+export const DEFAULT_STUDENT_ID_PATTERN = '{SCHOOL}-{SEQ}'
 
 export const PATTERN_PRESETS: Array<{
   id: string
@@ -42,18 +42,23 @@ export const PATTERN_PRESETS: Array<{
   pattern: string
 }> = [
   {
+    id: 'school-seq',
+    label: 'GBHS-0001',
+    pattern: '{SCHOOL}-{SEQ}',
+  },
+  {
     id: 'school-year-seq',
-    label: 'GBHS-2026-001',
+    label: 'GBHS-2026-0001',
     pattern: '{SCHOOL}-{YEAR}-{SEQ}',
   },
   {
     id: 'year-seq',
-    label: '2026-001',
+    label: '2026-0001',
     pattern: '{YEAR}-{SEQ}',
   },
   {
     id: 'school-level-seq',
-    label: 'GBHS-F1-001',
+    label: 'GBHS-F1-0001',
     pattern: '{SCHOOL}-{LEVEL}-{SEQ}',
   },
   {
@@ -63,7 +68,7 @@ export const PATTERN_PRESETS: Array<{
   },
 ]
 
-export function padSequence(number: number, length = 3): string {
+export function padSequence(number: number, length = 4): string {
   return String(Math.max(0, Math.floor(number))).padStart(length, '0')
 }
 

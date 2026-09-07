@@ -8,6 +8,7 @@ import {
   FilterBar,
   FilterField,
   FinanceTable,
+  TableSelectionBar,
   PageAlert,
   PrimaryButton,
   SecondaryButton,
@@ -66,6 +67,46 @@ export default function BillingPage() {
 
   const [adjDesc, setAdjDesc] = React.useState("");
   const [adjAmount, setAdjAmount] = React.useState("");
+  const [selected, setSelected] = React.useState<string[]>([]);
+
+  const allSelected = invoices.length > 0 && selected.length === invoices.length;
+  function toggle(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelected([]);
+    else setSelected(invoices.map((inv) => inv.id));
+  }
+  function exportSelected() {
+    const target = invoices.filter((inv) => selected.includes(inv.id));
+    if (!target.length) return;
+    const csv = [
+      ["Invoice Number", "Student", "Student ID", "Class", "Issued Date", "Due Date", "Net Payable", "Amount Paid", "Balance", "Status"].join(","),
+      ...target.map((inv) =>
+        [
+          `"${inv.invoice_number}"`,
+          `"${inv.student_name}"`,
+          `"${inv.student_code || ""}"`,
+          `"${inv.class_name || ""}"`,
+          `"${inv.issue_date}"`,
+          `"${inv.due_date || ""}"`,
+          inv.net_payable,
+          inv.amount_paid,
+          inv.balance,
+          `"${inv.status}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `invoices-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const canManage = meta?.can_manage ?? false;
   const currency = meta?.currency ?? "";
@@ -255,6 +296,16 @@ export default function BillingPage() {
 
       <FinanceTable
         columns={[
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
           "Invoice",
           "Student",
           "Class",
@@ -269,10 +320,17 @@ export default function BillingPage() {
         loading={loading}
       >
         {invoices.length === 0 ? (
-          <EmptyRow colSpan={10} message="No invoices found." />
+          <EmptyRow colSpan={11} message="No invoices found." />
         ) : (
           invoices.map((inv) => (
-            <tr key={inv.id} className="border-t border-slate-100">
+            <tr key={inv.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(inv.id)}
+                  onChange={() => toggle(inv.id)}
+                />
+              </td>
               <td className="px-4 py-3 font-medium text-slate-900">
                 {inv.invoice_number}
               </td>
@@ -318,6 +376,23 @@ export default function BillingPage() {
           ))
         )}
       </FinanceTable>
+
+      <TableSelectionBar
+        totalCount={invoices.length}
+        selectedCount={selected.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportSelected}
+            className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Export selected ({selected.length})
+          </button>
+        }
+      />
 
       <FormModal
         open={genOpen}

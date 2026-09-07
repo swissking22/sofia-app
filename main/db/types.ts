@@ -317,11 +317,13 @@ export interface PromotionMapping extends BaseRecord {
   student_count: number
 }
 
+export type SequenceScope = 'school' | 'year' | 'year_level'
+
 /** Per-school student ID generation settings. */
 export interface StudentIdSettings extends BaseRecord {
   school_id: string
   pattern: string
-  sequence_scope: 'year' | 'year_level'
+  sequence_scope: SequenceScope
   next_sequence_number: number
 }
 
@@ -1013,6 +1015,12 @@ export interface ResultSubjectRow extends BaseRecord {
   exam_score: number
   total: number
   grade: string | null
+  sequence_scores_json?: string | null
+  ca_average?: number | null
+  subject_mark?: number | null
+  coefficient?: number
+  weighted_mark?: number
+  remark?: string | null
 }
 
 export interface ResultStudentSummary extends BaseRecord {
@@ -1026,6 +1034,19 @@ export interface ResultStudentSummary extends BaseRecord {
   promotion_outcome?: string | null
   gpa?: number | null
   failed_subjects?: number
+  total_coefficients?: number | null
+  total_weighted_marks?: number | null
+  passed_subjects?: number | null
+  status?: string | null
+}
+
+export interface ResultSubjectCoefficient extends BaseRecord {
+  school_id: string
+  subject_id: string
+  class_id?: string | null
+  academic_level_id?: string | null
+  academic_year_id?: string | null
+  coefficient: number
 }
 
 export type ReportCardStatus = 'draft' | 'generated'
@@ -1156,6 +1177,8 @@ export interface StudentIdCardTemplate extends BaseRecord {
   current_version_id: string | null
   current_version_number: number
   updated_by: string | null
+  is_system?: number
+  category?: string
 }
 
 export interface IdCardTemplateVersion {

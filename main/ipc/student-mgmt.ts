@@ -5,6 +5,7 @@ import type { StudentStatus } from '../db/repositories/student.repository'
 import type {
   Admission,
   AdmissionStatus,
+  Class,
   DocumentType,
   Student,
   StudentDocument,
@@ -15,7 +16,7 @@ import {
   saveStudentDocumentFile,
   saveStudentPhoto,
 } from '../helpers/student-documents'
-import { generateStudentId } from '../services/student-id'
+import { compareClassesByStructure } from '../domain/class-order'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -57,6 +58,14 @@ export interface StudentListResult {
     years: number[]
     levels: Array<{ id: string; name: string; sort_order: number }>
     sections: Array<{ id: string; name: string }>
+    classes: Array<{
+      id: string
+      name: string
+      academic_level_id: string | null
+      section_id: string | null
+      level_sort_order: number | null
+      section_name: string | null
+    }>
   }
 }
 
@@ -106,6 +115,43 @@ function resolveSchoolId(repos: Repositories): string | null {
   const session = getSession()
   if (session?.schoolId) return session.schoolId
   return repos.schools.findLatest()?.id ?? null
+}
+
+type ClassListClassInfo = {
+  id: string
+  name: string
+  level_name: string | null
+  level_sort_order: number | null
+  section_name: string | null
+}
+
+type ClassListGroupDto = {
+  class: ClassListClassInfo | null
+  students: StudentDto[]
+}
+
+function byName(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+}
+
+function classInfoOf(repos: Repositories, cls: Class): ClassListClassInfo {
+  const level = cls.academic_level_id
+    ? repos.academicLevels.findById(cls.academic_level_id)
+    : undefined
+  const section = cls.section_id
+    ? repos.sections.findById(cls.section_id)
+    : undefined
+  return {
+    id: cls.id,
+    name: cls.name,
+    level_name: level?.name ?? null,
+    level_sort_order: level?.sort_order ?? null,
+    section_name: section?.name ?? null,
+  }
+}
+
+function sortedStudents(students: StudentDto[]): StudentDto[] {
+  return [...students].sort((a, b) => byName(a.name, b.name))
 }
 
 function enrichStudent(repos: Repositories, student: Student): StudentDto {
@@ -167,7 +213,26 @@ function listFilterOptions(
     id: s.id,
     name: s.name,
   }))
-  return { years, levels, sections }
+  const classes = repos.classes
+    .findStructureClasses(schoolId)
+    .filter((c) => c.is_active === 1)
+    .map((c) => {
+      const level = c.academic_level_id
+        ? repos.academicLevels.findById(c.academic_level_id)
+        : undefined
+      const section = c.section_id
+        ? repos.sections.findById(c.section_id)
+        : undefined
+      return {
+        id: c.id,
+        name: c.name,
+        academic_level_id: c.academic_level_id,
+        section_id: c.section_id,
+        level_sort_order: level?.sort_order ?? null,
+        section_name: section?.name ?? null,
+      }
+    })
+  return { years, levels, sections, classes }
 }
 
 function toDocumentDto(
@@ -283,6 +348,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         admissionYear?: number | null
         academicLevelId?: string | null
         sectionId?: string | null
+        classId?: string | null
         search?: string | null
       }
     ): Result<StudentListResult> => {
@@ -301,6 +367,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           admissionYear: input?.admissionYear,
           academicLevelId: input?.academicLevelId,
           sectionId: input?.sectionId,
+          classId: input?.classId,
           search: input?.search,
         })
         .map((s) => enrichStudent(repos, s))
@@ -316,6 +383,160 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         data: {
           students,
           filters: listFilterOptions(repos, schoolId),
+        },
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'students:class-list',
+    (
+      _e,
+      input?: { class_id?: string | null; student_ids?: string[] }
+    ): Result<{
+      title: string
+      generated_at: string
+      all_classes: boolean
+      school: {
+        name: string
+        address: string | null
+        phone: string | null
+        email: string | null
+        school_code: string
+        region: string | null
+        division: string | null
+        logo_url: string | null
+      }
+      academic_year: { id: string; name: string } | null
+      class: ClassListClassInfo | null
+      students: StudentDto[]
+      groups: ClassListGroupDto[]
+    }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+
+      const school = repos.schools.findById(schoolId)
+      if (!school) return { ok: false, error: 'School not found.' }
+
+      const yearSetup = repos.academicYears.getSetupDto(schoolId)
+      const ids = (input?.student_ids ?? []).filter(Boolean)
+      const classId = input?.class_id?.trim() || null
+      const allClasses = classId === 'all'
+
+      if (!classId && ids.length === 0) {
+        return {
+          ok: false,
+          error: 'Select a class or at least one student.',
+        }
+      }
+
+      let groups: ClassListGroupDto[] = []
+
+      if (ids.length > 0) {
+        const selected = ids
+          .map((id) => repos.students.findById(id))
+          .filter((s): s is Student =>
+            Boolean(s && s.school_id === schoolId && !s.deleted_at)
+          )
+          .map((s) => enrichStudent(repos, s))
+        const byClass = new Map<string, StudentDto[]>()
+        for (const s of selected) {
+          const key = s.class_id || '__none__'
+          const list = byClass.get(key) ?? []
+          list.push(s)
+          byClass.set(key, list)
+        }
+        groups = [...byClass.entries()]
+          .map(([key, list]) => {
+            const cls =
+              key === '__none__' ? undefined : repos.classes.findById(key)
+            return {
+              class: cls ? classInfoOf(repos, cls) : null,
+              students: sortedStudents(list),
+            }
+          })
+          .sort((a, b) =>
+            compareClassesByStructure(
+              {
+                level_sort_order: a.class?.level_sort_order,
+                section_name: a.class?.section_name,
+                name: a.class?.name ?? '',
+              },
+              {
+                level_sort_order: b.class?.level_sort_order,
+                section_name: b.class?.section_name,
+                name: b.class?.name ?? '',
+              }
+            )
+          )
+      } else if (allClasses) {
+        const classes = repos.classes
+          .findStructureClasses(schoolId)
+          .filter((c) => c.is_active === 1)
+        groups = classes.map((cls) => ({
+          class: classInfoOf(repos, cls),
+          students: sortedStudents(
+            repos.students
+              .listFiltered({
+                schoolId,
+                status: 'active',
+                classId: cls.id,
+              })
+              .map((s) => enrichStudent(repos, s))
+          ),
+        }))
+      } else {
+        const cls = classId ? repos.classes.findById(classId) : undefined
+        if (!cls || cls.school_id !== schoolId) {
+          return { ok: false, error: 'Class not found.' }
+        }
+        groups = [
+          {
+            class: classInfoOf(repos, cls),
+            students: sortedStudents(
+              repos.students
+                .listFiltered({
+                  schoolId,
+                  status: 'active',
+                  classId,
+                })
+                .map((s) => enrichStudent(repos, s))
+            ),
+          },
+        ]
+      }
+
+      const students = groups.flatMap((g) => g.students)
+      const onlyClass =
+        !allClasses && groups.length === 1 ? groups[0].class : null
+      const title = allClasses
+        ? 'Class list — All classes'
+        : onlyClass
+          ? `Class list — ${onlyClass.name}`
+          : 'Selected students'
+
+      return {
+        ok: true,
+        data: {
+          title,
+          generated_at: new Date().toISOString(),
+          all_classes: allClasses,
+          school: {
+            name: school.name,
+            address: school.address,
+            phone: school.phone,
+            email: school.email,
+            school_code: school.school_code,
+            region: school.region,
+            division: school.division,
+            logo_url: assetToDataUrl(school.logo_path),
+          },
+          academic_year: yearSetup
+            ? { id: yearSetup.id, name: yearSetup.name }
+            : null,
+          class: onlyClass,
+          students,
+          groups,
         },
       }
     }
@@ -393,22 +614,14 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         : undefined
 
       try {
-        const generated = generateStudentId(repos, {
-          schoolId,
-          admissionYear: input.admission_year,
-          academicLevelId,
-          sectionName: section?.name ?? null,
-          specializationAbbr: specialization?.abbreviation ?? null,
-        })
-
         const student = repos.students.create({
           name,
           class_id: input.class_id,
           school_id: schoolId,
-          student_code: generated.student_code,
           admission_year: input.admission_year,
           academic_level_id: academicLevelId,
-          sequence_number: generated.sequence_number,
+          section_name: section?.name ?? null,
+          specialization_abbr: specialization?.abbreviation ?? null,
           gender: input.gender ?? null,
           date_of_birth: input.date_of_birth ?? null,
           phone: input.phone ?? null,
@@ -495,7 +708,12 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           guardian_email: input.guardian_email,
           guardian_relationship: input.guardian_relationship,
           status: input.status,
-          residence_type: input.residence_type,
+          residence_type:
+            input.residence_type === 'boarding'
+              ? 'boarding'
+              : input.residence_type === 'day'
+                ? 'day'
+                : undefined,
           // student_code intentionally omitted — immutable
         })
         if (!updated) return { ok: false, error: 'Student not found.' }
@@ -787,41 +1005,37 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         : undefined
 
       try {
-        const generated = generateStudentId(repos, {
-          schoolId,
-          admissionYear,
-          academicLevelId,
-          sectionName: section?.name ?? null,
-          specializationAbbr: specialization?.abbreviation ?? null,
-        })
+        const student = repos.schools.getDb().transaction(() => {
+          const newStudent = repos.students.create({
+            name: admission.full_name,
+            class_id: classId,
+            school_id: schoolId,
+            admission_year: admissionYear,
+            academic_level_id: academicLevelId,
+            section_name: section?.name ?? null,
+            specialization_abbr: specialization?.abbreviation ?? null,
+            gender: admission.gender,
+            date_of_birth: admission.date_of_birth,
+            phone: admission.phone,
+            email: admission.email,
+            address: admission.address,
+            admission_type: 'new',
+            guardian_name: admission.guardian_name,
+            guardian_phone: admission.guardian_phone,
+            guardian_email: admission.guardian_email,
+            guardian_relationship: admission.guardian_relationship,
+            status: 'active',
+            photo_path: admission.photo_path,
+          })
 
-        const student = repos.students.create({
-          name: admission.full_name,
-          class_id: classId,
-          school_id: schoolId,
-          student_code: generated.student_code,
-          admission_year: admissionYear,
-          academic_level_id: academicLevelId,
-          sequence_number: generated.sequence_number,
-          gender: admission.gender,
-          date_of_birth: admission.date_of_birth,
-          phone: admission.phone,
-          email: admission.email,
-          address: admission.address,
-          admission_type: 'new',
-          guardian_name: admission.guardian_name,
-          guardian_phone: admission.guardian_phone,
-          guardian_email: admission.guardian_email,
-          guardian_relationship: admission.guardian_relationship,
-          status: 'active',
-          photo_path: admission.photo_path,
-        })
+          repos.admissions.updateDecision(admission.id, {
+            status: 'accepted',
+            student_id: newStudent.id,
+            preferred_class_id: classId,
+          })
 
-        repos.admissions.updateDecision(admission.id, {
-          status: 'accepted',
-          student_id: student.id,
-          preferred_class_id: classId,
-        })
+          return newStudent
+        })()
 
         return {
           ok: true,

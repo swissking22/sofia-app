@@ -20,6 +20,12 @@ const SCHOOL_DEFS = [
     email: 'admin@sunrise.demo',
     region: 'Littoral',
   },
+  {
+    name: 'International Academy of Excellence',
+    short_code: 'IAE',
+    email: 'admin@iae.demo',
+    region: 'South West',
+  },
 ] as const
 
 /**

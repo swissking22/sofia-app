@@ -964,19 +964,34 @@ export class ResultsRepository extends BaseRepository<ResultRun> {
     exam_score: number
     total: number
     grade: string | null
+    sequence_scores_json?: string | null
+    ca_average?: number | null
+    subject_mark?: number | null
+    coefficient?: number
+    weighted_mark?: number
+    remark?: string | null
   }): ResultSubjectRow {
     const record: ResultSubjectRow = {
       ...this.buildBaseFields(),
+      sequence_scores_json: input.sequence_scores_json ?? null,
+      ca_average: input.ca_average ?? input.ca_score,
+      subject_mark: input.subject_mark ?? input.total,
+      coefficient: input.coefficient ?? 1,
+      weighted_mark: input.weighted_mark ?? (input.total * (input.coefficient ?? 1)),
+      remark: input.remark ?? null,
       ...input,
     }
     this.db
       .prepare(
         `INSERT INTO result_subject_rows (
           id, result_run_id, student_id, subject_id,
-          ca_score, exam_score, total, grade, ${SYNC_COLS}
+          ca_score, exam_score, total, grade,
+          sequence_scores_json, ca_average, subject_mark, coefficient, weighted_mark, remark,
+          ${SYNC_COLS}
         ) VALUES (
           @id, @result_run_id, @student_id, @subject_id,
           @ca_score, @exam_score, @total, @grade,
+          @sequence_scores_json, @ca_average, @subject_mark, @coefficient, @weighted_mark, @remark,
           @created_at, @updated_at, @deleted_at, @sync_status, @version
         )`
       )
@@ -1002,22 +1017,33 @@ export class ResultsRepository extends BaseRepository<ResultRun> {
     promotion_outcome?: string | null
     gpa?: number | null
     failed_subjects?: number
+    total_coefficients?: number | null
+    total_weighted_marks?: number | null
+    passed_subjects?: number | null
+    status?: string | null
   }): ResultStudentSummary {
     const record: ResultStudentSummary = {
       ...this.buildBaseFields(),
       promotion_outcome: input.promotion_outcome ?? null,
       gpa: input.gpa ?? null,
       failed_subjects: input.failed_subjects ?? 0,
+      total_coefficients: input.total_coefficients ?? null,
+      total_weighted_marks: input.total_weighted_marks ?? null,
+      passed_subjects: input.passed_subjects ?? null,
+      status: input.status ?? null,
       ...input,
     }
     this.db
       .prepare(
         `INSERT INTO result_student_summaries (
           id, result_run_id, student_id, average, total, grade, position, remark,
-          promotion_outcome, gpa, failed_subjects, ${SYNC_COLS}
+          promotion_outcome, gpa, failed_subjects,
+          total_coefficients, total_weighted_marks, passed_subjects, status,
+          ${SYNC_COLS}
         ) VALUES (
           @id, @result_run_id, @student_id, @average, @total, @grade, @position, @remark,
           @promotion_outcome, @gpa, @failed_subjects,
+          @total_coefficients, @total_weighted_marks, @passed_subjects, @status,
           @created_at, @updated_at, @deleted_at, @sync_status, @version
         )`
       )

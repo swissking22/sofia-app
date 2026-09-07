@@ -10,6 +10,7 @@ import {
   type AcademicMeta,
   type AttendanceMark,
 } from "../../../lib/academic-mgmt";
+import { TableSelectionBar } from "../../../components/students/ui";
 
 const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -48,6 +49,54 @@ export default function AttendanceTakePage() {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
+
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
+  const allSelected =
+    students.length > 0 && selectedIds.length === students.length;
+  function toggleRow(id: string) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelectedIds([]);
+    else setSelectedIds(students.map((s) => s.id));
+  }
+  function markSelected(mark: AttendanceMark) {
+    setMarks((prev) => {
+      const next = { ...prev };
+      for (const id of selectedIds) {
+        next[id] = mark;
+      }
+      return next;
+    });
+  }
+  function clearSelectedMarks() {
+    setMarks((prev) => {
+      const next = { ...prev };
+      for (const id of selectedIds) {
+        delete next[id];
+      }
+      return next;
+    });
+  }
+  function exportSelected() {
+    const target = students.filter((s) => selectedIds.includes(s.id));
+    if (!target.length) return;
+    const csv = [
+      ["Student ID", "Name", "Attendance Status"].join(","),
+      ...target.map((s) =>
+        [`"${s.student_code || ""}"`, `"${s.name}"`, `"${marks[s.id] ?? s.status ?? ""}"`].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance-${sessionDate}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   React.useEffect(() => {
     void (async () => {
@@ -238,53 +287,129 @@ export default function AttendanceTakePage() {
       ) : students.length === 0 ? (
         <p className="text-sm text-slate-500">No students in this class.</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Student ID</th>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {students.map((s) => {
-                const current = marks[s.id];
-                return (
-                  <tr key={s.id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                      {s.student_code || "—"}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-800">
-                      {s.name}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        {ATTENDANCE_MARKS.map((m) => {
-                          const selected = current === m.key;
-                          return (
-                            <button
-                              key={m.key}
-                              type="button"
-                              onClick={() => setMark(s.id, m.key)}
-                              className={`cursor-pointer rounded-lg border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 ${
-                                selected
-                                  ? `${markButtonClass[m.key]} ring-2`
-                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                              }`}
-                            >
-                              {m.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            selectedIds.length > 0 && !allSelected;
+                      }}
+                      onChange={toggleAll}
+                      aria-label="Select all"
+                    />
+                  </th>
+                  <th className="px-4 py-3">Student ID</th>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {students.map((s) => {
+                  const current = marks[s.id];
+                  return (
+                    <tr key={s.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(s.id)}
+                          onChange={() => toggleRow(s.id)}
+                        />
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                        {s.student_code || "—"}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-800">
+                        {s.name}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          {ATTENDANCE_MARKS.map((m) => {
+                            const selected = current === m.key;
+                            return (
+                              <button
+                                key={m.key}
+                                type="button"
+                                onClick={() => setMark(s.id, m.key)}
+                                className={`cursor-pointer rounded-lg border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 ${
+                                  selected
+                                    ? `${markButtonClass[m.key]} ring-2`
+                                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                                }`}
+                              >
+                                {m.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <TableSelectionBar
+            totalCount={students.length}
+            selectedCount={selectedIds.length}
+            allSelected={allSelected}
+            onToggleAll={toggleAll}
+            onClear={() => setSelectedIds([])}
+            actions={
+              <>
+                <button
+                  type="button"
+                  onClick={() => markSelected("present")}
+                  className="cursor-pointer rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                >
+                  Mark Present ({selectedIds.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => markSelected("late")}
+                  className="cursor-pointer rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-600"
+                >
+                  Mark Late ({selectedIds.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => markSelected("absent")}
+                  className="cursor-pointer rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700"
+                >
+                  Mark Absent ({selectedIds.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => markSelected("excused")}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Mark Excused ({selectedIds.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={clearSelectedMarks}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                >
+                  Clear marks
+                </button>
+                <button
+                  type="button"
+                  onClick={exportSelected}
+                  className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export selected ({selectedIds.length})
+                </button>
+              </>
+            }
+          />
+        </>
       )}
 
       <div className="mt-5">

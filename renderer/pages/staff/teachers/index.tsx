@@ -13,6 +13,7 @@ import {
   SecondaryButton,
   StatusBadge,
   StaffTable,
+  TableSelectionBar,
   selectClass,
   useDebouncedValue,
 } from "../../../components/staff/ui";
@@ -85,6 +86,43 @@ export default function TeachersIndexPage() {
   }
 
   const canManage = meta?.can_manage ?? false;
+  const [selected, setSelected] = React.useState<string[]>([]);
+
+  const allSelected = teachers.length > 0 && selected.length === teachers.length;
+  function toggle(id: string) {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+  function toggleAll() {
+    if (allSelected) setSelected([]);
+    else setSelected(teachers.map((t) => t.id));
+  }
+  function exportSelected() {
+    const target = teachers.filter((t) => selected.includes(t.id));
+    if (!target.length) return;
+    const csv = [
+      ["Name", "Employee ID", "Department", "Role", "Phone", "Email", "Status"].join(","),
+      ...target.map((t) =>
+        [
+          `"${t.full_name}"`,
+          `"${t.employee_code || ""}"`,
+          `"${t.department_name || ""}"`,
+          `"${t.job_role ? (JOB_ROLE_LABELS[t.job_role] || t.job_role) : ""}"`,
+          `"${t.phone || ""}"`,
+          `"${t.email || ""}"`,
+          `"${t.status}"`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `teachers-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <AppShell
@@ -162,6 +200,16 @@ export default function TeachersIndexPage() {
       <StaffTable
         loading={loading}
         columns={[
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
           "Name",
           "Employee ID",
           "Department",
@@ -172,7 +220,7 @@ export default function TeachersIndexPage() {
         ]}
       >
         {teachers.length === 0 ? (
-          <EmptyRow colSpan={7}>
+          <EmptyRow colSpan={8}>
             No teachers match these filters.{" "}
             {canManage ? (
               <Link
@@ -186,6 +234,13 @@ export default function TeachersIndexPage() {
         ) : (
           teachers.map((t) => (
             <tr key={t.id} className="hover:bg-slate-50/80">
+              <td className="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(t.id)}
+                  onChange={() => toggle(t.id)}
+                />
+              </td>
               <td className="px-4 py-3">
                 <Link
                   href={`/staff/teachers/${t.id}`}
@@ -222,6 +277,23 @@ export default function TeachersIndexPage() {
           ))
         )}
       </StaffTable>
+
+      <TableSelectionBar
+        totalCount={teachers.length}
+        selectedCount={selected.length}
+        allSelected={allSelected}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <button
+            type="button"
+            onClick={exportSelected}
+            className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+          >
+            Export selected ({selected.length})
+          </button>
+        }
+      />
 
       <FormModal
         open={!!rowAction}

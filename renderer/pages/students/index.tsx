@@ -1,6 +1,12 @@
 import React from "react";
 import Link from "next/link";
-import { Add01Icon, MoreHorizontalIcon, Upload04Icon } from "@hugeicons/core-free-icons";
+import {
+  Add01Icon,
+  File01Icon,
+  MoreHorizontalIcon,
+  PrinterIcon,
+  Upload04Icon,
+} from "@hugeicons/core-free-icons";
 import { AppShell } from "../../components/layout/AppShell";
 import {
   FormModal,
@@ -13,14 +19,24 @@ import {
   SecondaryButton,
   StatusBadge,
   StudentTable,
+  TableSelectionBar,
   selectClass,
   useDebouncedValue,
 } from "../../components/students/ui";
 import { Icon } from "../../components/ui/Icon";
-import { TableActionGroup, TableIconButton } from "../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../components/ui/TableActions";
+import {
+  classListFilename,
+  classListToCsv,
+  classListsToCsv,
+} from "../../lib/class-list";
 import {
   bulkUpdateStudentStatus,
   deleteStudent,
+  downloadCsv,
   fetchStudentList,
   STATUS_LABELS,
   type StudentDto,
@@ -37,6 +53,7 @@ export default function StudentsIndexPage() {
   const [year, setYear] = React.useState("");
   const [levelId, setLevelId] = React.useState("");
   const [sectionId, setSectionId] = React.useState("");
+  const [classId, setClassId] = React.useState("");
   const [search, setSearch] = React.useState("");
   const debouncedSearch = useDebouncedValue(search, 300);
   const [selected, setSelected] = React.useState<string[]>([]);
@@ -50,18 +67,78 @@ export default function StudentsIndexPage() {
       admissionYear: year ? Number(year) : null,
       academicLevelId: levelId || null,
       sectionId: sectionId || null,
+      classId: classId || null,
       search: debouncedSearch || null,
     });
     if (res.ok) setData(res.data);
     else setError(res.error);
     setLoading(false);
-  }, [year, levelId, sectionId, debouncedSearch]);
+  }, [year, levelId, sectionId, classId, debouncedSearch]);
 
   React.useEffect(() => {
     void load();
   }, [load]);
 
   const students = data?.students ?? [];
+  const classOptions = React.useMemo(() => {
+    const all = data?.filters.classes ?? [];
+    return all.filter((c) => {
+      if (levelId && c.academic_level_id !== levelId) return false;
+      if (sectionId && c.section_id !== sectionId) return false;
+      return true;
+    });
+  }, [data?.filters.classes, levelId, sectionId]);
+
+  const canPrintOrExport =
+    selected.length > 0 || Boolean(classId) || students.length > 0;
+
+  function classListHref() {
+    if (selected.length > 0) {
+      const q = new URLSearchParams();
+      if (classId) q.set("class_id", classId);
+      q.set("ids", selected.join(","));
+      return `/students/class-lists?${q.toString()}`;
+    }
+    if (classId) {
+      return `/students/class-lists?class_id=${encodeURIComponent(classId)}`;
+    }
+    return "/students/class-lists?class_id=all";
+  }
+
+  function exportCurrentList() {
+    const rows =
+      selected.length > 0
+        ? students.filter((s) => selected.includes(s.id))
+        : students;
+    if (!rows.length) return;
+    const fromFilter = classOptions.find((c) => c.id === classId)?.name;
+    if (classId && fromFilter) {
+      downloadCsv(classListFilename(fromFilter), classListToCsv(rows));
+      return;
+    }
+    const byClass = new Map<string, { name: string; students: typeof rows }>();
+    for (const row of rows) {
+      const key = row.class_id || "__none__";
+      const entry = byClass.get(key) ?? {
+        name: row.class_name?.trim() || "Unassigned",
+        students: [],
+      };
+      entry.students.push(row);
+      byClass.set(key, entry);
+    }
+    const order = new Map(
+      (data?.filters.classes ?? []).map((c, i) => [c.id, i]),
+    );
+    const sections = [...byClass.entries()]
+      .sort(([a], [b]) => (order.get(a) ?? 9999) - (order.get(b) ?? 9999))
+      .map(([, v]) => ({ class_name: v.name, students: v.students }));
+    downloadCsv(
+      classListFilename(
+        sections.length === 1 ? sections[0].class_name : "All classes",
+      ),
+      classListsToCsv(sections),
+    );
+  }
 
   function toggle(id: string) {
     setSelected((prev) =>
@@ -147,7 +224,10 @@ export default function StudentsIndexPage() {
               <select
                 className={selectClass}
                 value={levelId}
-                onChange={(e) => setLevelId(e.target.value)}
+                onChange={(e) => {
+                  setLevelId(e.target.value);
+                  setClassId("");
+                }}
               >
                 <option value="">All levels</option>
                 {(data?.filters.levels ?? []).map((l) => (
@@ -161,12 +241,29 @@ export default function StudentsIndexPage() {
               <select
                 className={selectClass}
                 value={sectionId}
-                onChange={(e) => setSectionId(e.target.value)}
+                onChange={(e) => {
+                  setSectionId(e.target.value);
+                  setClassId("");
+                }}
               >
                 <option value="">All departments</option>
                 {(data?.filters.sections ?? []).map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+            <FilterField label="Class">
+              <select
+                className={selectClass}
+                value={classId}
+                onChange={(e) => setClassId(e.target.value)}
+              >
+                <option value="">All classes</option>
+                {classOptions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
                   </option>
                 ))}
               </select>
@@ -183,6 +280,18 @@ export default function StudentsIndexPage() {
         }
         actions={
           <>
+            {canPrintOrExport ? (
+              <>
+                <SecondaryButton onClick={exportCurrentList}>
+                  <Icon icon={File01Icon} size={16} />
+                  Export class list
+                </SecondaryButton>
+                <SecondaryButton href={classListHref()}>
+                  <Icon icon={PrinterIcon} size={16} />
+                  Print class list
+                </SecondaryButton>
+              </>
+            ) : null}
             {selected.length > 0 ? (
               <SecondaryButton onClick={() => setBulkOpen(true)}>
                 Bulk ({selected.length})
@@ -203,7 +312,19 @@ export default function StudentsIndexPage() {
       <StudentTable
         loading={loading}
         columns={[
-          "",
+          <input
+            key="select-all-header"
+            type="checkbox"
+            checked={students.length > 0 && selected.length === students.length}
+            ref={(el) => {
+              if (el) {
+                el.indeterminate =
+                  selected.length > 0 && selected.length < students.length;
+              }
+            }}
+            onChange={toggleAll}
+            aria-label="Select all"
+          />,
           "Student ID",
           "Name",
           "Class",
@@ -273,16 +394,37 @@ export default function StudentsIndexPage() {
         )}
       </StudentTable>
 
-      {students.length > 0 ? (
-        <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-          <input
-            type="checkbox"
-            checked={selected.length === students.length}
-            onChange={toggleAll}
-          />
-          Select all on this page
-        </div>
-      ) : null}
+      <TableSelectionBar
+        totalCount={students.length}
+        selectedCount={selected.length}
+        allSelected={students.length > 0 && selected.length === students.length}
+        onToggleAll={toggleAll}
+        onClear={() => setSelected([])}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setBulkOpen(true)}
+              className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+            >
+              Bulk actions ({selected.length})
+            </button>
+            <button
+              type="button"
+              onClick={exportCurrentList}
+              className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Export selected ({selected.length})
+            </button>
+            <Link
+              href={classListHref()}
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Print list
+            </Link>
+          </>
+        }
+      />
 
       <FormModal
         open={bulkOpen}

@@ -79,8 +79,8 @@ function StudentIdForm() {
   const [segments, setSegments] = React.useState<PatternSegment[]>(() =>
     parsePattern(DEFAULT_STUDENT_ID_PATTERN),
   );
-  const [presetId, setPresetId] = React.useState("school-year-seq");
-  const [scope, setScope] = React.useState<SequenceScope>("year");
+  const [presetId, setPresetId] = React.useState("school-seq");
+  const [scope, setScope] = React.useState<SequenceScope>("school");
   const [customText, setCustomText] = React.useState("-");
   const [dragIndex, setDragIndex] = React.useState<number | null>(null);
 
@@ -384,7 +384,28 @@ function StudentIdForm() {
       </FormSection>
 
       <FormSection title="Sequence settings" layout="stack">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <label
+            className={`flex cursor-pointer flex-col gap-1 rounded-xl border px-3.5 py-3 ${
+              scope === "school"
+                ? "border-(--sofia-primary)/40 bg-(--sofia-primary)/5"
+                : "border-slate-200 bg-white"
+            }`}
+          >
+            <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <input
+                type="radio"
+                name="seq-scope"
+                checked={scope === "school"}
+                onChange={() => setScope("school")}
+                className="h-4 w-4 text-(--sofia-primary)"
+              />
+              School-wide permanent
+            </span>
+            <span className="pl-6 text-xs text-slate-500">
+              Sequence counter never resets; student code is permanent.
+            </span>
+          </label>
           <label
             className={`flex cursor-pointer flex-col gap-1 rounded-xl border px-3.5 py-3 ${
               scope === "year"

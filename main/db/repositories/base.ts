@@ -22,6 +22,10 @@ export abstract class BaseRepository<T extends BaseRecord> {
     protected tableName: string
   ) {}
 
+  getDb(): Database.Database {
+    return this.db
+  }
+
   /** Soft-delete aware findAll — excludes deleted rows. */
   findAll(): T[] {
     return this.db

@@ -1,11 +1,74 @@
 import React from "react";
 import type { CardDesign, CardElement } from "../../lib/student-id-cards";
+import { DEFAULT_SAMPLE_BINDINGS } from "../../lib/student-id-cards";
+import {
+  DEFAULT_ACADEMIC_CREST,
+  DEFAULT_SAMPLE_SIGNATURE,
+  DEFAULT_SAMPLE_STUDENT_PHOTO,
+} from "../../lib/id-card-assets";
 
 export function interpolate(template: string, bindings: Record<string, string>): string {
   return String(template ?? "").replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, raw: string) => {
     const value = bindings[raw.trim()];
     return value == null ? "" : String(value);
   });
+}
+
+function PlaceholderQr() {
+  return (
+    <svg viewBox="0 0 40 40" className="h-full w-full bg-white p-0.5" fill="#0A1E3F">
+      {/* Top Left Finder */}
+      <rect x="2" y="2" width="12" height="12" fill="none" stroke="#0A1E3F" strokeWidth="2.5" />
+      <rect x="5.5" y="5.5" width="5" height="5" />
+      {/* Top Right Finder */}
+      <rect x="26" y="2" width="12" height="12" fill="none" stroke="#0A1E3F" strokeWidth="2.5" />
+      <rect x="29.5" y="5.5" width="5" height="5" />
+      {/* Bottom Left Finder */}
+      <rect x="2" y="26" width="12" height="12" fill="none" stroke="#0A1E3F" strokeWidth="2.5" />
+      <rect x="5.5" y="29.5" width="5" height="5" />
+      {/* Pattern bits */}
+      <rect x="17" y="4" width="2.5" height="2.5" />
+      <rect x="21" y="4" width="2" height="2" />
+      <rect x="4" y="17" width="2" height="2" />
+      <rect x="4" y="21" width="2" height="2" />
+      <rect x="17" y="17" width="6" height="6" />
+      <rect x="26" y="17" width="3" height="3" />
+      <rect x="32" y="17" width="2.5" height="2.5" />
+      <rect x="17" y="26" width="3" height="3" />
+      <rect x="22" y="29" width="3" height="3" />
+      <rect x="28" y="26" width="2.5" height="5" />
+      <rect x="33" y="31" width="4" height="4" />
+      <rect x="27" y="34" width="3" height="2" />
+    </svg>
+  );
+}
+
+function PlaceholderBarcode({ code }: { code?: string }) {
+  const bars = [
+    0, 3, 5, 8, 11, 13, 14, 17, 21, 23, 27, 29, 32, 36, 39, 41, 44, 47, 51,
+    54, 56, 59, 62, 66, 69, 71, 74, 77, 81, 84, 87, 91, 94, 97,
+  ];
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-between bg-white px-1 py-0.5">
+      <svg viewBox="0 0 100 24" className="h-[72%] w-full" preserveAspectRatio="none">
+        {bars.map((x, i) => (
+          <rect
+            key={i}
+            x={x}
+            y="0"
+            width={i % 3 === 0 ? 1.8 : i % 2 === 0 ? 1.2 : 0.8}
+            height="24"
+            fill="#0F172A"
+          />
+        ))}
+      </svg>
+      {code ? (
+        <span className="font-mono text-[5pt] font-semibold leading-none tracking-widest text-slate-800">
+          {code}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 function bgStyle(side: CardDesign["front"]) {
@@ -58,6 +121,13 @@ export function CardSurface({
   showGrid?: boolean;
   bindings?: Record<string, string>;
 }) {
+  const mergedBindings = React.useMemo(
+    () => ({
+      ...DEFAULT_SAMPLE_BINDINGS,
+      ...bindings,
+    }),
+    [bindings]
+  );
   const w = design.widthMm;
   const h = design.heightMm;
   const bg = side === "front" ? design.front : design.back;
@@ -87,7 +157,7 @@ export function CardSurface({
           unit={unit}
           selected={selectedIds.includes(el.id)}
           onPointerDown={onPointerDown}
-          bindings={bindings}
+          bindings={mergedBindings}
         />
       ))}
     </div>
@@ -112,10 +182,12 @@ function ElementView({
   const image =
     el.resolvedImage ||
     (el.imageBinding === "student.photo"
-      ? bindings["student.photo"]
+      ? bindings["student.photo"] || DEFAULT_SAMPLE_STUDENT_PHOTO
       : el.imageBinding === "school.logo"
-        ? bindings["school.logo"]
-        : el.imageSrc);
+        ? bindings["school.logo"] || DEFAULT_ACADEMIC_CREST
+        : el.imageBinding === "school.signature"
+          ? bindings["school.signature"] || DEFAULT_SAMPLE_SIGNATURE
+          : el.imageSrc);
   const radius =
     el.crop === "circle"
       ? "50%"
@@ -183,14 +255,16 @@ function ElementView({
         el.qrSvg ? (
           <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: el.qrSvg }} />
         ) : (
-          <div className="grid h-full w-full place-items-center bg-white text-[7px]">QR</div>
+          <PlaceholderQr />
         )
       ) : null}
       {el.type === "barcode" ? (
         el.barcodeSvg ? (
           <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: el.barcodeSvg }} />
         ) : (
-          <div className="flex h-full items-end justify-center bg-white text-[7px]">|||| {text || "ID"}</div>
+          <PlaceholderBarcode
+            code={text || interpolate(el.barcodeBinding || "{{student.student_id}}", bindings)}
+          />
         )
       ) : null}
       {el.type === "icon" ? <IconGlyph name={el.icon} /> : null}

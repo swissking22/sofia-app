@@ -1,5 +1,10 @@
 import { createHash, randomBytes } from 'crypto'
 import { addMonths } from './teaching-progress'
+import {
+  DEFAULT_ACADEMIC_CREST,
+  DEFAULT_SAMPLE_SIGNATURE,
+  DEFAULT_SAMPLE_STUDENT_PHOTO,
+} from './id-card-assets'
 
 export const CR80_WIDTH_MM = 85.6
 export const CR80_HEIGHT_MM = 53.98
@@ -282,11 +287,11 @@ export function sampleBindings(): BindingMap {
     'student.name': 'Olivia Wilson',
     'student.first_name': 'Olivia',
     'student.last_name': 'Wilson',
-    'student.student_id': 'STU-2026-00124',
+    'student.student_id': 'IAE-2026-00124',
     'student.gender': 'Female',
     'student.date_of_birth': '2009-04-18',
-    'student.photo': '',
-    'student.class': 'Form 4A',
+    'student.photo': DEFAULT_SAMPLE_STUDENT_PHOTO,
+    'student.class': 'Form 5A',
     'student.stream': 'A',
     'student.department': 'General',
     'staff.name': 'Jean Mbarga',
@@ -296,27 +301,28 @@ export function sampleBindings(): BindingMap {
     'staff.photo': '',
     'academic.year': '2026/2027',
     'academic.term': 'First Term',
-    'academic.level': 'Form 4',
-    'academic.class': 'Form 4A',
+    'academic.level': 'Form 5',
+    'academic.class': 'Form 5A',
     'academic.department': 'General',
-    'school.name': 'International University',
-    'school.short_code': 'IU',
-    'school.logo': '',
+    'school.name': 'International Academy of Excellence',
+    'school.short_code': 'IAE',
+    'school.logo': DEFAULT_ACADEMIC_CREST,
     'school.address': 'Yaoundé, Cameroon',
     'school.phone': '+237 222 000 000',
-    'school.email': 'info@school.cm',
-    'school.website': 'www.school.cm',
-    'school.motto': 'Knowledge and Character',
-    'card.number': 'SCH/ID/2026/00001',
-    'card.issue_date': '01 Sep 2026',
-    'card.expiry_date': '31 Aug 2027',
+    'school.email': 'admissions@iae.edu',
+    'school.website': 'www.iae.edu',
+    'school.motto': 'Excellence • Integrity • Future',
+    'school.signature': DEFAULT_SAMPLE_SIGNATURE,
+    'card.number': 'IAE/ID/2026/00124',
+    'card.issue_date': '01 September 2026',
+    'card.expiry_date': '31 August 2027',
     'card.status': 'Active',
     'card.verification_code': 'ID-8A72F91C',
-    'card.barcode': 'STU-2026-00124',
+    'card.barcode': 'IAE-2026-00124',
     'card.qr_code': 'sofia:v1:ID-8A72F91C',
-    'date.today': '03 Sep 2026',
+    'date.today': '06 Sep 2026',
     'date.year': '2026',
-    'system.generated_at': '03 Sep 2026 10:42',
+    'system.generated_at': '06 Sep 2026 10:42',
   }
 }
 
@@ -477,7 +483,7 @@ export function requiredBindings(design: CardDesign): string[] {
     if (el.imageBinding === 'student.photo') keys.add('student.photo')
     if (el.imageBinding === 'school.logo') keys.add('school.logo')
   }
-  return [...keys]
+  return Array.from(keys)
 }
 
 export function validateStudentForCard(input: {

@@ -31,8 +31,10 @@ npm run seed        # writes data/sofia.seed.db
 |-------|----------|--------|
 | `admin@greenfield.demo` | `Sofia@Demo1` | Greenfield Secondary School |
 | `admin@sunrise.demo` | `Sofia@Demo1` | Sunrise Academy |
+| `admin@lightworld.demo` | `Sofia@Demo1` | Light World Mission College |
+| `admin@iae.demo` | `Sofia@Demo1` | International Academy of Excellence |
 
-Restart the app after `seed:dev` so Electron picks up the new database. Seed data includes academics, staff, ~300 students, finance (paid / partial / unpaid invoices), expenses, and attendance.
+Restart the app after `seed:dev` so Electron picks up the new database. Seed data includes academics, staff, ~300 students, finance (paid / partial / unpaid invoices), expenses, and attendance. Light World Mission subjects are **level-scoped**: the same title (e.g. Mathematics) is one subject shared by General, Commercial, and Technical classes at that level. Re-running `npm run seed -- --dev --light-world-only` repairs LWM subjects without a full reset.
 
 ---
 
@@ -45,6 +47,7 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 | School Profile | `/setup/school-profile` | Name, codes, contact, logo/stamp/signature |
 | Academic Year | `/setup/academic-year` | Current year dates + calendar events |
 | Academic Structure | `/setup/academic-structure` | Levels → sections → specializations → classes; **school day schedule** (start/close times, period duration, breaks) for the timetable |
+| Student ID Format | `/setup/student-id` | Pattern builder (default `{SCHOOL}-{SEQ}` e.g. `ABC-0001`), sequence scope (`school` continuous vs `year` / `year_level`), next sequence number counter. Student IDs are permanent school-wide identities and never change across academic years or class promotions. |
 | Grading System | `/setup/grading-system` | CA/exam weights + grade bands (A–F, etc.) |
 | Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments) |
 | Permissions | `/setup/permissions` | Roles & permissions |
@@ -76,26 +79,39 @@ Day-to-day school configuration (mirrors much of setup, editable anytime).
 | School Profile | `/school/profile` | Edit identity and branding assets |
 | Academic Year | `/school/academic-year` | Edit year + calendar |
 | Terms & Sessions | `/school/terms` | Term dates within the year |
-| Classes | `/school/classes` | Manage levels, sections, specs, classes, and the school day schedule (period times + breaks) |
+| Classes | `/school/classes` | Manage levels, sections, specs, classes, and the school day schedule (period times + breaks). Class lists and dropdowns follow **level → section** order (Form 1 General, Commercial, Technical, then Form 2…). |
 | Departments | `/school/departments` | Add/edit/delete departments |
-| Subjects | `/school/subjects` | Pick an **academic level**, then add subjects (classes in that level are selected by default) |
+| Subjects | `/school/subjects` | Pick an **academic level**, then add subjects (classes in that level are selected by default). One subject row per level + name is linked to every class that offers it (e.g. Form 1 Mathematics for General, Commercial, and Technical). |
 
 ---
 
 ## Student Management
 
-Consistent UI across all student routes: filters at top, clean tables, status badges, drawers/modals for quick actions (`renderer/components/students/ui.tsx`).
+Consistent UI across all student routes: filters at top, clean tables, status badges, drawers/modals for quick actions (`renderer/components/students/ui.tsx`). All data tables include a select-all checkbox header and a bottom `TableSelectionBar` allowing users to select all items at once for bulk actions (CSV export, bulk status updates, print jobs, etc.).
 
 ### Students list — `/students`
 
-- **Filters:** admission year, level, department (section), search (name / student ID).
+- **Filters:** admission year, level, department (section), **class**, search (name / student ID).
 - **Actions:** Add student, Import (opens setup students importer), bulk actions (mark alumni / delete).
+- **Class list:** **Export class list** (CSV) and **Print class list** are available for the current filter. With **All classes**, print opens `/students/class-lists?class_id=all` (one page per class).
 - Click a name to open the student profile.
+
+### Class lists — `/students/class-lists`
+
+Printable **A4 class list** (browser Print → Save as PDF). Chrome (sidebar, search, page title) is hidden when printing.
+
+1. Choose a **class**, or **All classes** (or open with `?class_id=` / `?class_id=all` / `?ids=` from the students list).
+2. Preview the document: school logo and details, **Class list** title, class name, academic year. The letterhead and column headers repeat on every printed page.
+3. Table columns: **Index**, **Name** (full width so names fit), **Sex** (M/F), plus an **empty** column for marks or signatures.
+4. **All classes** prints each class on its own page (same header on every page). Export CSV is named `All classes class list.csv` and includes a Class column.
+5. **Print / Save PDF** or **Export CSV**. Single-class files are named from the class (e.g. `Form 1 A class list.csv`; Save as PDF uses the same title).
+
+IPC: `students:class-list`.
 
 ### Add student — `/students/create`
 
 Sections: **Personal**, **Admission** (level → department → specialization if any → class, plus year + type + **Residence** day/boarding), **Guardian** (name and phone required).  
-Student ID is **auto-generated on save** from the Student ID pattern. Residence is used only to apply boarding/day fee structures.
+Student ID (`student_code`) is **permanently generated on save** (default `{SCHOOL}-{SEQ}` e.g. `ABC-0001`) inside a single atomic SQLite transaction with local UUID generation (`students.id`) and immediate offline outbox sync queue enqueue. The student code and internal UUID **never change** when academic years roll over, classes change, or students repeat/promote. Admission year is recorded separately in `students.admission_year`. Residence is used only to apply boarding/day fee structures.
 
 ### Student profile — `/students/:id`
 
@@ -158,7 +174,7 @@ Data-driven student (and future staff) ID cards. Schools design a template once;
 | Screen | Path | How to use |
 |--------|------|------------|
 | Dashboard | `/students/id-cards` | Active students, issued/pending/expiring counts, recent jobs. |
-| Templates | `/students/id-cards/templates` | List designs (front/back preview). Open designer, duplicate, activate, archive. Templates with issued cards cannot be deleted — archive them so old cards stay reprintable. |
+| Templates | `/students/id-cards/templates` | Template gallery featuring flagship institutional templates (THE HERITAGE, THE ACADEMIC, THE SIGNATURE) and school custom designs. Large side-by-side FRONT + BACK preview cards, category filters (All, Premium, Modern, Minimal, School Copies), high-resolution inspection modal, and one-click "Use Template" / "Customize" workflows (creates a school copy; system templates are protected and non-deletable). |
 | Create template | `/students/id-cards/templates/new` | Wizard: type, orientation, starting layout, fields to include. |
 | Designer | `/students/id-cards/designer/[id]` | Front/back canvas, drag fields, layers, school/student variables, QR/barcode, colours, millimetre sizes (default CR80). Preview with sample data or a real student. |
 | Generate | `/students/id-cards/generate` | Template → year → students (person, class, or school) → new/replacement/renewal → check missing photos/IDs → generate job → print. |
@@ -167,7 +183,25 @@ Data-driven student (and future staff) ID cards. Schools design a template once;
 | Print history | `/students/id-cards/print-history` | Who printed what, when. |
 | Settings | `/students/id-cards/settings` | Card number pattern (e.g. `SCH/ID/2026/00001`), expiry, motto/footer, paper defaults. |
 
-Sample templates (customise freely): Classic University Vertical, Modern School Horizontal, Minimal Student Card, Professional Blue, Blank.
+#### Institutional Master Templates (CR80 · 85.60 × 53.98 mm Landscape)
+
+Sofia includes three agency-grade, production-ready system templates designed to meet the highest visual standards of elite educational institutions:
+
+1. **THE HERITAGE (Premium / Prestigious Classic Institution)**:
+   - Deep navy institutional header (`#0A1E3F`), crisp white body, regal gold/champagne accent rules (`#C5A059`).
+   - Heraldic academic crest with shield contour, open book of knowledge, star of excellence, and framing laurels (`DEFAULT_ACADEMIC_CREST`).
+   - Vertical dividing rule between photo frame and student details; uppercase tracking typography for labels.
+   - Comprehensive back design: school address, phone, email, website, return-if-found notice, official verification QR code (`{{card.verification_code}}`), Code 128 barcode (`{{student.student_id}}`), and authorized signature line (`DEFAULT_SAMPLE_SIGNATURE`).
+2. **THE ACADEMIC (Modern / International School)**:
+   - Contemporary geometric architecture with navy and vibrant electric blue (`#2563EB` / `#0284C7`) foundation.
+   - Distinctive "STUDENT" section header, rounded photo frame, clean Swiss typography.
+   - Front QR verification badge; structured back layout with clear card, student, and school contact sections, plus emergency return policy.
+3. **THE SIGNATURE (Ultra-Minimal / Executive)**:
+   - Ultra-premium minimalist aesthetic inspired by executive credentials.
+   - Large low-opacity watermark crest centered on the back; champagne accent bar (`#C5A059`).
+   - Precise micro-spacing, high-contrast dark institutional typography on light backgrounds, elegant layout with prominent student name and ID.
+
+All templates are 100% data-driven using Sofia dynamic variables (`{{school.name}}`, `{{student.name}}`, `{{student.student_id}}`, `{{student.photo}}`, `{{academic.year}}`, `{{card.verification_code}}`, etc.). Offline vector assets are embedded as SVG data URIs, requiring no external network access. Selecting "Use Template" or "Customize" on a system template creates an independent school-scoped copy for editing while keeping system master templates locked and non-deletable.
 
 Student photos and school logo/signature come from existing student and school profile files. QR codes carry a **verification code** (`sofia:v1:ID-…`), not extra personal data, unless you bind a field yourself.
 
@@ -219,28 +253,33 @@ A teacher is assigned to a **subject in a specific class** (not to subjects and 
 
 ### Results processing
 
-Each school defines how scores become grades on **Calculation Settings**. Processing reads that configuration (or, if none is active for the class, the Setup grading-system weights).
+Sofia implements a school-configurable 7-step calculation pipeline for secondary education (Anglo-Saxon system in Cameroon):
+1. **Sequence / CA Average**: Continuous assessment sequences (1, 2, 3, 4, or more) are averaged (simple average, weighted average, or best N) and normalized to target scale (20/20). Configurable absent/missing score policy (default: exclude absent scores from average).
+2. **Subject Mark**: `(Average CA × CA Weight) + (Exam Mark × Exam Weight)`. Default is 40% CA + 60% Exam. Assessment weights must total 100%. Exam scores from different scales (e.g. 75/100) are normalized to 20/20 before weighting.
+3. **Subject Coefficient**: `Weighted Subject Mark = Subject Mark × Subject Coefficient`. Every subject can have its own coefficient (e.g. Mathematics = 5, Physics = 4, English = 3).
+4. **Total Weighted Marks**: `SUM(Subject Mark × Subject Coefficient)` across all applicable subjects.
+5. **Total Coefficients**: `SUM(Subject Coefficients)` across all applicable subjects.
+6. **Term Average**: `Total Weighted Marks / Total Coefficients`. Computed in full precision and formatted per school rounding rule (default: 2 decimal places).
+7. **Pass / Fail Determination**: `Term Average >= Configured Pass Mark` (default: 10/20). Configurable per school (e.g. 8/20, 10/20, 11/20, 12/20).
 
 | Screen | Path | How to use |
 |--------|------|------------|
-| View | `/academic/results` | Select class + term → rankings / averages |
-| Process | `/academic/results/process` | Year/term/class → calculate from CA + exams using the active profile |
-| Publish | `/academic/results/publish` | Publish, or publish & **lock** (locked runs cannot be recomputed) |
-| Calculation settings | `/academic/results/calculation-settings` | Wizard: profiles, assessments, weights, grades, pass mark, average, ranking, promotion, test calculation, activate |
+| Results Processing | `/academic/results` | View computed class results. Switch between **Class Results Overview** (ranked students with Total Weighted, Total Coeffs, Term Avg, Pass/Fail badge; click to view **Student Term Result Modal**) and **Subject Assessment Sheet** (all students with Seq 1..n, CA Avg, Exam, Subject Mark, Coeff, Weighted Mark; click to view step-by-step **Calculation Breakdown Modal**). Header displays class summary stats (Total Students, Processed, Incomplete, Passed, Failed, Class Average, Highest Average, Lowest Average) and compact calculation methodology card. Actions: `[Calculate Results]` (with pre-calculation validation modal and confirmation dialog showing calculation profile parameters), `[Approve Results]`, `[Publish Results]`, and `[Lock Results]`. |
+| Calculation Settings | `/academic/results/calculation-settings` | Dual-mode settings: **Formula Settings** tab for quick configuration (CA Weight %, Exam Weight %, Live 100% total validator, Pass Mark out of 20, Rounding rule, Sequence combination method, Expected sequences, Absent score policy, direct link to coefficients) and **Profiles & Advanced Wizard** tab for multi-step profile lifecycle management. |
+| Subject Coefficients | `/academic/results/coefficients` | Table of subjects with Code, Department, Scope, and Coefficient. Filter by class override and academic year. Click `[Edit Coefficients]` for bulk editing across all subjects and save in a transaction. Coefficients resolve hierarchically: Class + Year → Class Specific → Level → School Default → Base Subject. |
+| Publish / Lock | `/academic/results/publish` | Publish, or publish & **lock** (locked runs cannot be recomputed or silently overwritten). |
 
-**Profiles** are versioned. Activating requires assessment weights to total 100%. Processed results store a snapshot of the profile version so later rule changes do not rewrite history. Missing scores are not treated as zero unless the school chooses that policy.
-
-Demo profiles (created on first visit): **Standard Secondary - 40/60** and **Upper Secondary - Tests + Exam**.
+**Historical Versioning & Snapshots:** When results are calculated, Sofia records the exact profile ID, profile version, configuration hash, and JSON snapshot onto the `result_runs` record. If a school later changes rules (e.g. CA 40% to 30%), previously finalized or locked results retain their original calculations.
 
 ### Report cards
 
-Requires results that are computed / published / locked for that class + term.
+Requires results that are computed / published / locked for that class + term. Report Cards consume finalized Results Processing data directly without a second calculation engine.
 
 | Screen | Path | How to use |
 |--------|------|------------|
 | List | `/academic/report-cards` | Filter by class + term |
 | Generate | `/academic/report-cards/generate` | Build cards for the class/term |
-| View | `/academic/report-cards/view/:id` | Printable layout (header/footer from document template) |
+| View | `/academic/report-cards/view/:id` | Printable layout showing Subject, CA Avg, Exam, Subject Mark, Coefficient, Weighted Mark, Grade, and Remark, with summary cards for Total Weighted Marks, Total Coefficients, Term Average (/20), Rank, and Pass/Fail Status badge. |
 
 ### Academic reports — `/academic/reports`
 
@@ -423,11 +462,13 @@ Sidebar placeholders only:
 
 Key libs for built modules:
 
-- Students: `renderer/lib/student-mgmt.ts` → `main/ipc/student-mgmt.ts`
+- Students: `renderer/lib/student-mgmt.ts` → `main/ipc/student-mgmt.ts` (includes `students:class-list` for print/export rosters; helpers in `main/domain/class-list.ts` / `renderer/lib/class-list.ts`)
+- Class order: `main/domain/class-order.ts` — level `sort_order`, then General → Commercial → Technical; applied in `ClassRepository.findStructureClasses` / `findBySchool` and section lists
 - Staff: `renderer/lib/staff-mgmt.ts` → `main/ipc/staff-mgmt.ts`
 - Finance: `renderer/lib/finance-mgmt.ts` → `main/ipc/finance-mgmt.ts`; extensions `renderer/lib/finance-ext.ts` → `main/ipc/finance-ext.ts`
 - Communication: `renderer/lib/communication-mgmt.ts` → `main/ipc/communication-mgmt.ts` (setup: `communication.ts`)
 - Academic: `renderer/lib/academic-mgmt.ts` → `main/ipc/academic-mgmt.ts`; teaching progress `renderer/lib/teaching-progress.ts` → `main/ipc/teaching-progress.ts`
+- Results calculation: `renderer/lib/results-calc.ts` → `main/ipc/results-calculation.ts` (`results-calc:defaults`, `results-calc:coefficients-list`, `results-calc:coefficients-save`, `results-calc:validate`, `results-calc:breakdown`, `results-calc:student-summary`); core calculation service `main/services/results/result-calculation.service.ts`; repositories `main/db/repositories/results-calculation.repository.ts` and `subject-coefficients.repository.ts`; table `result_subject_coefficients`
 - School day schedule: `renderer/lib/day-schedule.ts` → `main/ipc/day-schedule.ts` (`day-schedule:get` / `day-schedule:save`); domain `main/domain/day-schedule.ts`; stored on `schools` + `school_day_breaks`; feeds `academic:meta` period count/times for the timetable
 - Student ID cards: `renderer/lib/student-id-cards.ts` → `main/ipc/student-id-cards.ts`
 - Reports: `renderer/lib/reports.ts` → `main/ipc/reports.ts`
@@ -440,6 +481,14 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-07 | Permanent Student IDs & Atomic Creation: implemented permanent human-facing `student_code` and internal local UUID (`students.id`) across all academic transitions (new academic years, class promotions, repeating classes, and student updates never regenerate or mutate identifiers); updated default pattern to `{SCHOOL}-{SEQ}` (e.g. `ABC-0001`) and sequence scope to `school` with separate `admission_year`; implemented atomic SQLite transactions combining sequence allocation, code generation, student insert, and outbox sync queue enqueue; added safe migration logic for existing databases preserving historical identifiers and safely advancing sequence counters; added comprehensive 11-test Jest suite covering all lifecycle and migration scenarios. |
+| 2026-09-07 | Bulk selection & group actions across all tables: created reusable `TableSelectionBar` component with select-all checkbox, selection count badges, clear action, and contextual bulk operation buttons; added multi-row selection with indeterminate select-all header checkboxes and bottom selection action bars across Student tables, Finance tables, Staff tables, Document workspace tables, Academic management tables (results, coefficients, report cards, continuous assessments, exams, attendance sessions, teaching logs), and Administration tables (users, roles, audit logs); included bulk CSV export and batch status updates. |
+| 2026-09-06 | Results Processing: implemented school-configurable 7-step result calculation formula (default 40% CA + 60% Exam, 10/20 pass mark); added continuous assessment sequence averaging (simple, weighted, best N) with configurable absent score policy; score normalization from any maximum to 20/20 scale; subject coefficient management with class and academic year overrides; versioned profile snapshots; class overview and subject sheet UI with calculation methodology card, stats header, pre-calculation validation modal, confirmation dialog, student term summary drawer, and step-by-step calculation breakdown drawer; report card payload and view integration; seed data for International Academy of Excellence Form 5A; comprehensive Jest test suite. |
+| 2026-09-06 | Student ID Cards: created three flagship institutional master templates (THE HERITAGE, THE ACADEMIC, THE SIGNATURE) in CR80 landscape format; added offline resolution-independent SVG heraldic crest, student portrait, and principal signature assets; overhauled Template Gallery at `/students/id-cards/templates` with live front/back previews, category filtering, high-resolution inspection modal, and non-destructive "Use Template" / "Customize" duplication workflows with system template deletion protection. |
+| 2026-09-03 | Renderer typecheck fixes for Electron build: meta state typing (`Extract`), ConfirmModal props, unused imports, class-list `residence_type` optional. |
+| 2026-09-03 | Light World Mission seed: subjects are one per **level + name** (shared across General/Commercial/Technical); Sports aliases normalized. Existing LWM DBs are repaired via `npm run seed -- --dev --light-world-only`. |
+| 2026-09-03 | Classes are listed school-wide by academic level (Form 1 → Form 2 → …), then section (General → Commercial → Technical), then class name — shared by dropdowns, class lists, reports, and finance. |
+| 2026-09-03 | Class lists print as an A4 document: school letterhead (logo + school details + class name) and a table of Index, Name, Sex (M/F), plus an empty column. App chrome is hidden when printing. |
 | 2026-09-03 | Academic Structure: **School day & periods** (start/close times, period duration, breaks) under setup `/setup/academic-structure` and School `/school/classes`. Timetable grids use this for period count, clock labels, and break rows. IPC `day-schedule:*`; domain `main/domain/day-schedule.ts`. |
 | 2026-09-03 | Timetable: subjects linked to every class at a level are **common** — dropping one syncs the same day/period across those classes; teacher clashes with a different subject show a blocking alert. |
 | 2026-09-03 | Teachers are assigned per class and subject (class × subject). One teacher can teach many classes and many subjects. Timetable builder uses the assigned teacher for that pair. |
