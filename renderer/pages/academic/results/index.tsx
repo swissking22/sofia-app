@@ -329,7 +329,7 @@ export default function ResultsIndexPage() {
     setSuccess("");
     setValidating(true);
     const valRes = await validateResultsCalculation({
-      class_id: classId,
+    class_id: classId,
       term_id: termId || null,
     });
     setValidating(false);
@@ -478,45 +478,45 @@ export default function ResultsIndexPage() {
           <div className="flex flex-wrap items-center gap-3">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Class
+            Class
               </label>
-              <select
+            <select
                 className={`mt-1 min-w-44 ${selectClass}`}
-                value={classId}
-                onChange={(e) => setClassId(e.target.value)}
-              >
-                <option value="">Select class</option>
-                {(meta?.classes ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              value={classId}
+              onChange={(e) => setClassId(e.target.value)}
+            >
+              <option value="">Select class</option>
+              {(meta?.classes ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
                 Term
               </label>
-              <select
+            <select
                 className={`mt-1 min-w-36 ${selectClass}`}
-                value={termId}
-                onChange={(e) => setTermId(e.target.value)}
-              >
-                <option value="">All terms</option>
-                {(meta?.terms ?? []).map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+              value={termId}
+              onChange={(e) => setTermId(e.target.value)}
+            >
+              <option value="">All terms</option>
+              {(meta?.terms ?? []).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
             </div>
 
             {viewMode === "subject_sheet" ? (
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Subject
-                </label>
+          </label>
                 <select
                   className={`mt-1 min-w-44 ${selectClass}`}
                   value={subjectId}
@@ -531,21 +531,21 @@ export default function ResultsIndexPage() {
                 </select>
               </div>
             ) : null}
-          </div>
+        </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Link
+          <Link
               href="/academic/results/calculation-settings"
               className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300"
-            >
+          >
               Calculation Settings
-            </Link>
-            <Link
+          </Link>
+          <Link
               href="/academic/results/coefficients"
               className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300"
-            >
+          >
               Subject Coefficients
-            </Link>
+          </Link>
           </div>
         </div>
       </div>
@@ -570,18 +570,18 @@ export default function ResultsIndexPage() {
                   </p>
                 </div>
                 <div>
-                  {run ? (
+            {run ? (
                     <div className="flex items-center gap-2">
-                      <StatusBadge status={run.status} />
+                <StatusBadge status={run.status} />
                       {run.calculation_version ? (
                         <span className="text-xs text-slate-400 font-mono">v{run.calculation_version}</span>
-                      ) : null}
+                ) : null}
                     </div>
                   ) : (
                     <span className="text-xs font-semibold text-slate-400">Not Computed</span>
                   )}
                 </div>
-              </div>
+          </div>
 
               {/* Statistics Grid */}
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8 text-center">
@@ -758,9 +758,9 @@ export default function ResultsIndexPage() {
           {viewMode === "class_overview" ? (
             <>
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <tr>
+            <table className="min-w-full text-left text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
                       <th className="px-4 py-3.5 text-center">
                         <input
                           type="checkbox"
@@ -782,11 +782,11 @@ export default function ResultsIndexPage() {
                       <th className="px-4 py-3.5 text-center">Grade</th>
                       <th className="px-4 py-3.5 text-center">Status</th>
                       <th className="px-5 py-3.5 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {summaries.length === 0 ? (
-                      <tr>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {summaries.length === 0 ? (
+                  <tr>
                         <td colSpan={9} className="px-5 py-12 text-center text-slate-500">
                           No processed results found for this class and term.
                           <div className="mt-2">
@@ -799,9 +799,9 @@ export default function ResultsIndexPage() {
                               Calculate Results Now
                             </button>
                           </div>
-                        </td>
-                      </tr>
-                    ) : (
+                    </td>
+                  </tr>
+                ) : (
                       summaries.map((s) => {
                         const isPass =
                           s.status === "PASSED" ||
@@ -821,7 +821,7 @@ export default function ResultsIndexPage() {
                                 checked={selectedSummaries.includes(s.student_id)}
                                 onChange={() => toggleSummary(s.student_id)}
                               />
-                            </td>
+                      </td>
                             <td className="px-4 py-3.5 text-center font-bold text-slate-700">
                               {s.position != null ? (
                                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-800">
@@ -833,26 +833,26 @@ export default function ResultsIndexPage() {
                             </td>
                             <td className="px-5 py-3.5">
                               <span className="font-semibold text-slate-900 hover:text-(--sofia-primary)">
-                                {s.student_name}
-                              </span>
-                              {s.student_code ? (
+                          {s.student_name}
+                        </span>
+                        {s.student_code ? (
                                 <span className="ml-2 font-mono text-xs text-slate-400">
-                                  {s.student_code}
-                                </span>
-                              ) : null}
-                            </td>
+                            {s.student_code}
+                          </span>
+                        ) : null}
+                      </td>
                             <td className="px-4 py-3.5 text-right font-medium text-slate-700">
                               {formatScore(s.total_weighted_marks ?? s.total)}
-                            </td>
+                      </td>
                             <td className="px-4 py-3.5 text-center font-mono text-xs text-slate-600">
                               {s.total_coefficients != null ? formatScore(s.total_coefficients, 1) : "—"}
-                            </td>
+                      </td>
                             <td className="px-4 py-3.5 text-right font-bold text-(--sofia-primary)">
                               {formatScore(s.average)} <span className="text-xs font-normal text-slate-400">/20</span>
                             </td>
                             <td className="px-4 py-3.5 text-center font-bold text-slate-800">
-                              {s.grade ?? "—"}
-                            </td>
+                        {s.grade ?? "—"}
+                      </td>
                             <td className="px-4 py-3.5 text-center">
                               <span
                                 className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
@@ -876,13 +876,13 @@ export default function ResultsIndexPage() {
                                 Term Summary →
                               </button>
                             </td>
-                          </tr>
+                    </tr>
                         );
                       })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                )}
+              </tbody>
+            </table>
+          </div>
               <TableSelectionBar
                 totalCount={summaries.length}
                 selectedCount={selectedSummaries.length}

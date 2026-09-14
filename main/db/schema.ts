@@ -569,6 +569,16 @@ export function createSchema(db: Database.Database): void {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS sync_cursors (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      last_synced_change_id INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      UNIQUE (school_id, device_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_cursors_school_device ON sync_cursors(school_id, device_id);
+
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_id);
     CREATE INDEX IF NOT EXISTS idx_student_settings_school ON student_settings(school_id);
@@ -605,6 +615,7 @@ export function createSchema(db: Database.Database): void {
   migrateDocumentTemplates(db)
   migrateCommunicationTables(db)
   migrateBackupSyncSettings(db)
+  migrateSyncCursorTables(db)
   migrateStudentManagementTables(db)
   migrateAcademicManagementTables(db)
   migrateStaffManagementTables(db)
@@ -1470,6 +1481,23 @@ function migrateBackupSyncSettings(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_backup_sync_settings_school
       ON backup_sync_settings(school_id);
+  `)
+}
+
+/** Sync cursor tracking per device and school tenant. */
+function migrateSyncCursorTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_cursors (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      last_synced_change_id INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      UNIQUE (school_id, device_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sync_cursors_school_device
+      ON sync_cursors(school_id, device_id);
   `)
 }
 
