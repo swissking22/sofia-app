@@ -2,6 +2,11 @@ import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
 import type { SyncOperation } from '../db/types'
 
+/** Phase 1 cloud push supports only these tables (matches process_sync_operation). */
+export const PHASE1_SYNC_TABLES = ['students', 'student_id_settings'] as const
+
+const PHASE1_IN_LIST = PHASE1_SYNC_TABLES.map((t) => `'${t}'`).join(', ')
+
 /**
  * Enqueue a full-record snapshot for future sync.
  * MUST be called on every create / update / soft-delete.
@@ -32,14 +37,56 @@ export function enqueueSync(
   })
 }
 
-/** Fetch pending sync items (used later by the sync worker). */
+/**
+ * Drain Phase-1-unsupported pending rows locally without calling the cloud RPC.
+ * Prevents sync storms where every Sync Now burns a batch of 50 on invoices/roles/etc.
+ */
+export function markUnsupportedPendingAsFailed(
+  db: Database.Database
+): number {
+  const result = db
+    .prepare(
+      `UPDATE sync_queue
+       SET status = 'failed',
+           retry_count = retry_count + 1,
+           last_attempt_at = ?
+       WHERE status = 'pending'
+         AND table_name NOT IN (${PHASE1_IN_LIST})`
+    )
+    .run(new Date().toISOString())
+  return result.changes
+}
+
+/**
+ * Fetch pending Phase 1 sync items (used by the sync worker / push).
+ * Applies exponential backoff on last_attempt_at so network failures
+ * do not create a tight retry loop.
+ */
 export function getPendingSyncItems(
   db: Database.Database,
   limit = 50
 ): Array<Record<string, unknown>> {
   return db
     .prepare(
-      `SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?`
+      `SELECT * FROM sync_queue
+       WHERE status = 'pending'
+         AND table_name IN (${PHASE1_IN_LIST})
+         AND (
+           last_attempt_at IS NULL
+           OR (
+             (julianday('now') - julianday(last_attempt_at)) * 86400.0
+             >= CASE
+               WHEN COALESCE(retry_count, 0) <= 0 THEN 0
+               WHEN retry_count = 1 THEN 5
+               WHEN retry_count = 2 THEN 15
+               WHEN retry_count = 3 THEN 60
+               WHEN retry_count = 4 THEN 300
+               ELSE 900
+             END
+           )
+         )
+       ORDER BY created_at ASC
+       LIMIT ?`
     )
     .all(limit) as Array<Record<string, unknown>>
 }
@@ -62,19 +109,32 @@ export function markFailed(db: Database.Database, id: string): void {
   ).run(new Date().toISOString(), id)
 }
 
-/** Mark failed items as pending so they can be retried. */
+/**
+ * Mark failed items as pending so they can be retried.
+ * Bulk retry only requeues Phase 1 tables — unsupported tables stay failed
+ * so "Retry failed" cannot restart the RPC storm.
+ */
 export function retryFailed(db: Database.Database, ids?: string[]): number {
   if (ids?.length) {
     const placeholders = ids.map(() => '?').join(',')
     const result = db
       .prepare(
-        `UPDATE sync_queue SET status = 'pending' WHERE status = 'failed' AND id IN (${placeholders})`
+        `UPDATE sync_queue
+         SET status = 'pending'
+         WHERE status = 'failed'
+           AND table_name IN (${PHASE1_IN_LIST})
+           AND id IN (${placeholders})`
       )
       .run(...ids)
     return result.changes
   }
   const result = db
-    .prepare(`UPDATE sync_queue SET status = 'pending' WHERE status = 'failed'`)
+    .prepare(
+      `UPDATE sync_queue
+       SET status = 'pending'
+       WHERE status = 'failed'
+         AND table_name IN (${PHASE1_IN_LIST})`
+    )
     .run()
   return result.changes
 }
@@ -86,6 +146,30 @@ export function countByStatus(
   const row = db
     .prepare(`SELECT COUNT(*) AS n FROM sync_queue WHERE status = ?`)
     .get(status) as { n: number }
+  return row.n
+}
+
+/** Pending Phase 1 rows ready for cloud push (ignores unsupported tables). */
+export function countPendingPhase1(db: Database.Database): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM sync_queue
+       WHERE status = 'pending'
+         AND table_name IN (${PHASE1_IN_LIST})`
+    )
+    .get() as { n: number }
+  return row.n
+}
+
+/** Failed Phase 1 rows that Retry failed can requeue. */
+export function countFailedPhase1(db: Database.Database): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM sync_queue
+       WHERE status = 'failed'
+         AND table_name IN (${PHASE1_IN_LIST})`
+    )
+    .get() as { n: number }
   return row.n
 }
 

@@ -114,43 +114,26 @@ export class CommunicationMgmtRepository extends BaseRepository<Announcement> {
     return row
   }
 
-  private insertRow<T extends Record<string, unknown>>(
-    table: string,
-    record: T
-  ): void {
-    const keys = Object.keys(record)
+  private insertRow(table: string, record: object): void {
+    const row = record as Record<string, unknown>
+    const keys = Object.keys(row)
     const cols = keys.join(', ')
     const params = keys.map((k) => `@${k}`).join(', ')
     this.db
       .prepare(`INSERT INTO ${table} (${cols}) VALUES (${params})`)
-      .run(record)
-    enqueueSync(
-      this.db,
-      table,
-      String(record.id),
-      'INSERT',
-      record as Record<string, unknown>
-    )
+      .run(row)
+    enqueueSync(this.db, table, String(row.id), 'INSERT', row)
   }
 
-  private updateRow<T extends Record<string, unknown>>(
-    table: string,
-    record: T,
-    id: string
-  ): void {
-    const keys = Object.keys(record).filter((k) => k !== 'id')
+  private updateRow(table: string, record: object, id: string): void {
+    const row = record as Record<string, unknown>
+    const keys = Object.keys(row).filter((k) => k !== 'id')
     const sets = keys.map((k) => `${k} = @${k}`).join(', ')
     this.db.prepare(`UPDATE ${table} SET ${sets} WHERE id = @id`).run({
-      ...record,
+      ...row,
       id,
     })
-    enqueueSync(
-      this.db,
-      table,
-      id,
-      'UPDATE',
-      record as Record<string, unknown>
-    )
+    enqueueSync(this.db, table, id, 'UPDATE', row)
   }
 
   private resolveStudents(
@@ -173,12 +156,12 @@ export class CommunicationMgmtRepository extends BaseRepository<Announcement> {
       sql += ` AND c.academic_level_id = ?`
       params.push(levelId)
     }
-    sql += ` ORDER BY s.last_name, s.first_name`
+    sql += ` ORDER BY s.name`
     return this.db.prepare(sql).all(...params) as StudentRecipient[]
   }
 
   private studentName(s: Student): string {
-    return [s.first_name, s.last_name].filter(Boolean).join(' ').trim()
+    return (s.name || '').trim()
   }
 
   private queueDelivery(input: {
