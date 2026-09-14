@@ -88,3 +88,51 @@ export function countByStatus(
     .get(status) as { n: number }
   return row.n
 }
+
+/**
+ * Handle network error during push:
+ * Increments retry_count, updates last_attempt_at, but PRESERVES status as 'pending'
+ * so it can be retried automatically when connectivity restores.
+ */
+export function markNetworkError(db: Database.Database, id: string): void {
+  db.prepare(
+    `UPDATE sync_queue
+     SET retry_count = retry_count + 1,
+         last_attempt_at = ?
+     WHERE id = ?`
+  ).run(new Date().toISOString(), id)
+}
+
+/**
+ * Record a conflict in sync_conflicts table for future conflict resolution UI.
+ */
+export function recordSyncConflict(
+  db: Database.Database,
+  params: {
+    schoolId: string
+    tableName: string
+    recordId: string
+    localJson?: string
+    remoteJson?: string
+  }
+): void {
+  try {
+    db.prepare(
+      `INSERT INTO sync_conflicts (
+        id, school_id, table_name, record_id, local_json, remote_json, status, created_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, 'open', ?
+      )`
+    ).run(
+      randomUUID(),
+      params.schoolId,
+      params.tableName,
+      params.recordId,
+      params.localJson ?? null,
+      params.remoteJson ?? null,
+      new Date().toISOString()
+    )
+  } catch {
+    // Ignore if table not present in test db
+  }
+}

@@ -14,6 +14,11 @@ next-env.d.ts
 *.db-wal
 *.db-shm
 
+# secrets
+.env
+.env.*
+!.env.example
+
 # OS files
 .DS_Store
 

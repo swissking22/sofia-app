@@ -36,6 +36,18 @@ npm run seed        # writes data/sofia.seed.db
 
 Restart the app after `seed:dev` so Electron picks up the new database. Seed data includes academics, staff, ~300 students, finance (paid / partial / unpaid invoices), expenses, and attendance. Light World Mission subjects are **level-scoped**: the same title (e.g. Mathematics) is one subject shared by General, Commercial, and Technical classes at that level. Re-running `npm run seed -- --dev --light-world-only` repairs LWM subjects without a full reset.
 
+### Desktop packaging
+
+Build installers with Nextron + electron-builder (`electron-builder.yml`). Artifacts land in `dist/`.
+
+```bash
+npm run build:mac   # macOS DMG + ZIP (x64 and arm64)
+npm run build:win   # Windows NSIS installer + ZIP (x64)
+npm run build:all   # macOS + Windows in one pass
+```
+
+Windows CI: `.github/workflows/build-windows.yml` runs `npm run build:win` on tag `v*` or manual `workflow_dispatch`, then uploads `dist/**/*.exe`. Hosted sync needs a local `.env` with `SUPABASE_URL` and `SUPABASE_ANON_KEY` (never commit `.env`).
+
 ---
 
 ## Setup wizard
@@ -443,6 +455,80 @@ Sidebar placeholders only:
 
 ---
 
+## Cloud Synchronization Architecture (Supabase Mirror)
+
+Sofia uses an offline-first architecture where the local SQLite database functions as the source of truth for offline clients, and Supabase PostgreSQL serves as the cloud synchronization backend.
+
+- **Migrations**:
+  - `supabase/migrations/20260907092153_init_cloud_sync_schema.sql` (schema foundation)
+  - `supabase/migrations/20260907094133_add_process_sync_operation.sql` (Phase 1 Push Sync RPCs)
+- **Cloud Tables**:
+  - `public.schools`: Tenant root (`id UUID PRIMARY KEY`, `name TEXT`, `school_code TEXT`, partial unique index on `school_code`).
+  - `public.devices`: Registered desktop clients (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`).
+  - `public.students`: Complete cloud mirror of local student records (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`, `student_code TEXT`, `name TEXT NOT NULL`, `class_id TEXT NOT NULL`, `admission_year INTEGER`, `academic_level_id TEXT`, `sequence_number INTEGER`, `gender TEXT`, `date_of_birth DATE`, `phone TEXT`, `email TEXT`, `address TEXT`, `admission_type TEXT`, `guardian_*`, `status TEXT`, `photo_path TEXT`, `residence_type TEXT`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`, `deleted_at TIMESTAMPTZ`, `version BIGINT`). Local-only `sync_status` is excluded.
+  - `public.student_id_settings`: Cloud mirror of settings (`id UUID PRIMARY KEY`, `school_id UUID UNIQUE REFERENCES public.schools(id)`, `pattern TEXT`, `sequence_scope TEXT`, `next_sequence_number INTEGER`, `version BIGINT`). Local `sync_status` is excluded.
+  - `public.sync_operations`: Ingestion buffer for operations pushed from local `sync_queue` (`id UUID PRIMARY KEY`, `payload JSONB`, `operation TEXT`, `status TEXT`, `error_message TEXT`, `applied_at TIMESTAMPTZ`).
+  - `public.sync_changes`: Append-only cloud change log with identity sequence (`id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`). Global change cursor for future pull sync.
+  - `public.sync_cursors`: Per-device pull checkpoints (`uq_sync_cursors_device_school UNIQUE (device_id, school_id)`).
+- **Identifier Rules**:
+  - Direct UUID identity: local SQLite `students.id` UUID string maps 1:1 to Supabase `students.id` UUID type without translation or cloud regeneration.
+  - Permanent student ID partial index: `UNIQUE INDEX idx_students_school_student_code_unique ON public.students(school_id, student_code) WHERE deleted_at IS NULL AND student_code IS NOT NULL`. Multiple `NULL` codes are allowed; soft-deleted codes do not block re-use.
+  - Decoupled foreign keys: `class_id` and `academic_level_id` remain `TEXT` identifiers without cloud foreign key constraints until academic structures are synchronized.
+  - Non-destructive & idempotent: `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` ensure existing cloud data is never destroyed on migration re-runs.
+
+### Phase 1: Push Synchronization Engine
+
+Push synchronization mirrors local SQLite state to Supabase PostgreSQL without implementing remote-to-local pull sync, cursor advancement, or multi-device resolution (reserved for Phase 2).
+
+1. **Local Outbox & Push Service (`main/sync/push.ts` - `pushPendingSync()`)**:
+   - Queries `sync_queue` in deterministic batch order: `SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 50`.
+   - Resolves authorized school identity from the local database; rejects payload cross-tenant tampering.
+   - Dispatches operations via `SupabaseSyncClient` to `process_sync_operation` RPC with PostgREST `/rest/v1/rpc/process_sync_operation`.
+   - Upon successful acknowledgement, marks local `sync_queue` record as `status = 'synced'` and updates `last_attempt_at`. **Successful records are retained for auditability and debugging, never deleted.**
+   - Error classification:
+     - **Network error** (`ECONNREFUSED`, timeout, 5xx): retains `status = 'pending'`, increments `retry_count`, halts batch to prevent connection churn.
+     - **Validation error** (unsupported table/operation, tenant mismatch, immutable field breach): marks `status = 'failed'` without endless retries.
+     - **Conflict** (incoming version < cloud version): logs warning, records conflict snapshot into local SQLite `sync_conflicts` table for future resolution UI, marks `status = 'failed'`.
+2. **Stable Client Device Identity (`main/sync/device.ts`)**:
+   - Generates persistent UUID via `electron-store` on first installation; remains stable across application restarts and sync runs.
+   - Registers device via `public.register_device(p_id, p_school_id, p_device_name, p_device_fingerprint)` RPC before pushing.
+3. **Atomic Cloud Function (`public.process_sync_operation`)**:
+   - Single atomic transaction with `SECURITY DEFINER` (allowing desktop app to use `anon` key without elevated `service_role` keys).
+   - **Idempotency**: checks `public.sync_operations(id)`. If previously applied, immediately returns `{ success: true, duplicate: true }`. Retries permitted for failed records.
+   - **Tenant Isolation**: checks `p_school_id` against `public.schools` and enforces `payload.school_id = p_school_id`.
+   - **Immutable Field Enforcement**: updates attempting to alter `id`, `student_code`, `sequence_number`, or `admission_year` are rejected with clear error messages.
+   - **Optimistic Concurrency**: compares `incoming version` against `cloud version`. If `incoming < cloud`, returns `{ success: false, conflict: true, cloud_version: ... }`. If identical version and identical payload, treats as idempotent duplicate.
+   - **Soft Delete**: `DELETE` operations set `deleted_at = now()`, increment version, and retain permanent identifier fields.
+   - **Changelog Sequence**: each applied mutation inserts exactly one record into `public.sync_changes` with payload snapshot and generated identity cursor.
+
+### Phase 2: Pull Synchronization Engine
+
+Pull synchronization fetches remote mutations from Supabase `public.sync_changes` down to local SQLite clients, advancing checkpoints per device without causing echo loops or corrupting local data.
+
+1. **Local Pull Service (`main/sync/pull.ts` - `pullRemoteChanges()`)**:
+   - Resolves authorized school identity and persistent device ID (`main/sync/device.ts`).
+   - Retrieves last pulled checkpoint from SQLite `sync_cursors` table (`main/sync/cursor.ts`). Defaults to `0` for fresh device installations to pull complete history.
+   - Invokes `public.pull_sync_changes` via `SupabaseSyncClient` with PostgREST `/rest/v1/rpc/pull_sync_changes` requesting ordered batches (`id > cursor ORDER BY id ASC LIMIT batchSize`).
+   - Applies batch mutations to local SQLite inside an **atomic SQLite transaction** (`applyPulledChangesTransaction`):
+     - **Tenant validation**: changes belonging to another school are skipped.
+     - **Students table**:
+       - If student does not exist locally: inserts record with exact UUID, permanent `student_code`, `sequence_number`, `admission_year`, and sets `sync_status = 'synced'`. Automatically provisions placeholder class/academic level if needed for referential integrity.
+       - If student exists locally: compares versions. If `remoteVersion < localVersion`, ignores stale remote change. If `remoteVersion > localVersion`, applies remote updates preserving permanent identifiers. If local has pending outbox items in `sync_queue` for this record, logs a concurrent edit conflict into `sync_conflicts`.
+       - Soft deletion: if `operation = 'DELETE'`, sets local `deleted_at = now()`, increments version, and marks `sync_status = 'synced'`.
+     - **Student ID Settings table**: updates `pattern`, `sequence_scope`, and advances `next_sequence_number = MAX(local, remote)` to prevent sequence back-sliding.
+     - **No echo loop**: pulled changes are applied directly to local SQLite tables with `sync_status = 'synced'` and **never enqueued into `sync_queue`**.
+     - **Atomic cursor advancement**: advances local SQLite `sync_cursors.last_synced_change_id` in the **same transaction**. If any mutation fails, the entire batch rolls back and the cursor remains unchanged.
+   - Upon successful local transaction commit, acknowledges cursor to Supabase via `public.update_sync_cursor` RPC.
+   - Automatically paginates multi-batch backlogs until `hasMore` is false.
+2. **Server-Side RPCs (`supabase/migrations/20260907100737_add_pull_sync_rpcs.sql`)**:
+   - `public.pull_sync_changes(p_school_id, p_device_id, p_cursor, p_limit)`: `SECURITY DEFINER` function querying `public.sync_changes` strictly for the authorized `p_school_id` with `id > p_cursor`, returning aggregated changes JSON, counts, and `new_cursor`.
+   - `public.update_sync_cursor(p_school_id, p_device_id, p_cursor)`: `SECURITY DEFINER` function upserting `public.sync_cursors` with `GREATEST(last_synced_change_id, p_cursor)`.
+3. **Two-Way Sync Coordination (`main/sync/worker.ts` - `runSyncWorker()`)**:
+   - Runs Push phase first (`pushPendingSync()`), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters (`processed`, `successful`, `failed`, `conflicts`). Allows granular options (`skipPush`, `skipPull`).
+   - Wired seamlessly into existing IPC handlers (`backup-sync:sync-now`, `system-admin:sync-now`).
+
+---
+
 ## Architecture notes (for developers)
 
 | Layer | Location |
@@ -453,6 +539,7 @@ Sidebar placeholders only:
 | IPC handlers | `main/ipc/` |
 | Repositories | `main/db/repositories/` |
 | Schema / migrations | `main/db/schema.ts` |
+| Cloud sync migrations | `supabase/migrations/` |
 | Types | `main/db/types.ts` |
 | System rules | `RULES.md` (offline-first, soft delete, sync queue, no shadcn) |
 
@@ -474,6 +561,7 @@ Key libs for built modules:
 - Reports: `renderer/lib/reports.ts` → `main/ipc/reports.ts`
 - Documents: `renderer/lib/documents-mgmt.ts` → `main/ipc/documents-mgmt.ts` (setup templates remain `renderer/lib/documents.ts`)
 - System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts`
+- Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); PostgREST RPCs `process_sync_operation`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
 
 ---
 
@@ -481,6 +569,12 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-14 | Desktop packaging: configured `electron-builder.yml` for macOS (DMG/ZIP, x64+arm64) and Windows (NSIS+ZIP, x64); added `build:mac` / `build:win` / `build:all` scripts; replaced undersized `resources/icon.ico` with a multi-resolution icon so Windows packaging succeeds; documented packaging commands under Getting started. |
+| 2026-09-07 | Cloud Migration Deployment & Constraint Fix: added explicit `DROP FUNCTION IF EXISTS` guards for `process_sync_operation`, `register_device`, `pull_sync_changes`, and `update_sync_cursor` in both individual migrations and consolidated `supabase/deploy_all_migrations.sql` to resolve PostgreSQL error `42P13` (input parameter name alterations); added idempotent constraint drops (`sync_operations_operation_check`, `sync_changes_operation_check`) to eliminate conflicting legacy check constraints on hosted Supabase PostgreSQL instances; verified full remote live deployment against hosted Supabase (all 7 core tables and 4 RPCs responding successfully); full sync test suite passing (28/28 unit and regression tests). |
+| 2026-09-07 | Cloud Client Configuration & Connectivity: implemented automated `.env` loading and URL path sanitization in `main/sync/supabase-client.ts` to ensure Electron main process resolves hosted Supabase project credentials; validated live network connectivity and PostgREST endpoint reachability against hosted Supabase project. |
+| 2026-09-07 | Cloud Pull Sync (Phase 2): implemented cursor-based remote change ingestion (`pullRemoteChanges()`) mirroring Supabase `public.sync_changes` into local SQLite; authored idempotent migration `20260907100737_add_pull_sync_rpcs.sql` providing atomic `public.pull_sync_changes()` and `public.update_sync_cursor()` RPCs; introduced local SQLite `sync_cursors` table and cursor manager (`main/sync/cursor.ts`); applied optimistic versioning (`remoteVersion > localVersion`), soft-delete application (`deleted_at`), and immutable identifier preservation (`id`, `student_code`, `sequence_number`, `admission_year`) inside an atomic SQLite transaction; guaranteed no echo loop (local pull never enqueues into `sync_queue`); added conflict detection logging into `sync_conflicts`; integrated two-way push/pull sync coordination in `runSyncWorker`; verified with 14 unit test scenarios and multi-device live PostgreSQL integration test (30/30 sync tests passing). |
+| 2026-09-07 | Cloud Push Sync (Phase 1): implemented deterministic outbox push synchronization (`pushPendingSync()`) from local SQLite `sync_queue` to Supabase PostgreSQL; authored idempotent migration `20260907094133_add_process_sync_operation.sql` providing atomic `public.process_sync_operation()` and `public.register_device()` RPCs; enforced tenant isolation, operation idempotency keys, permanent student identifier immutability (`id`, `student_code`, `sequence_number`, `admission_year`), optimistic concurrency control, and soft deletion (`deleted_at = now()`); integrated changelog generator into `public.sync_changes`; added persistent client installation identity via `electron-store`; established granular error handling distinguishing network retries from validation failures and recording conflicts into `sync_conflicts`; preserved successful `sync_queue` rows for auditability; verified with 14 unit test scenarios and end-to-end integration test against live PostgreSQL. |
+| 2026-09-07 | Cloud Synchronization Schema Preparation: initialized Supabase and created idempotent migration `20260907092153_init_cloud_sync_schema.sql` mirroring local SQLite student and student ID settings schemas (`public.students`, `public.student_id_settings`) along with prerequisite tenant (`public.schools`), client devices (`public.devices`), and sync foundation tables (`public.sync_operations`, `public.sync_changes`, `public.sync_cursors`); established partial unique index on `(school_id, student_code) WHERE deleted_at IS NULL AND student_code IS NOT NULL`; ensured direct 1:1 UUID compatibility between local SQLite and cloud Supabase; decoupled `class_id` and `academic_level_id` as TEXT identifiers; verified data preservation across repeated migration executions. |
 | 2026-09-07 | Permanent Student IDs & Atomic Creation: implemented permanent human-facing `student_code` and internal local UUID (`students.id`) across all academic transitions (new academic years, class promotions, repeating classes, and student updates never regenerate or mutate identifiers); updated default pattern to `{SCHOOL}-{SEQ}` (e.g. `ABC-0001`) and sequence scope to `school` with separate `admission_year`; implemented atomic SQLite transactions combining sequence allocation, code generation, student insert, and outbox sync queue enqueue; added safe migration logic for existing databases preserving historical identifiers and safely advancing sequence counters; added comprehensive 11-test Jest suite covering all lifecycle and migration scenarios. |
 | 2026-09-07 | Bulk selection & group actions across all tables: created reusable `TableSelectionBar` component with select-all checkbox, selection count badges, clear action, and contextual bulk operation buttons; added multi-row selection with indeterminate select-all header checkboxes and bottom selection action bars across Student tables, Finance tables, Staff tables, Document workspace tables, Academic management tables (results, coefficients, report cards, continuous assessments, exams, attendance sessions, teaching logs), and Administration tables (users, roles, audit logs); included bulk CSV export and batch status updates. |
 | 2026-09-06 | Results Processing: implemented school-configurable 7-step result calculation formula (default 40% CA + 60% Exam, 10/20 pass mark); added continuous assessment sequence averaging (simple, weighted, best N) with configurable absent score policy; score normalization from any maximum to 20/20 scale; subject coefficient management with class and academic year overrides; versioned profile snapshots; class overview and subject sheet UI with calculation methodology card, stats header, pre-calculation validation modal, confirmation dialog, student term summary drawer, and step-by-step calculation breakdown drawer; report card payload and view integration; seed data for International Academy of Excellence Form 5A; comprehensive Jest test suite. |

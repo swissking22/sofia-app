@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "nextron",
     "build": "nextron build",
+    "build:all": "nextron build --mac --win",
+    "build:mac": "nextron build --mac",
+    "build:win": "nextron build --win",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:watch": "npm run test -- --watch",
     "seed": "tsx scripts/seed/seed.ts",
