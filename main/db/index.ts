@@ -29,6 +29,15 @@ function applyPendingRestore(): void {
     const data = JSON.parse(fs.readFileSync(marker, 'utf8')) as { source?: string }
     const dest = getDbPath()
     if (data.source && fs.existsSync(data.source)) {
+      // Replace the main DB file; drop WAL/SHM so the restored snapshot is authoritative.
+      for (const suffix of ['', '-wal', '-shm']) {
+        const target = `${dest}${suffix}`
+        try {
+          if (fs.existsSync(target)) fs.unlinkSync(target)
+        } catch {
+          /* ignore */
+        }
+      }
       fs.copyFileSync(data.source, dest)
       console.log('[sofia] Applied pending database restore')
     }

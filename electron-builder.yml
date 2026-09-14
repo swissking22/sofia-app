@@ -1,5 +1,5 @@
-appId: com.sofia.app
-productName: SOFIA
+appId: com.sofia.school
+productName: Sofia
 copyright: Copyright © 2026 SOFIA
 directories:
   output: dist
@@ -9,6 +9,11 @@ files:
     filter:
       - package.json
       - app
+# Public hosted Supabase URL + anon/publishable key for packaged main process.
+# Lands at process.resourcesPath/cloud-config.json (Windows + macOS).
+extraResources:
+  - from: resources/cloud-config.json
+    to: cloud-config.json
 mac:
   category: public.app-category.education
   icon: resources/icon.icns
@@ -37,13 +42,15 @@ win:
     - target: nsis
       arch:
         - x64
-    - target: zip
-      arch:
-        - x64
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: SOFIA
-publish: null
+  shortcutName: Sofia
+  artifactName: ${productName}-Setup-${version}.${ext}
+publish:
+  - provider: github
+    owner: swissking22
+    repo: sofia-app
+    releaseType: release

@@ -6,6 +6,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -23,14 +26,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Sofia
+      - name: Build Windows installer (no publish)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: npm run build:win
 
-      - name: Upload Windows installer
+      - name: Build and publish Windows installer to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:win:publish
+
+      - name: Upload Windows installer artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Sofia-Windows-Installer
           path: |
             dist/**/*.exe
-            dist/**/*.msi
+            dist/**/*.yml
+            dist/**/*.blockmap
           if-no-files-found: error

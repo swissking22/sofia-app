@@ -56,7 +56,7 @@ On first launch:
 npm run build
 ```
 
-Output goes to `dist/` (see `electron-builder.yml`). Product name: **SOFIA** (`com.sofia.app`).
+Output goes to `dist/` (see `electron-builder.yml`). Product name: **Sofia** (`com.sofia.school`). School data on Windows lives at `%APPDATA%\sofia\` (independent of appId).
 
 ---
 

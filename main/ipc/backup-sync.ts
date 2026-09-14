@@ -103,7 +103,7 @@ export function registerBackupSyncIpc(
       if (!school) return { ok: false, error: 'No school found.' }
 
       try {
-        const result = await runSyncWorker(db)
+        const result = await runSyncWorker(db, { schoolId: school.id })
         const ok = result.failed === 0
         repos.backupSync.markSyncResult(school.id, {
           ok,

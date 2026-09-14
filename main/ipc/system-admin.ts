@@ -52,7 +52,18 @@ export function registerSystemAdminIpc(repos: Repositories): void {
     }
     const schoolId = sid(repos, s)
     repos.roles.ensureDefaults(schoolId)
-    return { ok: true, data: { ...admin().overview(schoolId), can: permissionFlags(repos, s) } }
+    const overview = admin().overview(schoolId)
+    return {
+      ok: true,
+      data: {
+        ...overview,
+        health: {
+          ...overview.health,
+          version: app.getVersion(),
+        },
+        can: permissionFlags(repos, s),
+      },
+    }
   })
 
   ipcMain.handle(
@@ -503,7 +514,7 @@ export function registerSystemAdminIpc(repos: Repositories): void {
     const started = Date.now()
     try {
       const { getDatabase } = await import('../db')
-      const result = await runSyncWorker(getDatabase())
+      const result = await runSyncWorker(getDatabase(), { schoolId })
       repos.backupSync.markSyncResult(schoolId, result)
       admin().recordSyncRun({
         school_id: schoolId,
@@ -602,7 +613,7 @@ export function registerSystemAdminIpc(repos: Repositories): void {
           school?.school_code || schoolId,
           getDatabasePath()
         ).backup,
-        app_version: app.getVersion?.() || '1.0.0',
+        app_version: app.getVersion(),
       },
     }
   })
