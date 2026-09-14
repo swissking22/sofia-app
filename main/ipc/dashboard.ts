@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
 import type { Repositories } from '../db/repositories'
 import type { Class } from '../db/types'
+import { countPendingPhase1 } from '../sync/queue'
 import { getDashboardSetupProgress, type SetupProgress } from './setup-progress'
 
 export interface DashboardStats {
@@ -110,11 +111,7 @@ export function registerDashboardIpc(
       averageGrade = Math.round((total / scores.length) * 10) / 10
     }
 
-    const pendingRow = db
-      .prepare(
-        `SELECT COUNT(*) as count FROM sync_queue WHERE status = 'pending'`
-      )
-      .get() as { count: number }
+    const pendingSync = countPendingPhase1(db)
 
     const school = repos.schools.findLatest()
 
@@ -132,7 +129,7 @@ export function registerDashboardIpc(
       totalTeachers: teachers.length,
       averageGrade,
       scoresCount: scores.length,
-      pendingSync: pendingRow.count,
+      pendingSync,
       schoolName: school?.name ?? 'School',
       studentsByClass,
       setupProgress: getDashboardSetupProgress(db, repos),

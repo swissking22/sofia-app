@@ -38,15 +38,51 @@ Restart the app after `seed:dev` so Electron picks up the new database. Seed dat
 
 ### Desktop packaging
 
-Build installers with Nextron + electron-builder (`electron-builder.yml`). Artifacts land in `dist/`.
+Build installers with Nextron + electron-builder (`electron-builder.yml`). Artifacts land in `dist/`. App id / product name: `com.sofia.school` / `Sofia`. Publish target: GitHub `swissking22/sofia-app`.
 
 ```bash
-npm run build:mac   # macOS DMG + ZIP (x64 and arm64)
-npm run build:win   # Windows NSIS installer + ZIP (x64)
-npm run build:all   # macOS + Windows in one pass
+npm run build:mac          # macOS DMG + ZIP (x64 and arm64); never publishes
+npm run build:win          # Windows NSIS installer (x64); never publishes
+npm run build:all          # macOS + Windows; never publishes
+npm run build:win:publish  # Windows build + publish to GitHub Releases (CI / release tags)
 ```
 
-Windows CI: `.github/workflows/build-windows.yml` runs `npm run build:win` on tag `v*` or manual `workflow_dispatch`, then uploads `dist/**/*.exe`. Hosted sync needs a local `.env` with `SUPABASE_URL` and `SUPABASE_ANON_KEY` (never commit `.env`).
+Local SQLite always lives under Electron `userData` (`%APPDATA%\sofia\sofia.db` on Windows, `~/Library/Application Support/sofia/sofia.db` on macOS) — never inside the install directory — so app updates preserve school data. The folder name is fixed in `main/app-paths.ts` and does **not** follow electron-builder `appId` (`com.sofia.school`).
+
+### Windows automatic updates
+
+Packaged Windows builds check GitHub Releases once shortly after startup (`electron-updater`, only when `app.isPackaged`). Users get Sofia-styled dialogs to download and restart; `npm run dev` never contacts GitHub for updates. Version is shown under **System Administration → Settings** and on the admin overview health panel.
+
+**Before install:** Sofia creates a SQLite-safe verified backup under `%APPDATA%\sofia\backups\pre-update\` (keeps the last 3), writes a recovery manifest + `update-state.json`, and **refuses to install** if backup creation or `PRAGMA integrity_check` fails. On the next launch, incomplete installs open `/recovery` so schools can restore the verified backup or continue safely. Recovery events append to `recovery-log.json` (no student/payment secrets).
+
+### Application versioning
+
+Sofia uses Semantic Versioning (`MAJOR.MINOR.PATCH`).
+
+| Concern | Source of truth |
+|---------|-----------------|
+| **Application version** | `package.json` → `"version"` |
+| Packaged Electron app | `app.getVersion()` (reads the packaged `package.json`) |
+| Windows installer name | `electron-builder.yml` `artifactName: ${productName}-Setup-${version}.${ext}` |
+| GitHub Release / updater | Tag `vMAJOR.MINOR.PATCH` (e.g. `v1.0.1`); `electron-updater` compares with **semver** against `app.getVersion()` |
+| User-visible version | System Administration overview + Settings (`app.getVersion()`) |
+
+**Do not** put a second application version in `electron-builder.yml`, the Windows workflow, or UI strings. Bump only `package.json` (and commit the matching `package-lock.json` version field), then tag `v…`.
+
+Application version is **independent** of SQLite schema migrations and Supabase SQL migrations.
+
+**First production release (`v1.0.0`):** `package.json` is already `1.0.0`. Commit the release candidate, then tag and push `v1.0.0` (do **not** bump beforehand). The Windows workflow publishes `Sofia-Setup-1.0.0.exe` plus `latest.yml`.
+
+**Later releases:**
+
+1. Bump `package.json` version (e.g. `1.0.0` → `1.0.1`) and commit the matching `package-lock.json` version field.
+2. Tag and push: `git tag v1.0.1 && git push origin main && git push origin v1.0.1`.
+3. GitHub Actions (`.github/workflows/build-windows.yml`) builds with `npm run build:win:publish` and publishes the NSIS installer plus `latest.yml` (and blockmap) to the matching GitHub Release.
+
+Hosted sync:
+
+- **Development:** local `.env` with `SUPABASE_URL` and `SUPABASE_ANON_KEY` (never commit `.env`). The main process loads these via `main/sync/supabase-client.ts`.
+- **Packaged Windows/macOS:** public runtime config `resources/cloud-config.json` is copied into the app as `process.resourcesPath/cloud-config.json` (`electron-builder` `extraResources`). Only the project URL and anon/publishable key are bundled — never `service_role` or database passwords. The renderer never receives these values.
 
 ---
 
@@ -78,7 +114,7 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 
 | Path | Purpose |
 |------|---------|
-| `/home` | Overview KPIs and charts (e.g. enrollment by academic level) |
+| `/home` | Overview KPIs and charts (e.g. enrollment by academic level). Connectivity bar shows Online/Offline and a **Sync now** button when Phase‑1 pending changes exist (muted while offline or syncing). |
 
 ---
 
@@ -442,8 +478,18 @@ School-scoped control centre. There is no platform super-admin. Session role `ad
 | Roles | `/administration/roles` | Create/edit/duplicate custom roles. System roles cannot be deleted. Roles with assigned users cannot be deleted. Activate/deactivate. |
 | Permissions | `/administration/permissions` | Live matrix of catalog permissions × school roles. |
 | Audit logs | `/administration/audit-logs` | Paginated union of central `audit_events` plus finance and document audit tables. Append-only — no edit/delete API. |
-| Backup & Sync | `/administration/backup-sync` | Backup now + history. Restore requires typing `RESTORE`, writes a safety backup, then queues a file replace on next launch. Sync now / retry failed / conflict keep-local or keep-remote. |
+| Backup & Sync | `/administration/backup-sync` | Backup now + history. Restore requires typing `RESTORE`, writes a safety backup, then queues a file replace on next launch. **Sync now** shows a spinner and stays muted while running; the button is only enabled when there are Phase‑1 pending queue changes. Retry failed / conflict keep-local or keep-remote. |
 | Settings | `/administration/settings` | Timezone (default Africa/Douala), session timeout, password/lockout policy, backup retention. School identity, academics, finance numbering, and document branding stay on their existing screens. |
+
+---
+
+## Help & Support
+
+| Screen | Path | How to use |
+|--------|------|------------|
+| Contact Sofia Support | `/help/support` | Pick a topic, describe the issue, then **Open email draft** to mail `support@sofia.school` with school/version diagnostics prefilled. **Copy email + diagnostics** if no mail client is configured. Quick links to Backup & Sync, Settings, and Dashboard. |
+
+Documentation (`/help/docs`) remains a sidebar placeholder.
 
 ---
 
@@ -451,7 +497,7 @@ School-scoped control centre. There is no platform super-admin. Session role `ad
 
 Sidebar placeholders only:
 
-- **Help & Support**
+- **Documentation** (Help & Support)
 
 ---
 
@@ -462,6 +508,10 @@ Sofia uses an offline-first architecture where the local SQLite database functio
 - **Migrations**:
   - `supabase/migrations/20260907092153_init_cloud_sync_schema.sql` (schema foundation)
   - `supabase/migrations/20260907094133_add_process_sync_operation.sql` (Phase 1 Push Sync RPCs)
+  - `supabase/migrations/20260907100737_add_pull_sync_rpcs.sql` (Phase 2 Pull Sync RPCs)
+  - `supabase/migrations/20260914093000_fix_sync_operations_id_and_process_rpc.sql` (repair hosted `sync_operations.id` drift + harden RPC)
+  - One-shot SQL Editor apply (schema fix + LWM tenant): `supabase/manual/APPLY_SYNC_FIX_AND_LWM_TENANT.sql`
+  - LWM tenant only: `supabase/manual/provision_lwm_school.sql`
 - **Cloud Tables**:
   - `public.schools`: Tenant root (`id UUID PRIMARY KEY`, `name TEXT`, `school_code TEXT`, partial unique index on `school_code`).
   - `public.devices`: Registered desktop clients (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`).
@@ -481,9 +531,12 @@ Sofia uses an offline-first architecture where the local SQLite database functio
 Push synchronization mirrors local SQLite state to Supabase PostgreSQL without implementing remote-to-local pull sync, cursor advancement, or multi-device resolution (reserved for Phase 2).
 
 1. **Local Outbox & Push Service (`main/sync/push.ts` - `pushPendingSync()`)**:
-   - Queries `sync_queue` in deterministic batch order: `SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 50`.
+   - Phase 1 push tables only: `students`, `student_id_settings` (`PHASE1_SYNC_TABLES` in `main/sync/queue.ts`).
+   - Before each push, `markUnsupportedPendingAsFailed()` drains other pending tables locally (no RPC) so Sync Now cannot storm on invoices/roles/cards/etc.
+   - Queries Phase 1 pending rows: `SELECT * FROM sync_queue WHERE status = 'pending' AND table_name IN ('students','student_id_settings') ORDER BY created_at ASC LIMIT 50`.
+   - Bulk “Retry failed” only requeues Phase 1 tables.
    - Resolves authorized school identity from the local database; rejects payload cross-tenant tampering.
-   - Dispatches operations via `SupabaseSyncClient` to `process_sync_operation` RPC with PostgREST `/rest/v1/rpc/process_sync_operation`.
+   - Dispatches operations via `SupabaseSyncClient` (`@supabase/supabase-js` `.rpc()`) to `process_sync_operation` — same PostgreSQL RPC contract as before; transport only.
    - Upon successful acknowledgement, marks local `sync_queue` record as `status = 'synced'` and updates `last_attempt_at`. **Successful records are retained for auditability and debugging, never deleted.**
    - Error classification:
      - **Network error** (`ECONNREFUSED`, timeout, 5xx): retains `status = 'pending'`, increments `retry_count`, halts batch to prevent connection churn.
@@ -495,7 +548,7 @@ Push synchronization mirrors local SQLite state to Supabase PostgreSQL without i
 3. **Atomic Cloud Function (`public.process_sync_operation`)**:
    - Single atomic transaction with `SECURITY DEFINER` (allowing desktop app to use `anon` key without elevated `service_role` keys).
    - **Idempotency**: checks `public.sync_operations(id)`. If previously applied, immediately returns `{ success: true, duplicate: true }`. Retries permitted for failed records.
-   - **Tenant Isolation**: checks `p_school_id` against `public.schools` and enforces `payload.school_id = p_school_id`.
+   - **Tenant Isolation**: checks `p_school_id` against `public.schools` and enforces `payload.school_id = p_school_id`. Missing-school errors return without inserting into `sync_operations` (FK-safe).
    - **Immutable Field Enforcement**: updates attempting to alter `id`, `student_code`, `sequence_number`, or `admission_year` are rejected with clear error messages.
    - **Optimistic Concurrency**: compares `incoming version` against `cloud version`. If `incoming < cloud`, returns `{ success: false, conflict: true, cloud_version: ... }`. If identical version and identical payload, treats as idempotent duplicate.
    - **Soft Delete**: `DELETE` operations set `deleted_at = now()`, increment version, and retain permanent identifier fields.
@@ -508,7 +561,7 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 1. **Local Pull Service (`main/sync/pull.ts` - `pullRemoteChanges()`)**:
    - Resolves authorized school identity and persistent device ID (`main/sync/device.ts`).
    - Retrieves last pulled checkpoint from SQLite `sync_cursors` table (`main/sync/cursor.ts`). Defaults to `0` for fresh device installations to pull complete history.
-   - Invokes `public.pull_sync_changes` via `SupabaseSyncClient` with PostgREST `/rest/v1/rpc/pull_sync_changes` requesting ordered batches (`id > cursor ORDER BY id ASC LIMIT batchSize`).
+   - Invokes `public.pull_sync_changes` via `SupabaseSyncClient` (`.rpc('pull_sync_changes')`) requesting ordered batches (`id > cursor ORDER BY id ASC LIMIT batchSize`).
    - Applies batch mutations to local SQLite inside an **atomic SQLite transaction** (`applyPulledChangesTransaction`):
      - **Tenant validation**: changes belonging to another school are skipped.
      - **Students table**:
@@ -561,7 +614,9 @@ Key libs for built modules:
 - Reports: `renderer/lib/reports.ts` → `main/ipc/reports.ts`
 - Documents: `renderer/lib/documents-mgmt.ts` → `main/ipc/documents-mgmt.ts` (setup templates remain `renderer/lib/documents.ts`)
 - System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts`
-- Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); PostgREST RPCs `process_sync_operation`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
+- Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); PostgreSQL RPCs `process_sync_operation`, `register_device`, `pull_sync_changes`, and `update_sync_cursor` invoked through `@supabase/supabase-js` in `main/sync/supabase-client.ts` (anon key only; no direct table access); device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
+- Windows auto-update: `main/updater.ts` (`initAutoUpdater`, verified pre-update backup before `quitAndInstall`) + IPC `main/ipc/updater.ts`; backup helpers `main/db/sqlite-backup.ts`; state `main/updater/update-state.ts`; recovery `main/updater/recovery.ts` + `/recovery`; log `main/updater/recovery-log.ts`; UI `UpdateNotifier` + Admin Backup & Sync pre-update list; GitHub provider in `electron-builder.yml`; CI publish via `build:win:publish`
+- App data path: `main/app-paths.ts` pins `userData` to folder `sofia` under OS app-data (independent of `appId`)
 
 ---
 
@@ -569,7 +624,22 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
-| 2026-09-14 | Desktop packaging: configured `electron-builder.yml` for macOS (DMG/ZIP, x64+arm64) and Windows (NSIS+ZIP, x64); added `build:mac` / `build:win` / `build:all` scripts; replaced undersized `resources/icon.ico` with a multi-resolution icon so Windows packaging succeeds; documented packaging commands under Getting started. |
+| 2026-09-14 | Application versioning: SemVer source of truth is `package.json` `version` (`1.0.0` for first production); overview/settings use `app.getVersion()` only; docs clarify first release tags `v1.0.0` without a prior bump. |
+| 2026-09-14 | Packaged cloud config: production builds load hosted Supabase URL + anon/publishable key from `resources/cloud-config.json` via `process.resourcesPath` (electron-builder `extraResources`); development still uses `.env`; packaged builds never fall back to localhost. |
+| 2026-09-14 | Contact Sofia Support: unlocked `/help/support` — email draft to `support@sofia.school` with topic, message, and diagnostics (school, version, user); copy helper and shortcuts to Backup & Sync / Settings / Dashboard. |
+| 2026-09-14 | Dashboard connectivity: `/home` shows an Online/Offline indicator and a Sync now control when Phase‑1 pending changes exist (`DashboardConnectivityBar`); pending sync KPI uses `countPendingPhase1`. |
+| 2026-09-14 | Sync UI: Admin and Setup Backup & Sync show a loading spinner while sync runs and mute Sync now until it finishes; Sync now is only enabled when Phase‑1 pending queue items exist (`countPendingPhase1`); dashboard pending/failed counts use Phase‑1 tables only. |
+| 2026-09-14 | Hosted sync_operations status check: migration `20260914130000_fix_sync_operations_status_check.sql` replaces legacy `sync_operations_status_check` so RPC statuses `pending`/`applied`/`failed` are allowed.
+| 2026-09-14 | Hosted sync_changes legacy columns: migration `20260914124500_fix_sync_changes_legacy_entity_type.sql` / `APPLY_SYNC_CHANGES_ENTITY_TYPE_FIX.sql` softens NOT NULL `entity_type`/`entity_id` and fills them from `table_name`/`record_id` so changelog inserts from `process_sync_operation` succeed.
+| 2026-09-14 | Hosted students legacy name columns: migration `20260914123000_fix_students_legacy_name_columns.sql` / `supabase/manual/APPLY_STUDENTS_NAME_LEGACY_FIX.sql` softens NOT NULL `first_name`/`last_name`, backfills from Sofia `name`, and adds a BEFORE INSERT trigger so `process_sync_operation` can insert students that only send `name`. |
+| 2026-09-14 | Remaining hosted sync fixes: migration `20260914121500_fix_entity_type_and_sync_cursors.sql` (and minimal SQL Editor script `supabase/manual/APPLY_REMAINING_SYNC_FIXES_MINIMAL.sql`) softens legacy `sync_operations.entity_type`, adds unique `(device_id, school_id)` on `sync_cursors`, hardens `update_sync_cursor` to UPDATE-then-INSERT, and makes `process_sync_operation` write `entity_type`/`entity_id`; communication-mgmt TypeScript uses `students.name`.
+| 2026-09-14 | Sync transport: replaced custom PostgREST `fetch()` in `main/sync/supabase-client.ts` with official `@supabase/supabase-js` (v2) `.rpc()` calls for `register_device`, `process_sync_operation`, `pull_sync_changes`, and `update_sync_cursor`; preserved env loading/URL normalization (`/rest/v1` stripped), anon-only credentials, 15s request timeout via custom `fetch`, and domain error types; fixed cursor `Number(undefined) ?? fallback` NaN bug with `toFiniteNumber`. |
+| 2026-09-14 | LWM cloud tenant provisioning: migration `20260914104500_provision_lwm_dev_school_tenant.sql` inserts development school `0dd470f4-4505-4aa5-a8ea-0b4c340daa5d` (Light World Mission / LWM) with matching local fields; admin-only `ensure_school_tenant` allow-list helper (not granted to anon); SQL Editor bundle `supabase/manual/APPLY_SYNC_FIX_AND_LWM_TENANT.sql` also repairs `sync_operations.id`; verify script `scripts/verify-lwm-tenant-sync.mjs`. |
+| 2026-09-14 | Cloud sync production fix: migration `20260914093000_fix_sync_operations_id_and_process_rpc.sql` repairs hosted `sync_operations.id` drift (root of RPC `column "id" does not exist`), hardens missing-tenant handling, and is included in `deploy_all_migrations.sql`; desktop push skips unsupported queue tables locally (`markUnsupportedPendingAsFailed`), aborts on permanent RPC barriers, and applies network backoff so Sync Now cannot storm; SQL Editor bundle `supabase/manual/APPLY_SYNC_FIX_AND_LWM_TENANT.sql` provisions LWM school UUID `0dd470f4-4505-4aa5-a8ea-0b4c340daa5d`. |
+| 2026-09-14 | App identity audit: confirmed `com.sofia.app` existed only in early config/docs and was never published as a GitHub Release or tagged Windows installer; production identity remains `com.sofia.school` / `Sofia`; userData pinned via `main/app-paths.ts` to `%APPDATA%\sofia\` independent of appId; README corrected. |
+| 2026-09-14 | Update safety: verified SQLite pre-update backups (last 3), integrity checks, update-state/recovery log, failed-update detection, `/recovery` screen, and install blocked when backup verification fails; Admin Backup & Sync shows pre-update recovery points. |
+| 2026-09-14 | Windows automatic updates: added `electron-updater` with production-only GitHub Releases checks, user-controlled download/restart dialogs, stable `%APPDATA%\sofia` database path, version display in Administration Settings, and CI publish of NSIS + `latest.yml` on `v*` tags. |
+| 2026-09-14 | Desktop packaging: configured `electron-builder.yml` for macOS (DMG/ZIP, x64+arm64) and Windows (NSIS, x64); added `build:mac` / `build:win` / `build:all` scripts; replaced undersized `resources/icon.ico` with a multi-resolution icon so Windows packaging succeeds; documented packaging commands under Getting started. |
 | 2026-09-07 | Cloud Migration Deployment & Constraint Fix: added explicit `DROP FUNCTION IF EXISTS` guards for `process_sync_operation`, `register_device`, `pull_sync_changes`, and `update_sync_cursor` in both individual migrations and consolidated `supabase/deploy_all_migrations.sql` to resolve PostgreSQL error `42P13` (input parameter name alterations); added idempotent constraint drops (`sync_operations_operation_check`, `sync_changes_operation_check`) to eliminate conflicting legacy check constraints on hosted Supabase PostgreSQL instances; verified full remote live deployment against hosted Supabase (all 7 core tables and 4 RPCs responding successfully); full sync test suite passing (28/28 unit and regression tests). |
 | 2026-09-07 | Cloud Client Configuration & Connectivity: implemented automated `.env` loading and URL path sanitization in `main/sync/supabase-client.ts` to ensure Electron main process resolves hosted Supabase project credentials; validated live network connectivity and PostgREST endpoint reachability against hosted Supabase project. |
 | 2026-09-07 | Cloud Pull Sync (Phase 2): implemented cursor-based remote change ingestion (`pullRemoteChanges()`) mirroring Supabase `public.sync_changes` into local SQLite; authored idempotent migration `20260907100737_add_pull_sync_rpcs.sql` providing atomic `public.pull_sync_changes()` and `public.update_sync_cursor()` RPCs; introduced local SQLite `sync_cursors` table and cursor manager (`main/sync/cursor.ts`); applied optimistic versioning (`remoteVersion > localVersion`), soft-delete application (`deleted_at`), and immutable identifier preservation (`id`, `student_code`, `sequence_number`, `admission_year`) inside an atomic SQLite transaction; guaranteed no echo loop (local pull never enqueues into `sync_queue`); added conflict detection logging into `sync_conflicts`; integrated two-way push/pull sync coordination in `runSyncWorker`; verified with 14 unit test scenarios and multi-device live PostgreSQL integration test (30/30 sync tests passing). |

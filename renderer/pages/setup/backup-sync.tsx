@@ -195,6 +195,7 @@ function BackupSyncSetupForm() {
   }
 
   async function handleSyncNow() {
+    if (!setup || setup.synchronization.pending_count <= 0 || syncing) return;
     setSyncing(true);
     setError("");
     setSuccess("");
@@ -345,23 +346,42 @@ function BackupSyncSetupForm() {
           </div>
         </dl>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void handleSyncNow()}
-            disabled={syncing || testing}
-            className="cursor-pointer rounded-xl bg-(--sofia-primary) px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+            disabled={
+              syncing ||
+              testing ||
+              (setup?.synchronization.pending_count ?? 0) <= 0
+            }
+            className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-(--sofia-primary) px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {syncing ? "Syncing…" : "Sync Now"}
+            {syncing ? (
+              <>
+                <span
+                  className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                  aria-hidden
+                />
+                Syncing…
+              </>
+            ) : (
+              "Sync Now"
+            )}
           </button>
           <button
             type="button"
             onClick={() => void handleTestConnection()}
             disabled={testing || syncing}
-            className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-(--sofia-primary) hover:text-(--sofia-primary) disabled:opacity-60"
+            className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-(--sofia-primary) hover:text-(--sofia-primary) disabled:cursor-not-allowed disabled:opacity-60"
           >
             {testing ? "Testing…" : "Test Connection"}
           </button>
+          {(setup?.synchronization.pending_count ?? 0) <= 0 && !syncing ? (
+            <span className="text-sm text-slate-500">
+              No pending changes to sync.
+            </span>
+          ) : null}
         </div>
       </FormSection>
 

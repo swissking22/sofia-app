@@ -398,7 +398,7 @@ export function PrimaryButton({
       form={form}
       onClick={onClick}
       disabled={disabled}
-      className={`cursor-pointer ${styles}`}
+      className={`cursor-pointer disabled:cursor-not-allowed ${styles}`}
     >
       {children}
     </button>
@@ -431,7 +431,7 @@ export function SecondaryButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`cursor-pointer ${styles}`}
+      className={`cursor-pointer disabled:cursor-not-allowed ${styles}`}
     >
       {children}
     </button>

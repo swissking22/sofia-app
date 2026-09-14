@@ -18,21 +18,25 @@ import {
 } from "../components/dashboard/ChartCard";
 import { SetupProgressCard } from "../components/dashboard/SetupProgressCard";
 import { fetchDashboardStats, type DashboardStats } from "../lib/dashboard";
+import { DashboardConnectivityBar } from "../components/dashboard/DashboardConnectivityBar";
 
 export default function HomePage() {
   const [stats, setStats] = React.useState<DashboardStats | null>(null);
   const [error, setError] = React.useState("");
 
-  React.useEffect(() => {
-    void (async () => {
-      try {
-        const data = await fetchDashboardStats();
-        setStats(data);
-      } catch {
-        setError("Could not load dashboard stats.");
-      }
-    })();
+  const load = React.useCallback(async () => {
+    try {
+      const data = await fetchDashboardStats();
+      setStats(data);
+      setError("");
+    } catch {
+      setError("Could not load dashboard stats.");
+    }
   }, []);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
 
   const showSetup = stats && !stats.setupProgress.isComplete;
 
@@ -58,6 +62,16 @@ export default function HomePage() {
           }`}
         >
           <div className="order-2 min-w-0 xl:order-1">
+            <DashboardConnectivityBar
+              pendingSync={stats.pendingSync}
+              onSynced={(remaining) => {
+                setStats((prev) =>
+                  prev ? { ...prev, pendingSync: remaining } : prev,
+                );
+                void load();
+              }}
+            />
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <KpiCard
                 title="Total Students"
@@ -109,7 +123,7 @@ export default function HomePage() {
                 title="Pending Sync"
                 value={stats.pendingSync}
                 icon={Refresh01Icon}
-                hint="Local changes queued"
+                hint="Cloud-ready local changes"
               />
             </div>
 
