@@ -4,6 +4,7 @@ import {
   markFailed,
   markNetworkError,
   markSynced,
+  markUnsupportedPendingAsFailed,
   recordSyncConflict,
 } from './queue'
 import {
@@ -19,6 +20,19 @@ import type {
   PushSyncResult,
   SupabaseSyncClientInterface,
 } from './types'
+
+/** Structural / tenant barriers that would fail every remaining item the same way. */
+function isPermanentSyncBarrier(error: string | undefined): boolean {
+  if (!error) return false
+  const e = error.toLowerCase()
+  return (
+    e.includes('school tenant does not exist') ||
+    e.includes('column "id" does not exist') ||
+    e.includes('column id does not exist') ||
+    e.includes('relation "public.sync_operations" does not exist') ||
+    e.includes('relation "sync_operations" does not exist')
+  )
+}
 
 export async function pushPendingSync(
   options: PushSyncOptions
@@ -59,6 +73,10 @@ export async function pushPendingSync(
     }
   }
 
+  // Drain Phase-1-unsupported outbox rows locally (no RPC) so Sync Now
+  // cannot burn batches on invoices/roles/etc.
+  markUnsupportedPendingAsFailed(db)
+
   // 2. Check and ensure device registration for this school
   const deviceId = getOrCreateDeviceId()
   const isRegistered = isDeviceRegisteredForSchool(schoolId)
@@ -77,10 +95,24 @@ export async function pushPendingSync(
       console.warn(
         `[SYNC] Device registration warning: ${regResult.error || 'Failed to register device'}`
       )
+      // Missing tenant (or equivalent) blocks the whole batch — do not hammer RPC
+      if (isPermanentSyncBarrier(regResult.error)) {
+        console.error(
+          `[SYNC] Push aborted: permanent barrier during device registration (${regResult.error})`
+        )
+        return {
+          ok: false,
+          processed: 0,
+          successful: 0,
+          failed: 0,
+          conflicts: 0,
+          message: regResult.error,
+        }
+      }
     }
   }
 
-  // 3. Select pending items in deterministic order (created_at ASC)
+  // 3. Select Phase 1 pending items only (created_at ASC + backoff)
   const pendingRows = getPendingSyncItems(db, batchSize) as Array<{
     id: string
     table_name: string
@@ -92,7 +124,7 @@ export async function pushPendingSync(
   }>
 
   if (pendingRows.length === 0) {
-    console.log('[SYNC] Push completed: 0 pending items')
+    console.log('[SYNC] Push completed: 0 pending Phase 1 items')
     return {
       ok: true,
       processed: 0,
@@ -190,6 +222,14 @@ export async function pushPendingSync(
         `[SYNC] Validation error for operation ${item.id}: ${response.error}`
       )
       markFailed(db, item.id)
+
+      // Structural / tenant barriers fail every item the same way — stop the batch
+      if (isPermanentSyncBarrier(response.error)) {
+        console.error(
+          `[SYNC] Push aborted after permanent barrier: ${response.error}`
+        )
+        break
+      }
     }
   }
 

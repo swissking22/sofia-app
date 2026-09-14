@@ -101,8 +101,8 @@ git push origin 'reapply/*'
 ## Checklist
 
 - [ ] Baseline at `4d59a3c` launches on Windows
-- [ ] After commit 1 — launches  *(in progress on branch `bisect/windows-launch`)*
-- [ ] After commit 2 — launches
+- [x] After commit 1 — launches  *(cleared on `bisect/windows-launch`)*
+- [ ] After commit 2 — launches  *(in progress on `bisect/windows-launch`)*
 - [ ] After commit 3 — launches *(updater / userData)*
 - [ ] After commit 4 — launches *(cloud-config)*
 - [ ] After commit 5 — launches + CI packaging OK

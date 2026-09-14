@@ -497,4 +497,126 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     const item = db.prepare(`SELECT status FROM sync_queue WHERE record_id = ?`).get('88888888-8888-8888-8888-888888888888') as { status: string }
     expect(item.status).toBe('failed')
   })
+
+  // 15. Unsupported Phase-1 tables are failed locally without RPC calls
+  test('15. Unsupported pending tables are skipped without calling cloud RPC', async () => {
+    enqueueSync(db, 'invoices', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'INSERT', {
+      id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      school_id: schoolId,
+      amount: 100,
+    })
+    enqueueSync(db, 'roles', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'INSERT', {
+      id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      school_id: schoolId,
+      name: 'Teacher',
+    })
+
+    const beforeOps = mockClient.receivedOperations.length
+    const result = await pushPendingSync({ db, schoolId, client: mockClient })
+
+    expect(result.successful).toBe(0)
+    expect(result.processed).toBe(0)
+    expect(mockClient.receivedOperations.length).toBe(beforeOps)
+
+    const inv = db
+      .prepare(`SELECT status FROM sync_queue WHERE record_id = ?`)
+      .get('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') as { status: string }
+    const role = db
+      .prepare(`SELECT status FROM sync_queue WHERE record_id = ?`)
+      .get('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb') as { status: string }
+    expect(inv.status).toBe('failed')
+    expect(role.status).toBe('failed')
+  })
+
+  // 16. Permanent RPC barriers abort the batch (no sync storm)
+  test('16. Permanent validation barrier aborts remaining batch items', async () => {
+    const s1 = repos.students.create({
+      school_id: schoolId,
+      name: 'Barrier One',
+      class_id: classId,
+      student_code: 'ABC-0016',
+      sequence_number: 16,
+    })
+    const s2 = repos.students.create({
+      school_id: schoolId,
+      name: 'Barrier Two',
+      class_id: classId,
+      student_code: 'ABC-0017',
+      sequence_number: 17,
+    })
+
+    mockClient.operationHandler = async () => ({
+      ok: false,
+      errorType: 'validation',
+      error: 'RPC error (400): column "id" does not exist',
+    })
+
+    const result = await pushPendingSync({ db, schoolId, client: mockClient })
+    expect(result.failed).toBe(1)
+    expect(result.processed).toBe(1)
+    expect(mockClient.receivedOperations.length).toBe(1)
+
+    const first = db
+      .prepare(`SELECT status FROM sync_queue WHERE record_id = ?`)
+      .get(s1.id) as { status: string }
+    const second = db
+      .prepare(`SELECT status FROM sync_queue WHERE record_id = ?`)
+      .get(s2.id) as { status: string }
+    expect(first.status).toBe('failed')
+    expect(second.status).toBe('pending')
+  })
+
+  // 17. Network backoff keeps recently failed pending items out of the next batch
+  test('17. Network backoff excludes items until delay elapses', async () => {
+    const student = repos.students.create({
+      school_id: schoolId,
+      name: 'Backoff Test',
+      class_id: classId,
+      student_code: 'ABC-0018',
+      sequence_number: 18,
+    })
+
+    mockClient.operationHandler = async () => ({
+      ok: false,
+      errorType: 'network',
+      error: 'fetch failed',
+    })
+
+    await pushPendingSync({ db, schoolId, client: mockClient })
+
+    // Immediately after network fail (retry_count=1), item is still pending but
+    // within the 5s backoff window — must not be selected again.
+    expect(getPendingSyncItems(db).length).toBe(0)
+
+    db.prepare(
+      `UPDATE sync_queue SET last_attempt_at = datetime('now', '-30 seconds') WHERE record_id = ?`
+    ).run(student.id)
+
+    const again = getPendingSyncItems(db)
+    expect(again.length).toBe(1)
+    expect(again[0].record_id).toBe(student.id)
+  })
+
+  // 18. Missing cloud tenant aborts before processing queue items
+  test('18. Missing school tenant aborts push without processing queue', async () => {
+    repos.students.create({
+      school_id: schoolId,
+      name: 'Tenant Gate',
+      class_id: classId,
+      student_code: 'ABC-0019',
+      sequence_number: 19,
+    })
+
+    resetDeviceStoreForTests('44444444-4444-4444-4444-444444444444')
+    mockClient.deviceHandler = async () => ({
+      ok: false,
+      error: 'School tenant does not exist: ' + schoolId,
+    })
+
+    const result = await pushPendingSync({ db, schoolId, client: mockClient })
+    expect(result.ok).toBe(false)
+    expect(result.processed).toBe(0)
+    expect(mockClient.receivedOperations.length).toBe(0)
+    expect(result.message).toContain('School tenant does not exist')
+  })
 })
