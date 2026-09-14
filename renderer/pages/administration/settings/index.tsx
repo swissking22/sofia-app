@@ -87,6 +87,12 @@ export default function AdminSettingsPage() {
           <p>
             <strong>Receipt prefix:</strong> {finance.receipt_prefix}
           </p>
+          <p className="mt-3 border-t border-slate-100 pt-3 text-slate-700">
+            <strong>Sofia</strong>
+            <span className="ml-2 text-slate-500">
+              Version {String(data?.app_version || "—")}
+            </span>
+          </p>
           <p className="mt-3 text-slate-500">
             Edit identity on{" "}
             <Link className="text-(--sofia-primary)" href="/school/profile">

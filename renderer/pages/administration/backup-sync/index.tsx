@@ -21,6 +21,7 @@ import {
   runAdminSync,
   runBackupNow,
 } from "../../../lib/system-admin";
+import { listPreUpdateBackups } from "../../../lib/updater";
 import { formatSyncTime } from "../../../lib/backup-sync";
 
 export default function AdminBackupSyncPage() {
@@ -30,16 +31,32 @@ export default function AdminBackupSyncPage() {
   const [backups, setBackups] = React.useState<Array<Record<string, unknown>>>(
     [],
   );
+  const [preUpdate, setPreUpdate] = React.useState<
+    Array<{
+      backupVersion: string;
+      targetVersion: string;
+      createdAt: string;
+      verified: boolean;
+      fileSize: number;
+    }>
+  >([]);
   const [sync, setSync] = React.useState<Record<string, unknown> | null>(null);
   const [restoreId, setRestoreId] = React.useState<string | null>(null);
   const [phrase, setPhrase] = React.useState("");
+  const [syncing, setSyncing] = React.useState(false);
+  const [retrying, setRetrying] = React.useState(false);
 
   const load = React.useCallback(async () => {
-    const [b, s] = await Promise.all([fetchBackups(1), fetchSyncDashboard()]);
+    const [b, s, p] = await Promise.all([
+      fetchBackups(1),
+      fetchSyncDashboard(),
+      listPreUpdateBackups(),
+    ]);
     if (b.ok) setBackups(b.data.backups);
     else setError(b.error);
     if (s.ok) setSync(s.data);
     else setError(s.error);
+    if (p.ok) setPreUpdate(p.data);
   }, []);
 
   React.useEffect(() => {
@@ -54,6 +71,51 @@ export default function AdminBackupSyncPage() {
   const runs = ((sync?.runs as { runs?: Array<Record<string, unknown>> })
     ?.runs ?? []) as Array<Record<string, unknown>>;
   const conflicts = (sync?.conflicts ?? []) as Array<Record<string, unknown>>;
+  const pendingCount = Number(dash.pending ?? 0);
+  const failedCount = Number(dash.failed ?? 0);
+  const hasChangesToSync = pendingCount > 0;
+  const syncBusy = syncing || retrying;
+
+  async function handleSyncNow() {
+    if (!hasChangesToSync || syncBusy) return;
+    setSyncing(true);
+    setError("");
+    setSuccess("");
+    try {
+      const r = await runAdminSync();
+      if (r.ok) {
+        setSuccess("Sync finished.");
+        await load();
+      } else {
+        setError(r.error);
+        await load();
+      }
+    } catch {
+      setError("Sync failed unexpectedly.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function handleRetryFailed() {
+    if (failedCount <= 0 || syncBusy) return;
+    setRetrying(true);
+    setError("");
+    setSuccess("");
+    try {
+      const r = await retryAdminSync();
+      if (r.ok) {
+        setSuccess(`Queued ${r.data.retried} failed item(s).`);
+        await load();
+      } else {
+        setError(r.error);
+      }
+    } catch {
+      setError("Could not retry failed items.");
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   return (
     <AppShell
@@ -75,20 +137,66 @@ export default function AdminBackupSyncPage() {
 
       {tab === "backup" ? (
         <>
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 text-sm">
+            <h3 className="font-semibold text-slate-900">Backup & Recovery</h3>
+            <p className="mt-1 text-slate-500">
+              Automatic pre-update backups are created and verified before every
+              Windows app update. Manual backups use the same SQLite-safe
+              snapshot API.
+            </p>
+            <p className="mt-2 text-slate-600">
+              Last backup:{" "}
+              {backups[0]
+                ? String(backups[0].created_at).replace("T", " ").slice(0, 19)
+                : preUpdate[0]
+                  ? String(preUpdate[0].createdAt).replace("T", " ").slice(0, 19)
+                  : "Never"}
+            </p>
+            <p className="text-slate-600">
+              Automatic backups: Enabled (before each update + optional scheduled
+              local snapshots)
+            </p>
+          </div>
           <div className="mb-4 flex gap-2">
             <PrimaryButton
               onClick={() =>
                 void runBackupNow().then((r) => {
                   if (r.ok) {
-                    setSuccess("Backup created.");
+                    setSuccess("Backup created and verified.");
                     void load();
                   } else setError(r.error);
                 })
               }
             >
-              Backup now
+              Backup Now
             </PrimaryButton>
           </div>
+          {preUpdate.length > 0 ? (
+            <div className="mb-6">
+              <h3 className="mb-2 text-sm font-semibold text-slate-900">
+                Pre-update recovery points
+              </h3>
+              <StudentTable
+                columns={["Created", "From", "Target", "Size", "Verified"]}
+              >
+                {preUpdate.map((b) => (
+                  <tr key={`${b.createdAt}-${b.backupVersion}`}>
+                    <td className="px-4 py-3 text-xs">
+                      {b.createdAt.replace("T", " ").slice(0, 19)}
+                    </td>
+                    <td className="px-4 py-3">{b.backupVersion}</td>
+                    <td className="px-4 py-3">{b.targetVersion}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {Number(b.fileSize || 0).toLocaleString()} bytes
+                    </td>
+                    <td className="px-4 py-3">
+                      {b.verified ? "Yes" : "No"}
+                    </td>
+                  </tr>
+                ))}
+              </StudentTable>
+            </div>
+          ) : null}
           <StudentTable columns={["Date", "Type", "Size", "Status", "Actions"]}>
             {backups.length === 0 ? (
               <EmptyRow colSpan={5} message="No backups recorded yet." />
@@ -135,32 +243,44 @@ export default function AdminBackupSyncPage() {
               (setup?.synchronization?.last_sync_at as string) || null,
             )}
           </p>
+          {syncing ? (
+            <p className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-600">
+              <span
+                className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-(--sofia-primary)"
+                aria-hidden
+              />
+              Sync in progress…
+            </p>
+          ) : null}
           <div className="mb-4 flex gap-2">
             <PrimaryButton
-              onClick={() =>
-                void runAdminSync().then((r) => {
-                  if (r.ok) {
-                    setSuccess("Sync finished.");
-                    void load();
-                  } else setError(r.error);
-                })
-              }
+              disabled={!hasChangesToSync || syncBusy}
+              onClick={() => void handleSyncNow()}
             >
-              Sync now
+              {syncing ? (
+                <>
+                  <span
+                    className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                    aria-hidden
+                  />
+                  Syncing…
+                </>
+              ) : (
+                "Sync now"
+              )}
             </PrimaryButton>
             <SecondaryButton
-              onClick={() =>
-                void retryAdminSync().then((r) => {
-                  if (r.ok) {
-                    setSuccess(`Queued ${r.data.retried} failed item(s).`);
-                    void load();
-                  }
-                })
-              }
+              disabled={failedCount <= 0 || syncBusy}
+              onClick={() => void handleRetryFailed()}
             >
-              Retry failed
+              {retrying ? "Retrying…" : "Retry failed"}
             </SecondaryButton>
           </div>
+          {!hasChangesToSync && !syncing ? (
+            <p className="mb-4 text-sm text-slate-500">
+              No pending changes to sync.
+            </p>
+          ) : null}
           <h3 className="mb-2 text-sm font-semibold">Sync history</h3>
           <StudentTable
             columns={[
@@ -233,7 +353,7 @@ export default function AdminBackupSyncPage() {
 
       <FormModal
         open={Boolean(restoreId)}
-        title="Restore this backup?"
+        title="Restore Backup?"
         onClose={() => {
           setRestoreId(null);
           setPhrase("");
@@ -263,14 +383,14 @@ export default function AdminBackupSyncPage() {
                 });
               }}
             >
-              Queue restore
+              Continue
             </PrimaryButton>
           </div>
         }
       >
         <PageAlert tone="warning">
-          Restoring this backup will replace the current local database state. A
-          safety backup is created first. Sofia must restart to apply the file.
+          This will replace the current Sofia database with the selected backup.
+          A safety backup of the current database will be created first.
         </PageAlert>
         <input
           className={fieldClass}

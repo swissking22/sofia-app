@@ -30,12 +30,14 @@ import { registerReportsIpc } from './reports'
 import { registerDocumentsMgmtIpc } from './documents-mgmt'
 import { registerSystemAdminIpc } from './system-admin'
 import { registerResultsCalculationIpc } from './results-calculation'
+import { registerUpdaterIpc } from './updater'
 
 /** Register all IPC handlers for the main process. */
 export function registerIpcHandlers(
   db: Database.Database,
   repos: Repositories
 ): void {
+  registerUpdaterIpc()
   registerAuthIpc(repos)
   registerDashboardIpc(db, repos)
   registerSchoolIpc(repos)

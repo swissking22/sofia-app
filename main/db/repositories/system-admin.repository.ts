@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
-import { countByStatus, retryFailed } from '../../sync/queue'
+import { countByStatus, countFailedPhase1, countPendingPhase1, retryFailed } from '../../sync/queue'
 import {
   DEFAULT_CURRENCY,
   DEFAULT_TIMEZONE,
@@ -105,7 +105,8 @@ export class SystemAdminRepository {
         database: 'healthy',
         storage: 'healthy',
         sync: failed > 0 ? 'attention' : pending > 0 ? 'pending' : 'connected',
-        version: '1.0.0',
+        // Application version is supplied by IPC from app.getVersion() (package.json).
+        version: '',
         timezone: settings.timezone,
         currency: DEFAULT_CURRENCY,
       },
@@ -503,9 +504,9 @@ export class SystemAdminRepository {
         .get(schoolId) as { n: number }
     ).n
     return {
-      pending: countByStatus(this.db, 'pending'),
+      pending: countPendingPhase1(this.db),
       synced: countByStatus(this.db, 'synced'),
-      failed: countByStatus(this.db, 'failed'),
+      failed: countFailedPhase1(this.db),
       conflicts: openConflicts,
       timezone: settings.timezone,
     }

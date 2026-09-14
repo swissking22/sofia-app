@@ -2,8 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 import type Database from 'better-sqlite3'
-import { enqueueSync, getPendingSyncItems } from '../../sync/queue'
+import { enqueueSync, getPendingSyncItems, countPendingPhase1 } from '../../sync/queue'
 import type { BackupFrequency, BackupSyncSettings } from '../types'
+import { verifySqliteBackup } from '../sqlite-backup'
 import { BaseRepository } from './base'
 
 export function getDefaultBackupLocation(): string {
@@ -182,12 +183,7 @@ export class BackupSyncRepository extends BaseRepository<BackupSyncSettings> {
   }
 
   getPendingCount(): number {
-    const row = this.db
-      .prepare(
-        `SELECT COUNT(*) as count FROM sync_queue WHERE status = 'pending'`
-      )
-      .get() as { count: number }
-    return row.count
+    return countPendingPhase1(this.db)
   }
 
   getSetupDto(
@@ -367,6 +363,18 @@ export class BackupSyncRepository extends BaseRepository<BackupSyncSettings> {
     const dest = path.join(dir, `sofia-backup-${stamp}.db`)
 
     await this.db.backup(dest)
+
+    // Verify the snapshot before returning it to callers.
+    const check = verifySqliteBackup(dest)
+    if (!check.ok) {
+      try {
+        fs.unlinkSync(dest)
+      } catch {
+        /* ignore */
+      }
+      throw new Error(check.error || 'Backup failed integrity verification.')
+    }
+
     return dest
   }
 

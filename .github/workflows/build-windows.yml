@@ -6,6 +6,9 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -39,24 +42,34 @@ jobs:
             exit 1
           fi
 
-      - name: Build Sofia (Windows)
+      - name: Build Windows installer (no publish)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         env:
-          # electron-builder Authenticode (Windows). Prefer WIN_CSC_* so Mac
-          # signing env is never confused if both platforms share a runner matrix later.
           WIN_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
-          # Also set CSC_* aliases — some electron-builder versions read these.
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
-          # Skip identity auto-discovery when no cert is configured (unsigned CI smoke).
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.WINDOWS_CSC_LINK != '' && 'true' || 'false' }}
         run: npm run build:win
 
-      - name: Upload Windows installer
+      - name: Build and publish Windows installer to GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WIN_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+        run: npm run build:win:publish
+
+      - name: Upload Windows installer artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Sofia-Windows-Installer
           path: |
             dist/**/*.exe
             dist/**/*.msi
+            dist/**/*.yml
+            dist/**/*.blockmap
           if-no-files-found: error

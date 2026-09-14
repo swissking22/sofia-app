@@ -7,16 +7,31 @@ import { getDatabase, closeDatabase } from './db'
 import { createRepositories } from './db/repositories'
 import { registerIpcHandlers } from './ipc'
 import { needsSetup, ensureValidSession } from './auth'
+import { completeUpdaterStartupEvaluation, initAutoUpdater } from './updater'
+import { resolveUserDataPath } from './app-paths'
 
 const isProd = process.env.NODE_ENV === 'production'
 
+/**
+ * Pin userData to `%APPDATA%\sofia\` (or `sofia (development)`).
+ * Independent of electron-builder appId (`com.sofia.school`).
+ */
+app.setPath(
+  'userData',
+  resolveUserDataPath(app.getPath('appData'), {
+    isPackagedOrProduction: isProd || app.isPackaged,
+  })
+)
+
 if (isProd) {
   serve({ directory: 'app' })
-} else {
-  app.setPath('userData', `${app.getPath('userData')} (development)`)
 }
 
-function getStartPath(repos: ReturnType<typeof createRepositories>): string {
+function getStartPath(
+  repos: ReturnType<typeof createRepositories>,
+  needsRecoveryUi: boolean
+): string {
+  if (needsRecoveryUi) return 'recovery'
   if (ensureValidSession(repos)) return 'home'
   if (needsSetup(repos)) return 'register'
   return 'login'
@@ -42,17 +57,17 @@ function getRuntimeIconPath(): string | undefined {
   const db = getDatabase()
   const repos = createRepositories(db)
 
-  // Step 5–8: auth + IPC (including dashboard stats)
   registerIpcHandlers(db, repos)
 
-  const startPath = getStartPath(repos)
+  const recovery = completeUpdaterStartupEvaluation(db)
+  const startPath = getStartPath(repos, recovery.needsRecoveryUi)
 
   const mainWindow = createWindow('main', {
     width: 1440,
     height: 900,
     minWidth: 1200,
     minHeight: 700,
-    title: 'SOFIA',
+    title: 'Sofia',
     ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, 'preload.js'),
@@ -66,6 +81,9 @@ function getRuntimeIconPath(): string | undefined {
     await mainWindow.loadURL(`http://localhost:${port}/${startPath}`)
     mainWindow.webContents.openDevTools()
   }
+
+  // Production-only: check GitHub Releases once shortly after startup.
+  initAutoUpdater(mainWindow)
 })().catch((err) => {
   console.error('[sofia] Failed to start:', err)
   app.quit()
