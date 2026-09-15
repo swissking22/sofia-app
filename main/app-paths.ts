@@ -5,7 +5,7 @@ import path from 'path'
  *
  * Intentionally independent of electron-builder `appId` / `productName` so
  * Windows installs remain at `%APPDATA%\sofia\` whether the installer was
- * configured as `com.sofia.app` (legacy config only) or `com.sofia.school`.
+ * configured as `com.sofia.app` (working Windows baseline) or `com.sofia.school`.
  */
 export const USER_DATA_FOLDER = 'sofia'
 
