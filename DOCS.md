@@ -73,11 +73,11 @@ Application version is **independent** of SQLite schema migrations and Supabase 
 
 **First production release (`v1.0.0`):** `package.json` is already `1.0.0`. Commit the release candidate, then tag and push `v1.0.0` (do **not** bump beforehand). The Windows workflow publishes `Sofia-Setup-1.0.0.exe` plus `latest.yml`.
 
-**Later releases:**
+**Release a new Windows build:**
 
-1. Bump `package.json` version (e.g. `1.0.0` → `1.0.1`) and commit the matching `package-lock.json` version field.
-2. Tag and push: `git tag v1.0.1 && git push origin main && git push origin v1.0.1`.
-3. GitHub Actions (`.github/workflows/build-windows.yml`) builds with `npm run build:win:publish` and publishes the NSIS installer plus `latest.yml` (and blockmap) to the matching GitHub Release.
+1. Bump `package.json` version only for releases after `1.0.0` (see Application versioning).
+2. Tag/push `v*` so `.github/workflows/build-windows.yml` runs `npm run build:win:publish`.
+3. CI sets `USE_HARD_LINKS=false`, then validates `dist/win-unpacked` with `scripts/verify-windows-packaging.ps1` — requiring `Sofia.exe`, Chromium `icudtl.dat` beside the exe (~10 MB), `resources/app.asar`, and `resources/cloud-config.json` — before trusting the NSIS installer.
 
 Hosted sync:
 
@@ -624,6 +624,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-15 | Windows packaging: CI validates `dist/win-unpacked` contains Electron runtime `icudtl.dat` beside `Sofia.exe` (plus `app.asar` / `resources.pak`); sets `USE_HARD_LINKS=false` on Windows builds to avoid corrupt Electron trees; adds `scripts/verify-windows-packaging.ps1`. |
+| 2026-09-15 | Windows CI: bumped GitHub Actions to `actions/checkout@v7`, `actions/setup-node@v7`, and `actions/upload-artifact@v7` (Node 24 action runtime) to clear the Node.js 20 deprecation warning; Sofia project Node remains 22. |
 | 2026-09-14 | Application versioning: SemVer source of truth is `package.json` `version` (`1.0.0` for first production); overview/settings use `app.getVersion()` only; docs clarify first release tags `v1.0.0` without a prior bump. |
 | 2026-09-14 | Packaged cloud config: production builds load hosted Supabase URL + anon/publishable key from `resources/cloud-config.json` via `process.resourcesPath` (electron-builder `extraResources`); development still uses `.env`; packaged builds never fall back to localhost. |
 | 2026-09-14 | Contact Sofia Support: unlocked `/help/support` — email draft to `support@sofia.school` with topic, message, and diagnostics (school, version, user); copy helper and shortcuts to Backup & Sync / Settings / Dashboard. |

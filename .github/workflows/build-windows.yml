@@ -12,19 +12,34 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      # Avoid hard-link copies on CI that can leave a corrupt Electron runtime tree.
+      USE_HARD_LINKS: "false"
+      # Unsigned CI builds — do not search for a code-signing identity.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
     steps:
       - name: Checkout Sofia
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
+          # Project toolchain Node (distinct from the action runtime, which is Node 24).
           node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Report Electron toolchain versions
+        shell: pwsh
+        run: |
+          node -p "require('./package.json').version"
+          npm ls electron electron-builder nextron --depth=0
+          node -p "require('electron/package.json').version"
+          node -p "require('electron-builder/package.json').version"
+          node -p "require('nextron/package.json').version"
 
       - name: Build Windows installer (no publish)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -36,8 +51,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run build:win:publish
 
+      - name: Validate Windows Electron runtime packaging
+        shell: pwsh
+        run: ./scripts/verify-windows-packaging.ps1
+
       - name: Upload Windows installer artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Sofia-Windows-Installer
           path: |
@@ -45,3 +64,17 @@ jobs:
             dist/**/*.yml
             dist/**/*.blockmap
           if-no-files-found: error
+
+      - name: Upload Windows unpacked diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Sofia-Windows-Unpacked-Diagnostics
+          path: |
+            dist/win-unpacked/Sofia.exe
+            dist/win-unpacked/icudtl.dat
+            dist/win-unpacked/resources.pak
+            dist/win-unpacked/v8_context_snapshot.bin
+            dist/win-unpacked/resources/app.asar
+            dist/win-unpacked/resources/cloud-config.json
+          if-no-files-found: warn
