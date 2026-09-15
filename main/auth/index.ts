@@ -67,9 +67,22 @@ export interface SetupState {
   > | null
 }
 
-const sessionStore = new Store<{ session: SessionData | null }>({
-  name: 'sofia-session',
-})
+/**
+ * Lazy electron-store so construction happens AFTER main/pin-user-data.ts
+ * calls app.setPath('userData', …). Eager construction at import time used the
+ * pre-pin path and could split session files from sofia.db — or throw during
+ * module load on packaged Windows.
+ */
+let sessionStoreInstance: Store<{ session: SessionData | null }> | null = null
+
+function getSessionStore(): Store<{ session: SessionData | null }> {
+  if (!sessionStoreInstance) {
+    sessionStoreInstance = new Store<{ session: SessionData | null }>({
+      name: 'sofia-session',
+    })
+  }
+  return sessionStoreInstance
+}
 
 /** Hash a plain password — never store plaintext. */
 export async function hashPassword(password: string): Promise<string> {
@@ -233,7 +246,7 @@ export async function registerAdmin(
     schoolName: school.name,
   }
 
-  sessionStore.set('session', session)
+  getSessionStore().set('session', session)
 
   return { ok: true, user: toSafeUser(user), session }
 }
@@ -319,7 +332,7 @@ export async function login(
     schoolName: school?.name ?? 'School',
   }
 
-  sessionStore.set('session', session)
+  getSessionStore().set('session', session)
 
   return { ok: true, user: toSafeUser(user), session }
 }
@@ -339,11 +352,11 @@ export function logout(repos?: Repositories): void {
       /* ignore */
     }
   }
-  sessionStore.set('session', null)
+  getSessionStore().set('session', null)
 }
 
 export function getSession(): SessionData | null {
-  return sessionStore.get('session', null)
+  return getSessionStore().get('session', null)
 }
 
 /** Drop a stored session if the school or user no longer exists (e.g. after a DB reset). */
@@ -353,7 +366,7 @@ export function ensureValidSession(repos: Repositories): SessionData | null {
   const school = repos.schools.findById(session.schoolId)
   const user = repos.users.findById(session.userId)
   if (!school || !user || user.school_id !== school.id) {
-    sessionStore.set('session', null)
+    getSessionStore().set('session', null)
     return null
   }
   return session
@@ -363,5 +376,5 @@ export function ensureValidSession(repos: Repositories): SessionData | null {
 export function updateSessionSchoolName(schoolName: string): void {
   const current = getSession()
   if (!current) return
-  sessionStore.set('session', { ...current, schoolName })
+  getSessionStore().set('session', { ...current, schoolName })
 }

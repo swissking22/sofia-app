@@ -83,9 +83,24 @@ function friendlyNetworkError(): string {
 export function completeUpdaterStartupEvaluation(
   db: import('better-sqlite3').Database
 ): RecoverySituation {
-  startupRecovery = evaluateStartupRecovery(db)
-  setState({ recovery: startupRecovery, currentVersion: app.getVersion() })
-  return startupRecovery
+  try {
+    startupRecovery = evaluateStartupRecovery(db)
+    setState({ recovery: startupRecovery, currentVersion: app.getVersion() })
+    return startupRecovery
+  } catch (err) {
+    console.error('[SOFIA STARTUP] completeUpdaterStartupEvaluation failed (non-fatal)', err)
+    startupRecovery = {
+      needsRecoveryUi: false,
+      status: 'idle',
+      fromVersion: null,
+      targetVersion: null,
+      currentVersion: app.getVersion(),
+      backupPath: null,
+      backupVerified: false,
+      message: '',
+    }
+    return startupRecovery
+  }
 }
 
 export function getStartupRecovery(): RecoverySituation | null {

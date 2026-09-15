@@ -47,6 +47,24 @@ function verifyOpenDatabase(db: Database.Database): { ok: boolean; integrityChec
  * Production only — development never enters recovery UI.
  */
 export function evaluateStartupRecovery(db: Database.Database): RecoverySituation {
+  try {
+    return evaluateStartupRecoveryUnsafe(db)
+  } catch (err) {
+    console.error('[SOFIA STARTUP] evaluateStartupRecovery failed (non-fatal)', err)
+    return {
+      needsRecoveryUi: false,
+      status: 'idle',
+      fromVersion: null,
+      targetVersion: null,
+      currentVersion: app.getVersion(),
+      backupPath: null,
+      backupVerified: false,
+      message: '',
+    }
+  }
+}
+
+function evaluateStartupRecoveryUnsafe(db: Database.Database): RecoverySituation {
   const currentVersion = app.getVersion()
   const base: RecoverySituation = {
     needsRecoveryUi: false,

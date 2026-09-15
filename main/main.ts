@@ -1,3 +1,4 @@
+import './pin-user-data'
 import path from 'path'
 import fs from 'fs'
 import { app } from 'electron'
@@ -7,21 +8,10 @@ import { getDatabase, closeDatabase } from './db'
 import { createRepositories } from './db/repositories'
 import { registerIpcHandlers } from './ipc'
 import { needsSetup, ensureValidSession } from './auth'
-import { completeUpdaterStartupEvaluation, initAutoUpdater } from './updater'
-import { resolveUserDataPath } from './app-paths'
 
 const isProd = process.env.NODE_ENV === 'production'
 
-/**
- * Pin userData to `%APPDATA%\sofia\` (or `sofia (development)`).
- * Independent of electron-builder appId (`com.sofia.school`).
- */
-app.setPath(
-  'userData',
-  resolveUserDataPath(app.getPath('appData'), {
-    isPackagedOrProduction: isProd || app.isPackaged,
-  })
-)
+console.log('[SOFIA STARTUP] module loaded')
 
 if (isProd) {
   serve({ directory: 'app' })
@@ -47,47 +37,79 @@ function getRuntimeIconPath(): string | undefined {
 }
 
 ;(async () => {
-  await app.whenReady()
+  try {
+    await app.whenReady()
+    console.log('[SOFIA STARTUP] app.whenReady complete')
 
-  const iconPath = getRuntimeIconPath()
-  if (iconPath && process.platform === 'darwin' && app.dock) {
-    app.dock.setIcon(iconPath)
+    const iconPath = getRuntimeIconPath()
+    if (iconPath && process.platform === 'darwin' && app.dock) {
+      app.dock.setIcon(iconPath)
+    }
+
+    console.log('[SOFIA STARTUP] database opening', app.getPath('userData'))
+    const db = getDatabase()
+    console.log('[SOFIA STARTUP] database opened')
+
+    const repos = createRepositories(db)
+    console.log('[SOFIA STARTUP] repositories created')
+
+    registerIpcHandlers(db, repos)
+    console.log('[SOFIA STARTUP] IPC registered')
+
+    // Load updater AFTER ready + userData pin so electron-updater / store
+    // never initialize against the pre-pin path during module import.
+    let needsRecoveryUi = false
+    let initAutoUpdater: ((window: Electron.BrowserWindow) => void) | null =
+      null
+    try {
+      const updater = await import('./updater')
+      const recovery = updater.completeUpdaterStartupEvaluation(db)
+      needsRecoveryUi = recovery.needsRecoveryUi
+      initAutoUpdater = updater.initAutoUpdater
+      console.log('[SOFIA STARTUP] updater startup evaluation complete')
+    } catch (err) {
+      console.error('[SOFIA STARTUP] updater evaluation failed (non-fatal)', err)
+    }
+
+    const startPath = getStartPath(repos, needsRecoveryUi)
+    console.log('[SOFIA STARTUP] start path resolved', startPath)
+
+    const mainWindow = createWindow('main', {
+      width: 1440,
+      height: 900,
+      minWidth: 1200,
+      minHeight: 700,
+      title: 'Sofia',
+      ...(iconPath ? { icon: iconPath } : {}),
+      webPreferences: {
+        preload: path.join(import.meta.dirname, 'preload.js'),
+      },
+    })
+    console.log('[SOFIA STARTUP] window created')
+
+    console.log('[SOFIA STARTUP] window loading', startPath)
+    if (isProd) {
+      await mainWindow.loadURL(`app://./${startPath}`)
+    } else {
+      const port = process.argv[2]
+      await mainWindow.loadURL(`http://localhost:${port}/${startPath}`)
+      mainWindow.webContents.openDevTools()
+    }
+
+    try {
+      initAutoUpdater?.(mainWindow)
+      console.log('[SOFIA STARTUP] auto-updater initialized')
+    } catch (err) {
+      console.error('[SOFIA STARTUP] auto-updater init failed (non-fatal)', err)
+    }
+
+    console.log('[SOFIA STARTUP] startup complete')
+  } catch (err) {
+    console.error('[SOFIA STARTUP] FAILURE', err)
+    console.error('[sofia] Failed to start:', err)
+    app.quit()
   }
-
-  const db = getDatabase()
-  const repos = createRepositories(db)
-
-  registerIpcHandlers(db, repos)
-
-  const recovery = completeUpdaterStartupEvaluation(db)
-  const startPath = getStartPath(repos, recovery.needsRecoveryUi)
-
-  const mainWindow = createWindow('main', {
-    width: 1440,
-    height: 900,
-    minWidth: 1200,
-    minHeight: 700,
-    title: 'Sofia',
-    ...(iconPath ? { icon: iconPath } : {}),
-    webPreferences: {
-      preload: path.join(import.meta.dirname, 'preload.js'),
-    },
-  })
-
-  if (isProd) {
-    await mainWindow.loadURL(`app://./${startPath}`)
-  } else {
-    const port = process.argv[2]
-    await mainWindow.loadURL(`http://localhost:${port}/${startPath}`)
-    mainWindow.webContents.openDevTools()
-  }
-
-  // Production-only: check GitHub Releases once shortly after startup.
-  initAutoUpdater(mainWindow)
-})().catch((err) => {
-  console.error('[sofia] Failed to start:', err)
-  app.quit()
-})
+})()
 
 app.on('window-all-closed', () => {
   closeDatabase()
