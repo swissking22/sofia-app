@@ -33,11 +33,12 @@ dmg:
       path: /Applications
 win:
   icon: resources/icon.ico
-  # Authenticode: certificate comes from CI env WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD
-  # (or CSC_LINK / CSC_KEY_PASSWORD). Never commit .pfx / passwords to the repo.
-  signingHashAlgorithms:
-    - sha256
-  rfc3161TimeStampServer: http://timestamp.digicert.com
+  # electron-builder 26+: signing options live under signtoolOptions (not win root).
+  # Certificate still comes from CI env WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD.
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
+    rfc3161TimeStampServer: http://timestamp.digicert.com
   target:
     - target: nsis
       arch:
