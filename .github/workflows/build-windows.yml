@@ -23,7 +23,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Sofia
+      # Tagged releases must be Authenticode-signed. Manual workflow_dispatch
+      # may build unsigned when secrets are not configured (local smoke builds).
+      - name: Require Windows signing certificate on release tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.WINDOWS_CSC_LINK }}" ]; then
+            echo "::error::Secret WINDOWS_CSC_LINK is required for tagged Windows releases."
+            echo "Add a base64-encoded .pfx (or .p12) as WINDOWS_CSC_LINK and its password as WINDOWS_CSC_KEY_PASSWORD."
+            exit 1
+          fi
+          if [ -z "${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}" ]; then
+            echo "::error::Secret WINDOWS_CSC_KEY_PASSWORD is required for tagged Windows releases."
+            exit 1
+          fi
+
+      - name: Build Sofia (Windows)
+        env:
+          # electron-builder Authenticode (Windows). Prefer WIN_CSC_* so Mac
+          # signing env is never confused if both platforms share a runner matrix later.
+          WIN_CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          # Also set CSC_* aliases — some electron-builder versions read these.
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+          # Skip identity auto-discovery when no cert is configured (unsigned CI smoke).
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.WINDOWS_CSC_LINK != '' && 'true' || 'false' }}
         run: npm run build:win
 
       - name: Upload Windows installer

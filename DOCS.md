@@ -36,6 +36,48 @@ npm run seed        # writes data/sofia.seed.db
 
 Restart the app after `seed:dev` so Electron picks up the new database. Seed data includes academics, staff, ~300 students, finance (paid / partial / unpaid invoices), expenses, and attendance. Light World Mission subjects are **level-scoped**: the same title (e.g. Mathematics) is one subject shared by General, Commercial, and Technical classes at that level. Re-running `npm run seed -- --dev --light-world-only` repairs LWM subjects without a full reset.
 
+### Desktop packaging (Windows)
+
+Build installers with Nextron + electron-builder:
+
+```bash
+npm run build:win    # Windows NSIS x64; never publishes
+npm run build:mac    # macOS (local)
+npm run build:all    # both platforms
+```
+
+GitHub Actions workflow: `.github/workflows/build-windows.yml` (`workflow_dispatch` or tag `v*`).
+
+#### Windows Authenticode code signing
+
+electron-builder signs the `.exe` / NSIS installer when these **repository secrets** are set (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|--------|--------|
+| `WINDOWS_CSC_LINK` | Base64 of your `.pfx` / `.p12` code-signing certificate (no newlines preferred) |
+| `WINDOWS_CSC_KEY_PASSWORD` | Password for that certificate |
+
+Encode a certificate on macOS/Linux:
+
+```bash
+base64 -i Sofia-CodeSign.pfx | pbcopy   # macOS — paste into the secret
+# or: base64 -w 0 Sofia-CodeSign.pfx > cert.b64
+```
+
+On Windows (PowerShell):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("Sofia-CodeSign.pfx")) | Set-Clipboard
+```
+
+Behaviour:
+
+- **Tag builds (`v*`):** secrets are **required** — the job fails if they are missing.
+- **Manual `workflow_dispatch`:** if secrets are absent, the build continues **unsigned** (useful for launch smoke tests).
+- Local `npm run build:win` without `WIN_CSC_LINK` / `CSC_LINK` also produces an unsigned installer.
+
+Never commit `.pfx`, `.p12`, or passwords. Signing reduces SmartScreen friction over time; an EV certificate (or sustained reputation) is still typically needed for immediate SmartScreen trust.
+
 ---
 
 ## Setup wizard
@@ -481,6 +523,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-15 | Windows Authenticode: GitHub Actions passes `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` (and `CSC_*` aliases) from repository secrets; tagged `v*` releases require the cert; `electron-builder.yml` uses SHA-256 + DigiCert RFC3161 timestamp. Docs cover how to base64-encode the `.pfx`. |
 | 2026-09-15 | Windows CI baseline: added `build:win` / `build:mac` / `build:all` npm scripts (`nextron build --win`, `--publish never`) so `.github/workflows/build-windows.yml` works after the reset to the pre-sync launch baseline. |
 | 2026-09-07 | Permanent Student IDs & Atomic Creation: implemented permanent human-facing `student_code` and internal local UUID (`students.id`) across all academic transitions (new academic years, class promotions, repeating classes, and student updates never regenerate or mutate identifiers); updated default pattern to `{SCHOOL}-{SEQ}` (e.g. `ABC-0001`) and sequence scope to `school` with separate `admission_year`; implemented atomic SQLite transactions combining sequence allocation, code generation, student insert, and outbox sync queue enqueue; added safe migration logic for existing databases preserving historical identifiers and safely advancing sequence counters; added comprehensive 11-test Jest suite covering all lifecycle and migration scenarios. |
 | 2026-09-07 | Bulk selection & group actions across all tables: created reusable `TableSelectionBar` component with select-all checkbox, selection count badges, clear action, and contextual bulk operation buttons; added multi-row selection with indeterminate select-all header checkboxes and bottom selection action bars across Student tables, Finance tables, Staff tables, Document workspace tables, Academic management tables (results, coefficients, report cards, continuous assessments, exams, attendance sessions, teaching logs), and Administration tables (users, roles, audit logs); included bulk CSV export and batch status updates. |
