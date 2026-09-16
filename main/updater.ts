@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from 'electron'
-import { autoUpdater, type ProgressInfo, type UpdateInfo } from 'electron-updater'
+import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater'
 import { getDatabase, getDatabasePath, closeDatabase } from './db'
 import {
   createPreUpdateBackup,
@@ -8,6 +8,24 @@ import {
 import { appendRecoveryLog } from './updater/recovery-log'
 import { evaluateStartupRecovery, type RecoverySituation } from './updater/recovery'
 import { readUpdateState, writeUpdateState } from './updater/update-state'
+
+/**
+ * Load electron-updater only when an update action runs — never via a static
+ * import. A top-level import is pulled into the main webpack chunk and crashes
+ * packaged Windows before app.whenReady() (see bisect/windows-launch).
+ */
+let autoUpdaterLoad: Promise<AppUpdater> | null = null
+
+function loadAutoUpdater(): Promise<AppUpdater> {
+  if (!autoUpdaterLoad) {
+    // webpackIgnore: keep a true runtime import so electron-updater is not
+    // evaluated when the main chunk loads (packaged Windows launch breaker).
+    autoUpdaterLoad = import(
+      /* webpackIgnore: true */ 'electron-updater'
+    ).then((mod) => mod.autoUpdater)
+  }
+  return autoUpdaterLoad
+}
 
 export type UpdaterPhase =
   | 'idle'
@@ -110,8 +128,9 @@ export function getStartupRecovery(): RecoverySituation | null {
 /**
  * Start production auto-updates once the main window is ready.
  * No-ops in development (`!app.isPackaged`) so `npm run dev` never hits GitHub.
+ * Dynamically loads `electron-updater` so packaged Windows can finish startup first.
  */
-export function initAutoUpdater(window: BrowserWindow): void {
+export async function initAutoUpdater(window: BrowserWindow): Promise<void> {
   mainWindow = window
   state = {
     ...state,
@@ -127,6 +146,20 @@ export function initAutoUpdater(window: BrowserWindow): void {
 
   if (started) return
   started = true
+
+  let autoUpdater: AppUpdater
+  try {
+    autoUpdater = await loadAutoUpdater()
+  } catch (err) {
+    log('failed to load electron-updater', err instanceof Error ? err.message : err)
+    started = false
+    setState({
+      enabled: false,
+      phase: 'error',
+      errorMessage: friendlyNetworkError(),
+    })
+    return
+  }
 
   setState({ enabled: true })
 
@@ -294,6 +327,7 @@ export async function checkForUpdates(): Promise<{ ok: boolean; error?: string }
     return { ok: false, error: 'Finish recovery before checking for updates.' }
   }
   try {
+    const autoUpdater = await loadAutoUpdater()
     await autoUpdater.checkForUpdates()
     return { ok: true }
   } catch (err) {
@@ -321,6 +355,7 @@ export async function downloadUpdate(): Promise<{ ok: boolean; error?: string }>
       targetVersion: state.availableVersion,
     })
     setState({ phase: 'downloading', percent: 0, errorMessage: null })
+    const autoUpdater = await loadAutoUpdater()
     await autoUpdater.downloadUpdate()
     return { ok: true }
   } catch (err) {
@@ -454,8 +489,16 @@ export async function quitAndInstallUpdate(): Promise<{ ok: boolean; error?: str
   // Close DB cleanly before the installer replaces app files.
   closeDatabase()
 
-  setImmediate(() => {
-    autoUpdater.quitAndInstall(false, true)
-  })
+  try {
+    const autoUpdater = await loadAutoUpdater()
+    setImmediate(() => {
+      autoUpdater.quitAndInstall(false, true)
+    })
+  } catch (err) {
+    const message = friendlyNetworkError()
+    log('quitAndInstall load failed', err instanceof Error ? err.message : err)
+    setState({ phase: 'downloaded', errorMessage: message })
+    return { ok: false, error: message }
+  }
   return { ok: true }
 }

@@ -595,6 +595,7 @@ Key libs for built modules:
 - Reports: `renderer/lib/reports.ts` → `main/ipc/reports.ts`
 - Documents: `renderer/lib/documents-mgmt.ts` → `main/ipc/documents-mgmt.ts` (setup templates remain `renderer/lib/documents.ts`)
 - System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts`
+- Auto-update (Windows): `main/updater.ts` + `main/ipc/updater.ts` (`updater:*`); UI `UpdateNotifier` in `AppShell`. **`electron-updater` must stay a runtime dynamic import** (`loadAutoUpdater()` in `main/updater.ts`) — a static import is evaluated with the main chunk and breaks packaged Windows launch. Startup still pins `userData` first via `main/pin-user-data.ts`. Recovery evaluation does not load the updater module graph for native update checks until after the window is ready.
 - Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); PostgREST RPCs `process_sync_operation`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
 
 ---
@@ -603,6 +604,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | Re-enabled Windows auto-update on `bisect/windows-launch` with **lazy `electron-updater`**: `loadAutoUpdater()` uses dynamic `import()` only when init/check/download/install runs; recovery eval + updater IPC + `UpdateNotifier` restored. Static import of `electron-updater` must not return (breaks packaged Windows). Retest Windows cold launch required. |
+| 2026-09-16 | Windows launch bisect **confirmed**: packaged Windows launches on `bisect/windows-launch` with sync + userData pin when the entire `electron-updater` import graph is disabled. Breaker is updater load, not pin/appId. Next: re-enable updater only via post-`whenReady` lazy import (see `REAPPLY_REVERTED_COMMITS.md`). |
 | 2026-09-16 | Packaged Mac launch: `ERR_MODULE_NOT_FOUND` for `@supabase/supabase-js` because deps were missing from `node_modules` (electron-builder logged `@undefined` paths). Fixed by `npm install` + rebuild; docs note full install before `build:mac` / `build:win` and Intel vs arm64 DMG choice. |
 | 2026-09-16 | Windows launch bisect: appId restore alone did not fix launch. Disabling entire `electron-updater` import graph on `bisect/windows-launch` (no updater IPC, no UpdateNotifier, no dynamic updater import) while keeping userData pin — isolates whether electron-updater itself crashes packaged Windows. Startup also writes `%APPDATA%\\sofia\\sofia-startup.log`. |
 | 2026-09-15 | Windows launch bisect: after commit 3 still failed with startup-order fix; next isolation — restore original `appId` `com.sofia.app` / productName `SOFIA` (commit 3 had changed these to `com.sofia.school` / `Sofia`). |

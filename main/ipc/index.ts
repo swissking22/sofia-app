@@ -30,17 +30,14 @@ import { registerReportsIpc } from './reports'
 import { registerDocumentsMgmtIpc } from './documents-mgmt'
 import { registerSystemAdminIpc } from './system-admin'
 import { registerResultsCalculationIpc } from './results-calculation'
-// BISECT: do not statically import updater IPC — it pulls electron-updater into
- // the main module graph before app.whenReady() and breaks packaged Windows.
- // import { registerUpdaterIpc } from './updater'
+import { registerUpdaterIpc } from './updater'
 
 /** Register all IPC handlers for the main process. */
 export function registerIpcHandlers(
   db: Database.Database,
   repos: Repositories
 ): void {
-  // BISECT: updater IPC disabled — see import note above.
-  // registerUpdaterIpc()
+  registerUpdaterIpc()
   registerAuthIpc(repos)
   registerDashboardIpc(db, repos)
   registerSchoolIpc(repos)

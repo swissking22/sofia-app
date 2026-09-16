@@ -48,6 +48,8 @@ Cherry-pick **in this order only**. After each commit: `npm run build:win` (or C
   git cherry-pick bb10ff7
   ```
 - **Note:** This commit changed startup paths (`userData` / updater). Re-test Windows launch carefully here.
+- **Bisect result (2026-09-16):** With `userData` pin kept but the entire `electron-updater` import graph disabled (no `registerUpdaterIpc`, no `import('./updater')`, no `UpdateNotifier`), **packaged Windows launches**. So the launch break is **`electron-updater` (or its static import chain)**, not the userData pin / appId alone.
+- **Fix (same day):** Re-enabled updater with **lazy runtime** `import('electron-updater')` inside `main/updater.ts` (`loadAutoUpdater()`), called only from `initAutoUpdater` / check / download / install. Updater IPC + `UpdateNotifier` restored. **Windows cold-launch retest required** before marking commit 3 fully cleared.
 
 ### 4. Packaged cloud config + sync UI + support
 - **Tag:** `reapply/04-cloud-config-sync-ui-support`
@@ -103,7 +105,8 @@ git push origin 'reapply/*'
 - [ ] Baseline at `4d59a3c` launches on Windows
 - [x] After commit 1 — launches  *(cleared on `bisect/windows-launch`)*
 - [x] After commit 2 — launches  *(cleared on `bisect/windows-launch`)*
-- [ ] After commit 3 — launches *(updater / userData)*  *(appId restore still failed; next: fully disable electron-updater import graph)*
+- [x] After commit 3 **without** `electron-updater` — launches  *(userData pin OK; updater graph is the breaker)*
+- [ ] After commit 3 **with** lazy `electron-updater` (`loadAutoUpdater`) — launches *(retest Windows)*
 - [ ] After commit 4 — launches *(cloud-config)*
 - [ ] After commit 5 — launches + CI packaging OK
 - [ ] (Optional) stash WIP re-applied

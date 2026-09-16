@@ -8,6 +8,10 @@ import { getDatabase, closeDatabase } from './db'
 import { createRepositories } from './db/repositories'
 import { registerIpcHandlers } from './ipc'
 import { needsSetup, ensureValidSession } from './auth'
+import {
+  completeUpdaterStartupEvaluation,
+  initAutoUpdater,
+} from './updater'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -36,8 +40,10 @@ if (isProd) {
 }
 
 function getStartPath(
-  repos: ReturnType<typeof createRepositories>
+  repos: ReturnType<typeof createRepositories>,
+  needsRecoveryUi: boolean
 ): string {
+  if (needsRecoveryUi) return 'recovery'
   if (ensureValidSession(repos)) return 'home'
   if (needsSetup(repos)) return 'register'
   return 'login'
@@ -70,11 +76,13 @@ function getRuntimeIconPath(): string | undefined {
     startupLog('repositories created')
 
     registerIpcHandlers(db, repos)
-    startupLog('IPC registered (updater IPC disabled for bisect)')
+    startupLog('IPC registered')
 
-    // BISECT: updater fully disabled — do not import('./updater') or
-    // electron-updater at all until Windows launch is restored.
-    const startPath = getStartPath(repos)
+    // Recovery evaluation does not load electron-updater (lazy inside updater.ts).
+    const recovery = completeUpdaterStartupEvaluation(db)
+    startupLog('updater startup evaluation complete', recovery.status)
+
+    const startPath = getStartPath(repos, recovery.needsRecoveryUi)
     startupLog('start path resolved', startPath)
 
     const mainWindow = createWindow('main', {
@@ -99,7 +107,16 @@ function getRuntimeIconPath(): string | undefined {
       mainWindow.webContents.openDevTools()
     }
 
-    startupLog('startup complete (updater disabled)')
+    // Loads electron-updater only after the window is up (packaged Windows safe).
+    try {
+      await initAutoUpdater(mainWindow)
+      startupLog('auto-updater initialized')
+    } catch (err) {
+      console.error('[SOFIA STARTUP] auto-updater init failed (non-fatal)', err)
+      startupLog('auto-updater init failed (non-fatal)')
+    }
+
+    startupLog('startup complete')
   } catch (err) {
     const message = err instanceof Error ? err.stack || err.message : String(err)
     startupLog('FAILURE', message)
