@@ -54,6 +54,8 @@ If packaging logs `cannot find path for dependency …@undefined`, `node_modules
 
 On Intel Macs open `SOFIA-1.0.0.dmg` (not `*-arm64*`). On Apple Silicon open the arm64 DMG.
 
+**Stable Windows checkpoint:** git tag `sofia-windows-stable` marks the known-good packaged Windows launch tip on `main` after the updater bisect (lazy `electron-updater` + official icons). Restore with `git checkout sofia-windows-stable`.
+
 GitHub Actions workflow: `.github/workflows/build-windows.yml` (`workflow_dispatch` or tag `v*`).
 
 #### Windows Authenticode code signing
@@ -607,6 +609,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | Stable checkpoint: promoted `bisect/windows-launch` to `main` and tagged `sofia-windows-stable` (packaged Windows launch with lazy `electron-updater`). |
 | 2026-09-16 | App icons: regenerated `resources/icon.png` / `.icns` / `.ico` from official `renderer/assets/images/sofia-icon.png` (replaced incorrect white-bg experiment); added `npm run icons` (`scripts/generate-icons.mjs`); ship `icon.png` via `extraResources` for packaged dock/window icon. |
 | 2026-09-16 | Re-enabled Windows auto-update on `bisect/windows-launch` with **lazy `electron-updater`**: `loadAutoUpdater()` uses dynamic `import()` only when init/check/download/install runs; recovery eval + updater IPC + `UpdateNotifier` restored. Static import of `electron-updater` must not return (breaks packaged Windows). Retest Windows cold launch required. |
 | 2026-09-16 | Windows launch bisect **confirmed**: packaged Windows launches on `bisect/windows-launch` with sync + userData pin when the entire `electron-updater` import graph is disabled. Breaker is updater load, not pin/appId. Next: re-enable updater only via post-`whenReady` lazy import (see `REAPPLY_REVERTED_COMMITS.md`). |

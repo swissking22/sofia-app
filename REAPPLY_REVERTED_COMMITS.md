@@ -100,6 +100,15 @@ git push origin backup/before-revert-to-windows-workflow-20260915-115018
 git push origin 'reapply/*'
 ```
 
+## Stable checkpoint
+
+Tag **`sofia-windows-stable`** on `main` (2026-09-16): packaged Windows launches with sync, userData pin, and lazy `electron-updater` (`loadAutoUpdater`). Restore:
+
+```bash
+git fetch origin tag sofia-windows-stable
+git checkout sofia-windows-stable
+```
+
 ## Checklist
 
 - [ ] Baseline at `4d59a3c` launches on Windows
