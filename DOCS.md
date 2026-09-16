@@ -225,36 +225,37 @@ Data-driven student (and future staff) ID cards. Schools design a template once;
 | Screen | Path | How to use |
 |--------|------|------------|
 | Dashboard | `/students/id-cards` | Active students, issued/pending/expiring counts, recent jobs. |
-| Templates | `/students/id-cards/templates` | Template gallery featuring flagship institutional templates (THE HERITAGE, THE ACADEMIC, THE SIGNATURE) and school custom designs. Large side-by-side FRONT + BACK preview cards, category filters (All, Premium, Modern, Minimal, School Copies), high-resolution inspection modal, and one-click "Use Template" / "Customize" workflows (creates a school copy; system templates are protected and non-deletable). |
+| Templates | `/students/id-cards/templates` | Template gallery featuring flagship institutional templates (THE HERITAGE, THE ACADEMIC, THE SIGNATURE) and school custom designs. Large side-by-side FRONT + BACK preview cards, category filters (All, Premium, Modern, Minimal, School Copies), high-resolution inspection modal, and one-click "Use Template" / "Customize" workflows (creates a school **draft** copy; system templates are protected and non-deletable). **Draft** school copies can always be deleted (including any test cards generated from them). Active/archived templates with issued cards must be archived instead. |
 | Create template | `/students/id-cards/templates/new` | Wizard: type, orientation, starting layout, fields to include. |
-| Designer | `/students/id-cards/designer/[id]` | Front/back canvas, drag fields, layers, school/student variables, QR/barcode, colours, millimetre sizes (default CR80). Preview with sample data or a real student. |
+| Designer | `/students/id-cards/designer/[id]` | Front/back canvas, drag fields, layers, school/student variables, QR/barcode, colours, millimetre sizes (default CR80). Preview with sample data or a real student. Draft templates show **Delete draft**. |
 | Generate | `/students/id-cards/generate` | Template → year → students (person, class, or school) → new/replacement/renewal → check missing photos/IDs → generate job → print. |
 | Issued cards | `/students/id-cards/issued` | Card number, verification code, status (active / replaced / revoked / expired). Replace or revoke; history is kept. |
 | Print | `/students/id-cards/print?ids=` | Print-ready front+back at physical size; browser **Print → Save as PDF**. Layout uses the **template version** stored on each card. |
 | Print history | `/students/id-cards/print-history` | Who printed what, when. |
 | Settings | `/students/id-cards/settings` | Card number pattern (e.g. `SCH/ID/2026/00001`), expiry, motto/footer, paper defaults. |
 
-#### Institutional Master Templates (CR80 · 85.60 × 53.98 mm Landscape)
+#### Institutional Master Templates (CR80)
 
-Sofia includes three agency-grade, production-ready system templates designed to meet the highest visual standards of elite educational institutions:
+Sofia includes three production system templates. Dimensions use physical millimetres (`unit: 'mm'`); preview scales visually but preserves CR80 aspect ratio.
 
-1. **THE HERITAGE (Premium / Prestigious Classic Institution)**:
-   - Deep navy institutional header (`#0A1E3F`), crisp white body, regal gold/champagne accent rules (`#C5A059`).
-   - Heraldic academic crest with shield contour, open book of knowledge, star of excellence, and framing laurels (`DEFAULT_ACADEMIC_CREST`).
-   - Vertical dividing rule between photo frame and student details; uppercase tracking typography for labels.
-   - Comprehensive back design: school address, phone, email, website, return-if-found notice, official verification QR code (`{{card.verification_code}}`), Code 128 barcode (`{{student.student_id}}`), and authorized signature line (`DEFAULT_SAMPLE_SIGNATURE`).
-2. **THE ACADEMIC (Modern / International School)**:
+1. **THE HERITAGE / CLASSIC (Template 1 — Premium, portrait CR80 53.98 × 85.60 mm)**:
+   - Navy (`#0F1C2E`) + **Sofia Blue** (`#1580CF`) SVG wave curves; Inter typography; tokens in `id-card-classic-tokens.ts` / factory `id-card-classic.ts`.
+   - Front: school logo/name/motto, **24×24 mm (1:1)** photo, student name, STUDENT type, ID / class / department / DOB / admission year / level. **No barcode.** Content stays ≥3.5 mm above footer waves.
+   - Back: property notice, school contacts, **QR only** (`sofia:stu:{student_code}` — deterministic, no PII), “SCAN TO VERIFY”, signature area, blue/navy footer curves.
+   - Offline lookup: scan/parse via `parseStudentQrPayload` → match `students.student_code` in SQLite. No scanner UI yet; payload is keyboard-wedge ready.
+   - System template rows refresh when the design hash changes; school copies are not overwritten.
+2. **THE ACADEMIC (Modern / International School) — landscape 85.60 × 53.98 mm**:
    - Contemporary geometric architecture with navy and vibrant electric blue (`#2563EB` / `#0284C7`) foundation.
    - Distinctive "STUDENT" section header, rounded photo frame, clean Swiss typography.
    - Front QR verification badge; structured back layout with clear card, student, and school contact sections, plus emergency return policy.
-3. **THE SIGNATURE (Ultra-Minimal / Executive)**:
+3. **THE SIGNATURE (Ultra-Minimal / Executive) — landscape 85.60 × 53.98 mm**:
    - Ultra-premium minimalist aesthetic inspired by executive credentials.
    - Large low-opacity watermark crest centered on the back; champagne accent bar (`#C5A059`).
    - Precise micro-spacing, high-contrast dark institutional typography on light backgrounds, elegant layout with prominent student name and ID.
 
-All templates are 100% data-driven using Sofia dynamic variables (`{{school.name}}`, `{{student.name}}`, `{{student.student_id}}`, `{{student.photo}}`, `{{academic.year}}`, `{{card.verification_code}}`, etc.). Offline vector assets are embedded as SVG data URIs, requiring no external network access. Selecting "Use Template" or "Customize" on a system template creates an independent school-scoped copy for editing while keeping system master templates locked and non-deletable.
+All templates are data-driven using Sofia variables (`{{school.name}}`, `{{student.name}}`, `{{student.student_id}}`, `{{student.photo}}`, `{{academic.year}}`, `{{card.qr_code}}`, etc.). Offline vector assets are SVG data URIs. Selecting "Use Template" or "Customize" on a system template creates an independent school-scoped copy; system masters stay locked.
 
-Student photos and school logo/signature come from existing student and school profile files. QR codes carry a **verification code** (`sofia:v1:ID-…`), not extra personal data, unless you bind a field yourself.
+Student photos and school logo/signature come from existing profile files. **Template 1 QR** = `sofia:stu:{student_code}` (offline SQLite lookup). Templates 2–3 may still use verification tokens / barcodes per their designs. Print remains browser **Print → Save as PDF** (no PDF library).
 
 ---
 
@@ -609,6 +610,10 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | ID Cards: **draft** school templates can always be deleted (gallery + designer); deleting a draft soft-removes any test cards generated from it. Active/archived templates with issued cards still must be archived. |
+| 2026-09-16 | ID Cards Template 1: square **1:1** photo (24×24 mm); front field block kept clear of footer decorations with ≥3.5 mm gap. |
+| 2026-09-16 | ID Cards Template 1: Sofia Blue (`#1580CF`) accents (no green); **QR-only on back** (`sofia:stu:{student_code}`); removed front barcode; `parseStudentQrPayload` for future offline scanner; Templates 2–3 unchanged. |
+| 2026-09-16 | ID Cards Template 1 (THE HERITAGE / CLASSIC): full portrait CR80 redesign (53.98×85.60 mm) with navy/green SVG curves, Inter typography, 24×30 mm photo, Code128 on `student_code`, back QR verification token; design tokens + factory modules; system template hash refresh; path shapes in `CardSurface`; tests for dimensions/barcode uniqueness. |
 | 2026-09-16 | Stable checkpoint: promoted `bisect/windows-launch` to `main` and tagged `sofia-windows-stable` (packaged Windows launch with lazy `electron-updater`). |
 | 2026-09-16 | App icons: regenerated `resources/icon.png` / `.icns` / `.ico` from official `renderer/assets/images/sofia-icon.png` (replaced incorrect white-bg experiment); added `npm run icons` (`scripts/generate-icons.mjs`); ship `icon.png` via `extraResources` for packaged dock/window icon. |
 | 2026-09-16 | Re-enabled Windows auto-update on `bisect/windows-launch` with **lazy `electron-updater`**: `loadAutoUpdater()` uses dynamic `import()` only when init/check/download/install runs; recovery eval + updater IPC + `UpdateNotifier` restored. Static import of `electron-updater` must not return (breaks packaged Windows). Retest Windows cold launch required. |

@@ -30,6 +30,7 @@ import {
   type ReplacementReason,
 } from '../../domain/id-card'
 import { SAMPLE_SPECS } from '../../domain/id-card-templates'
+import { studentQrPayload } from '../../domain/id-card-classic-tokens'
 import {
   DEFAULT_ACADEMIC_CREST,
   DEFAULT_SAMPLE_SIGNATURE,
@@ -49,6 +50,7 @@ export type StudentCardContext = {
   date_of_birth: string | null
   photo_path: string | null
   status: string
+  admission_year: number | null
   class_id: string
   class_name: string | null
   stream: string | null
@@ -145,9 +147,21 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
     for (const spec of SAMPLE_SPECS) {
       const exists = this.db
         .prepare(
-          `SELECT id, is_system, category, status FROM student_id_card_templates WHERE school_id = ? AND sample_key = ? AND deleted_at IS NULL`
+          `SELECT id, is_system, category, status, current_version_id, orientation, width_mm, height_mm
+           FROM student_id_card_templates WHERE school_id = ? AND sample_key = ? AND deleted_at IS NULL`
         )
-        .get(schoolId, spec.key) as { id: string; is_system?: number; category?: string; status?: string } | undefined
+        .get(schoolId, spec.key) as
+        | {
+            id: string
+            is_system?: number
+            category?: string
+            status?: string
+            current_version_id: string | null
+            orientation: string
+            width_mm: number
+            height_mm: number
+          }
+        | undefined
       if (exists) {
         if (spec.is_system && (!exists.is_system || exists.category !== spec.category || exists.status !== 'active')) {
           this.db
@@ -155,6 +169,38 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
               `UPDATE student_id_card_templates SET is_system = ?, category = ?, status = 'active', updated_at = ? WHERE id = ?`
             )
             .run(spec.is_system ? 1 : 0, spec.category || 'Standard', new Date().toISOString(), exists.id)
+        }
+        // Refresh system template design when factory definition changes (school copies untouched).
+        if (spec.is_system && exists.current_version_id) {
+          const design = spec.design()
+          const nextHash = designHash(design)
+          const ver = this.db
+            .prepare(`SELECT design_json FROM id_card_template_versions WHERE id = ?`)
+            .get(exists.current_version_id) as { design_json: string } | undefined
+          const currentHash = designHash(parseDesign(ver?.design_json))
+          if (currentHash !== nextHash) {
+            const now = new Date().toISOString()
+            this.db
+              .prepare(
+                `UPDATE id_card_template_versions SET design_json = ? WHERE id = ? AND school_id = ?`
+              )
+              .run(JSON.stringify(design), exists.current_version_id, schoolId)
+            this.db
+              .prepare(
+                `UPDATE student_id_card_templates
+                 SET orientation = ?, width_mm = ?, height_mm = ?, unit = ?, updated_at = ?, version = version + 1
+                 WHERE id = ? AND school_id = ?`
+              )
+              .run(
+                design.orientation,
+                design.widthMm,
+                design.heightMm,
+                design.unit,
+                now,
+                exists.id,
+                schoolId
+              )
+          }
         }
         continue
       }
@@ -473,24 +519,52 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
       throw new Error('System templates cannot be deleted.')
     }
     const count = this.issuedCountForTemplate(schoolId, id)
-    if (!canDeleteTemplate(count)) {
+    if (!canDeleteTemplate(count, tpl.status)) {
       throw new Error(
         'This template has issued cards. Archive it instead so historical cards can still be reprinted.'
       )
     }
     const now = new Date().toISOString()
-    this.db
-      .prepare(
-        `UPDATE student_id_card_templates SET deleted_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND school_id = ?`
+    this.db.transaction(() => {
+      // Drafts may have test cards from Generate — remove them with the draft.
+      if (tpl.status === 'draft' && count > 0) {
+        this.db
+          .prepare(
+            `UPDATE student_id_cards
+             SET deleted_at = ?, updated_at = ?, version = version + 1, sync_status = 'pending'
+             WHERE school_id = ? AND template_id = ? AND deleted_at IS NULL`
+          )
+          .run(now, now, schoolId, id)
+      }
+      const next = {
+        ...tpl,
+        deleted_at: now,
+        updated_at: now,
+        version: tpl.version + 1,
+        sync_status: 'pending' as const,
+      }
+      this.db
+        .prepare(
+          `UPDATE student_id_card_templates
+           SET deleted_at = ?, updated_at = ?, version = version + 1, sync_status = 'pending'
+           WHERE id = ? AND school_id = ?`
+        )
+        .run(now, now, id, schoolId)
+      enqueueSync(
+        this.db,
+        'student_id_card_templates',
+        id,
+        'DELETE',
+        next as unknown as Record<string, unknown>
       )
-      .run(now, now, id, schoolId)
+    })()
   }
 
   studentContext(schoolId: string, studentId: string): StudentCardContext | undefined {
     return this.db
       .prepare(
         `SELECT s.id, s.name, s.student_code, s.gender, s.date_of_birth, s.photo_path, s.status,
-                s.class_id, c.name AS class_name, c.stream AS stream,
+                s.admission_year, s.class_id, c.name AS class_name, c.stream AS stream,
                 sec.name AS department_name, al.name AS level_name
          FROM students s
          LEFT JOIN classes c ON c.id = s.class_id
@@ -507,7 +581,7 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
   ): StudentCardContext[] {
     let sql = `
       SELECT s.id, s.name, s.student_code, s.gender, s.date_of_birth, s.photo_path, s.status,
-             s.class_id, c.name AS class_name, c.stream AS stream,
+             s.admission_year, s.class_id, c.name AS class_name, c.stream AS stream,
              sec.name AS department_name, al.name AS level_name
       FROM students s
       LEFT JOIN classes c ON c.id = s.class_id
@@ -578,6 +652,10 @@ export class StudentIdCardRepository extends BaseRepository<StudentIdCard> {
       'student.class': input.student.class_name || '',
       'student.stream': input.student.stream || '',
       'student.department': input.student.department_name || '',
+      'student.admission_year':
+        input.student.admission_year != null ? String(input.student.admission_year) : '',
+      'student.type': 'STUDENT',
+      'student.qr_payload': studentQrPayload(input.student.student_code || ''),
       'academic.year': input.yearName || '',
       'academic.term': input.termName || '',
       'academic.level': input.student.level_name || '',

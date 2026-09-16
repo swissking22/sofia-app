@@ -21,6 +21,9 @@ export const DEFAULT_SAMPLE_BINDINGS: Record<string, string> = {
   'student.class': 'Form 5A',
   'student.stream': 'A',
   'student.department': 'General',
+  'student.admission_year': '2024',
+  'student.type': 'STUDENT',
+  'student.qr_payload': 'sofia:stu:IAE-2026-00124',
   'academic.year': '2026/2027',
   'academic.term': 'First Term',
   'academic.level': 'Form 5',
@@ -89,6 +92,7 @@ export type CardElement = {
   stroke?: string
   strokeWidth?: number
   shape?: string
+  pathD?: string
   qrBinding?: string
   barcodeBinding?: string
   icon?: string

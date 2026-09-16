@@ -304,7 +304,7 @@ export function registerStudentIdCardsIpc(repos: Repositories): void {
             throw new Error('Access denied.')
           }
           cards().deleteTemplate(schoolId, input.id)
-          audit(repos, s, schoolId, 'id_card.template.archived', input.id, 'Deleted unused template')
+          audit(repos, s, schoolId, 'id_card.template.deleted', input.id, 'Deleted ID card template')
           return { ok: true }
         }
         const status =

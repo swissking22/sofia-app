@@ -3,10 +3,11 @@ import { useRouter } from "next/router";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { IdCardModuleNav } from "../../../../components/id-cards/ModuleNav";
 import { IdCardDesigner } from "../../../../components/id-cards/Designer";
-import { PageAlert } from "../../../../components/students/ui";
+import { ConfirmModal, PageAlert } from "../../../../components/students/ui";
 import {
   fetchIdCardMeta,
   fetchIdCardTemplate,
+  idCardTemplateAction,
   previewIdCard,
   saveIdCardTemplate,
   type CardDesign,
@@ -30,6 +31,7 @@ export default function DesignerPage() {
   >([]);
   const [bindings, setBindings] = React.useState<Record<string, string>>({});
   const [yearId, setYearId] = React.useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
 
   React.useEffect(() => {
     if (!id) return;
@@ -105,6 +107,20 @@ export default function DesignerPage() {
       );
   }
 
+  async function deleteDraft() {
+    if (!id) return;
+    setBusy(true);
+    setError("");
+    const res = await idCardTemplateAction({ id, action: "delete" });
+    setBusy(false);
+    setConfirmDelete(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    await router.push("/students/id-cards/templates");
+  }
+
   return (
     <AppShell
       title="Card designer"
@@ -126,11 +142,26 @@ export default function DesignerPage() {
           previewBindings={bindings}
           onPreviewStudent={(sid) => void onPreviewStudent(sid)}
           onSave={() => void save()}
+          onDeleteDraft={
+            status === "draft" ? () => setConfirmDelete(true) : undefined
+          }
           busy={busy}
         />
       ) : (
         <p className="text-sm text-slate-500">Loading designer…</p>
       )}
+      {confirmDelete ? (
+        <ConfirmModal
+          open={confirmDelete}
+          title="Delete draft template?"
+          description={`Delete "${name}"? Any test cards generated from this draft will be removed. This cannot be undone.`}
+          confirmLabel="Delete draft"
+          danger
+          busy={busy}
+          onConfirm={() => void deleteDraft()}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
     </AppShell>
   );
 }

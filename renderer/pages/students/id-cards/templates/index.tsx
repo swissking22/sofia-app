@@ -21,7 +21,10 @@ import {
   SecondaryButton,
   StatusBadge,
 } from "../../../../components/students/ui";
-import { TableActionGroup, TableIconButton } from "../../../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../../components/ui/TableActions";
 import { Icon } from "../../../../components/ui/Icon";
 import {
   fetchIdCardTemplates,
@@ -46,7 +49,10 @@ type TemplateItem = {
   design: CardDesign;
 };
 
-const CATEGORY_COLORS: Record<string, { badge: string; border: string; accent: string }> = {
+const CATEGORY_COLORS: Record<
+  string,
+  { badge: string; border: string; accent: string }
+> = {
   Premium: {
     badge: "bg-amber-500/10 text-amber-700 border-amber-300/40",
     border: "border-amber-200/70 hover:border-amber-400/80",
@@ -98,9 +104,14 @@ export default function IdCardTemplatesPage() {
   const [templates, setTemplates] = React.useState<TemplateItem[]>([]);
   const [activeCategory, setActiveCategory] = React.useState<string>("All");
   const [search, setSearch] = React.useState("");
-  const [previewTemplate, setPreviewTemplate] = React.useState<TemplateItem | null>(null);
-  const [previewSide, setPreviewSide] = React.useState<"both" | "front" | "back">("both");
-  const [deleteConfirm, setDeleteConfirm] = React.useState<TemplateItem | null>(null);
+  const [previewTemplate, setPreviewTemplate] =
+    React.useState<TemplateItem | null>(null);
+  const [previewSide, setPreviewSide] = React.useState<
+    "both" | "front" | "back"
+  >("both");
+  const [deleteConfirm, setDeleteConfirm] = React.useState<TemplateItem | null>(
+    null,
+  );
 
   const load = React.useCallback(async () => {
     const res = await fetchIdCardTemplates();
@@ -127,7 +138,8 @@ export default function IdCardTemplatesPage() {
         setError(res.ok ? "Could not prepare template." : res.error);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to use template.";
+      const msg =
+        err instanceof Error ? err.message : "Failed to use template.";
       setError(msg);
     } finally {
       setBusy(false);
@@ -144,7 +156,10 @@ export default function IdCardTemplatesPage() {
     }
   }
 
-  async function act(id: string, action: "duplicate" | "activate" | "archive" | "delete") {
+  async function act(
+    id: string,
+    action: "duplicate" | "activate" | "archive" | "delete",
+  ) {
     setBusy(true);
     setError("");
     const res = await idCardTemplateAction({ id, action });
@@ -152,7 +167,9 @@ export default function IdCardTemplatesPage() {
     if (!res.ok) {
       setError(res.error);
     } else {
-      setSuccess("Template updated.");
+      setSuccess(
+        action === "delete" ? "Draft template deleted." : "Template updated.",
+      );
       setDeleteConfirm(null);
       await load();
     }
@@ -164,17 +181,29 @@ export default function IdCardTemplatesPage() {
 
   const filteredSystem = systemTemplates.filter((t) => {
     if (activeCategory !== "All" && t.category !== activeCategory) return false;
-    if (search && !t.name.toLowerCase().includes(search.toLowerCase()) && !t.description.toLowerCase().includes(search.toLowerCase())) {
+    if (
+      search &&
+      !t.name.toLowerCase().includes(search.toLowerCase()) &&
+      !t.description.toLowerCase().includes(search.toLowerCase())
+    ) {
       return false;
     }
     return true;
   });
 
   const filteredSchool = schoolTemplates.filter((t) => {
-    if (activeCategory !== "All" && activeCategory !== "School Copies" && t.category !== activeCategory) {
+    if (
+      activeCategory !== "All" &&
+      activeCategory !== "School Copies" &&
+      t.category !== activeCategory
+    ) {
       return false;
     }
-    if (search && !t.name.toLowerCase().includes(search.toLowerCase()) && !t.description.toLowerCase().includes(search.toLowerCase())) {
+    if (
+      search &&
+      !t.name.toLowerCase().includes(search.toLowerCase()) &&
+      !t.description.toLowerCase().includes(search.toLowerCase())
+    ) {
       return false;
     }
     return true;
@@ -233,7 +262,8 @@ export default function IdCardTemplatesPage() {
       </div>
 
       {/* Showcase Section: System Signature Templates */}
-      {(activeCategory === "All" || activeCategory !== "School Copies") && filteredSystem.length > 0 ? (
+      {(activeCategory === "All" || activeCategory !== "School Copies") &&
+      filteredSystem.length > 0 ? (
         <section className="mb-10">
           <div className="mb-4 flex items-center justify-between">
             <div>
@@ -241,7 +271,8 @@ export default function IdCardTemplatesPage() {
                 Institutional Master Templates
               </h2>
               <p className="text-xs text-slate-400">
-                CR80 credit card standard (85.60 × 53.98 mm) · Resolution-independent · Ready to personalize
+                CR80 credit card standard (85.60 × 53.98 mm) ·
+                Resolution-independent · Ready to personalize
               </p>
             </div>
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
@@ -252,7 +283,8 @@ export default function IdCardTemplatesPage() {
 
           <div className="grid gap-6 xl:grid-cols-3">
             {filteredSystem.map((t) => {
-              const catTheme = CATEGORY_COLORS[t.category || ""] || CATEGORY_COLORS.Premium;
+              const catTheme =
+                CATEGORY_COLORS[t.category || ""] || CATEGORY_COLORS.Premium;
               const highlights = TEMPLATE_HIGHLIGHTS[t.sample_key || ""] || [];
 
               return (
@@ -270,7 +302,11 @@ export default function IdCardTemplatesPage() {
                           {t.category || "Institutional"}
                         </span>
                         <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600">
-                          <svg className="h-2.5 w-2.5 text-slate-400" viewBox="0 0 16 16" fill="currentColor">
+                          <svg
+                            className="h-2.5 w-2.5 text-slate-400"
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                          >
                             <path d="M8 1a3.5 3.5 0 00-3.5 3.5V6H4a2 2 0 00-2 2v6a2 2 0 002 2h8a2 2 0 002-2V8a2 2 0 00-2-2h-.5V4.5A3.5 3.5 0 008 1zm2 5H6V4.5a2 2 0 114 0V6z" />
                           </svg>
                           System Template
@@ -299,14 +335,36 @@ export default function IdCardTemplatesPage() {
                       <div className="flex items-center justify-center gap-2 overflow-x-auto py-1">
                         {/* Front scaled thumbnail */}
                         <div className="shrink-0 overflow-hidden rounded-md border border-slate-200/80 shadow-xs transition hover:scale-[1.02]">
-                          <div style={{ transform: "scale(0.48)", transformOrigin: "top left", width: 165, height: 104 }}>
-                            <CardSurface design={t.design} side="front" unit="px" />
+                          <div
+                            style={{
+                              transform: "scale(0.48)",
+                              transformOrigin: "top left",
+                              width: 165,
+                              height: 104,
+                            }}
+                          >
+                            <CardSurface
+                              design={t.design}
+                              side="front"
+                              unit="px"
+                            />
                           </div>
                         </div>
                         {/* Back scaled thumbnail */}
                         <div className="shrink-0 overflow-hidden rounded-md border border-slate-200/80 shadow-xs transition hover:scale-[1.02]">
-                          <div style={{ transform: "scale(0.48)", transformOrigin: "top left", width: 165, height: 104 }}>
-                            <CardSurface design={t.design} side="back" unit="px" />
+                          <div
+                            style={{
+                              transform: "scale(0.48)",
+                              transformOrigin: "top left",
+                              width: 165,
+                              height: 104,
+                            }}
+                          >
+                            <CardSurface
+                              design={t.design}
+                              side="back"
+                              unit="px"
+                            />
                           </div>
                         </div>
                       </div>
@@ -316,7 +374,10 @@ export default function IdCardTemplatesPage() {
                     {highlights.length > 0 ? (
                       <ul className="mt-4 space-y-1.5">
                         {highlights.map((h, i) => (
-                          <li key={i} className="flex items-center gap-2 text-xs text-slate-600">
+                          <li
+                            key={i}
+                            className="flex items-center gap-2 text-xs text-slate-600"
+                          >
                             <span className="h-1.5 w-1.5 rounded-full bg-(--sofia-primary) shrink-0" />
                             <span className="line-clamp-1">{h}</span>
                           </li>
@@ -346,7 +407,11 @@ export default function IdCardTemplatesPage() {
                         className="flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                         title="Inspect full-size front and back cards"
                       >
-                        <Icon icon={ViewIcon} size={14} className="text-slate-500" />
+                        <Icon
+                          icon={ViewIcon}
+                          size={14}
+                          className="text-slate-500"
+                        />
                         <span>Preview</span>
                       </button>
 
@@ -357,7 +422,11 @@ export default function IdCardTemplatesPage() {
                         className="flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                         title="Copy into designer"
                       >
-                        <Icon icon={PencilEdit01Icon} size={14} className="text-slate-500" />
+                        <Icon
+                          icon={PencilEdit01Icon}
+                          size={14}
+                          className="text-slate-500"
+                        />
                         <span>Customize</span>
                       </button>
                     </div>
@@ -374,39 +443,53 @@ export default function IdCardTemplatesPage() {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">
-              {activeCategory === "School Copies" ? "Customized School Templates" : "School ID Card Library"}
+              {activeCategory === "School Copies"
+                ? "Customized School Templates"
+                : "School ID Card Library"}
             </h2>
             <p className="text-xs text-slate-400">
               Templates configured and saved for this school institution
             </p>
           </div>
           <span className="text-xs font-semibold text-slate-500">
-            {filteredSchool.length} {filteredSchool.length === 1 ? "template" : "templates"}
+            {filteredSchool.length}{" "}
+            {filteredSchool.length === 1 ? "template" : "templates"}
           </span>
         </div>
 
         {filteredSchool.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-8 text-center">
-            <p className="text-sm font-medium text-slate-600">No school-customized templates yet.</p>
+            <p className="text-sm font-medium text-slate-600">
+              No school-customized templates yet.
+            </p>
             <p className="mt-1 text-xs text-slate-400">
-              Click &ldquo;Use Template&rdquo; on any institutional template above to personalize it for your school.
+              Click &ldquo;Use Template&rdquo; on any institutional template
+              above to personalize it for your school.
             </p>
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             {filteredSchool.map((t) => (
-              <article key={t.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+              <article
+                key={t.id}
+                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-semibold text-slate-900">{t.name}</h3>
                       <StatusBadge status={t.status} />
                     </div>
-                    <p className="text-xs text-slate-500">{t.description || "School customized template"}</p>
+                    <p className="text-xs text-slate-500">
+                      {t.description || "School customized template"}
+                    </p>
                     <p className="mt-1 text-[11px] text-slate-400">
-                      {t.card_type} · {t.orientation} · Version {t.current_version_number}
-                      {t.updated_by_email ? ` · by ${t.updated_by_email}` : ""} · Updated{" "}
-                      {new Date(t.updated_at).toLocaleDateString()}
+                      {t.card_type} · {t.orientation} · Version{" "}
+                      {t.current_version_number}
+                      {t.updated_by_email
+                        ? ` · by ${t.updated_by_email}`
+                        : ""}{" "}
+                      · Updated {new Date(t.updated_at).toLocaleDateString()}
                     </p>
                   </div>
                 </div>
@@ -414,12 +497,26 @@ export default function IdCardTemplatesPage() {
                 {/* Card front & back preview */}
                 <div className="mt-3 flex items-center gap-3 overflow-x-auto rounded-xl bg-slate-50 p-2.5">
                   <div className="shrink-0 overflow-hidden rounded-md border border-slate-200 shadow-xs">
-                    <div style={{ transform: "scale(0.5)", transformOrigin: "top left", width: 172, height: 108 }}>
+                    <div
+                      style={{
+                        transform: "scale(0.5)",
+                        transformOrigin: "top left",
+                        width: 172,
+                        height: 108,
+                      }}
+                    >
                       <CardSurface design={t.design} side="front" unit="px" />
                     </div>
                   </div>
                   <div className="shrink-0 overflow-hidden rounded-md border border-slate-200 shadow-xs">
-                    <div style={{ transform: "scale(0.5)", transformOrigin: "top left", width: 172, height: 108 }}>
+                    <div
+                      style={{
+                        transform: "scale(0.5)",
+                        transformOrigin: "top left",
+                        width: 172,
+                        height: 108,
+                      }}
+                    >
                       <CardSurface design={t.design} side="back" unit="px" />
                     </div>
                   </div>
@@ -428,11 +525,28 @@ export default function IdCardTemplatesPage() {
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
                   <div className="flex items-center gap-2">
                     <Link href={`/students/id-cards/designer/${t.id}`}>
-                      <PrimaryButton className="py-1.5! text-xs!">Open designer</PrimaryButton>
+                      <PrimaryButton className="py-1.5! text-xs!">
+                        Open designer
+                      </PrimaryButton>
                     </Link>
-                    <Link href={`/students/id-cards/generate?template=${t.id}`}>
-                      <SecondaryButton className="py-1.5! text-xs!">Generate cards</SecondaryButton>
-                    </Link>
+                    {t.status === "active" ? (
+                      <Link
+                        href={`/students/id-cards/generate?template=${t.id}`}
+                      >
+                        <SecondaryButton className="py-1.5! text-xs!">
+                          Generate cards
+                        </SecondaryButton>
+                      </Link>
+                    ) : null}
+                    {t.status === "draft" ? (
+                      <SecondaryButton
+                        className="py-1.5! text-xs! text-red-600 ring-red-200 hover:bg-red-50"
+                        disabled={busy}
+                        onClick={() => setDeleteConfirm(t)}
+                      >
+                        Delete draft
+                      </SecondaryButton>
+                    ) : null}
                   </div>
 
                   <TableActionGroup align="end">
@@ -467,7 +581,7 @@ export default function IdCardTemplatesPage() {
                     ) : null}
                     <TableIconButton
                       icon={Delete02Icon}
-                      label="Delete"
+                      label={t.status === "draft" ? "Delete draft" : "Delete"}
                       tone="danger"
                       onClick={() => setDeleteConfirm(t)}
                     />
@@ -504,7 +618,9 @@ export default function IdCardTemplatesPage() {
                     void handleUseTemplate(target);
                   }}
                 >
-                  {previewTemplate.is_system ? "Use This Template & Open Designer" : "Open in Designer"}
+                  {previewTemplate.is_system
+                    ? "Use This Template & Open Designer"
+                    : "Open in Designer"}
                 </PrimaryButton>
               </div>
             </div>
@@ -518,7 +634,9 @@ export default function IdCardTemplatesPage() {
                   type="button"
                   onClick={() => setPreviewSide("both")}
                   className={`rounded-md px-3 py-1 font-semibold transition ${
-                    previewSide === "both" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600"
+                    previewSide === "both"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600"
                   }`}
                 >
                   Front & Back
@@ -527,7 +645,9 @@ export default function IdCardTemplatesPage() {
                   type="button"
                   onClick={() => setPreviewSide("front")}
                   className={`rounded-md px-3 py-1 font-semibold transition ${
-                    previewSide === "front" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600"
+                    previewSide === "front"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600"
                   }`}
                 >
                   Front Only
@@ -536,7 +656,9 @@ export default function IdCardTemplatesPage() {
                   type="button"
                   onClick={() => setPreviewSide("back")}
                   className={`rounded-md px-3 py-1 font-semibold transition ${
-                    previewSide === "back" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600"
+                    previewSide === "back"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600"
                   }`}
                 >
                   Back Only
@@ -556,7 +678,11 @@ export default function IdCardTemplatesPage() {
                     Card Front
                   </span>
                   <div className="overflow-hidden rounded-xl border border-slate-300 shadow-xl ring-1 ring-black/5">
-                    <CardSurface design={previewTemplate.design} side="front" unit="px" />
+                    <CardSurface
+                      design={previewTemplate.design}
+                      side="front"
+                      unit="px"
+                    />
                   </div>
                 </div>
               )}
@@ -567,7 +693,11 @@ export default function IdCardTemplatesPage() {
                     Card Back
                   </span>
                   <div className="overflow-hidden rounded-xl border border-slate-300 shadow-xl ring-1 ring-black/5">
-                    <CardSurface design={previewTemplate.design} side="back" unit="px" />
+                    <CardSurface
+                      design={previewTemplate.design}
+                      side="back"
+                      unit="px"
+                    />
                   </div>
                 </div>
               )}
@@ -577,7 +707,9 @@ export default function IdCardTemplatesPage() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs">
               <div>
                 <p className="text-slate-400">Orientation</p>
-                <p className="font-semibold text-slate-800 capitalize">{previewTemplate.orientation}</p>
+                <p className="font-semibold text-slate-800 capitalize">
+                  {previewTemplate.orientation}
+                </p>
               </div>
               <div>
                 <p className="text-slate-400">Dimensions</p>
@@ -586,12 +718,16 @@ export default function IdCardTemplatesPage() {
               <div>
                 <p className="text-slate-400">Type / Classification</p>
                 <p className="font-semibold text-slate-800 capitalize">
-                  {previewTemplate.is_system ? "System Master" : "School Custom"}
+                  {previewTemplate.is_system
+                    ? "System Master"
+                    : "School Custom"}
                 </p>
               </div>
               <div>
                 <p className="text-slate-400">Dynamic Bindings</p>
-                <p className="font-semibold text-slate-800">Photo, Crest, QR, Barcode</p>
+                <p className="font-semibold text-slate-800">
+                  Photo, Crest, QR, Barcode
+                </p>
               </div>
             </div>
           </div>
@@ -602,9 +738,21 @@ export default function IdCardTemplatesPage() {
       {deleteConfirm ? (
         <ConfirmModal
           open={Boolean(deleteConfirm)}
-          title="Delete Template"
-          description={`Are you sure you want to delete "${deleteConfirm.name}"? This action cannot be undone.`}
-          confirmLabel="Delete template"
+          title={
+            deleteConfirm.status === "draft"
+              ? "Delete draft template?"
+              : "Delete Template"
+          }
+          description={
+            deleteConfirm.status === "draft"
+              ? `Delete "${deleteConfirm.name}"? Any test cards generated from this draft will be removed. This cannot be undone.`
+              : `Are you sure you want to delete "${deleteConfirm.name}"? Templates with issued cards must be archived instead. This cannot be undone.`
+          }
+          confirmLabel={
+            deleteConfirm.status === "draft"
+              ? "Delete draft"
+              : "Delete template"
+          }
           danger
           busy={busy}
           onConfirm={() => void act(deleteConfirm.id, "delete")}

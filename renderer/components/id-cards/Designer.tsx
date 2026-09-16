@@ -228,6 +228,7 @@ export function IdCardDesigner({
   onPreviewStudent,
   previewBindings,
   onSave,
+  onDeleteDraft,
   busy,
 }: {
   name: string;
@@ -239,6 +240,7 @@ export function IdCardDesigner({
   onPreviewStudent: (id: string | null) => void;
   previewBindings: Record<string, string>;
   onSave: () => void;
+  onDeleteDraft?: () => void;
   busy: boolean;
 }) {
   const [side, setSide] = React.useState<"front" | "back">("front");
@@ -433,6 +435,16 @@ export function IdCardDesigner({
           >
             {busy ? "Saving…" : "Save"}
           </button>
+          {onDeleteDraft ? (
+            <button
+              type="button"
+              className="rounded-lg bg-white px-3 py-1.5 text-sm text-red-600 ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-60"
+              onClick={onDeleteDraft}
+              disabled={busy}
+            >
+              Delete draft
+            </button>
+          ) : null}
           <span className="mx-1 h-4 w-px bg-slate-300" />
           {(["front", "back"] as const).map((s) => (
             <button

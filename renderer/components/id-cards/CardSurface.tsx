@@ -227,16 +227,28 @@ function ElementView({
           : undefined,
         borderRadius: radius,
         background:
-          el.type === "shape"
+          el.type === "shape" && el.shape !== "path" && el.shape !== "line"
             ? el.fill === "transparent"
               ? "transparent"
               : el.fill
             : undefined,
-        outline: el.type === "shape" && el.stroke ? `${el.strokeWidth || 0.3}mm solid ${el.stroke}` : undefined,
+        outline:
+          el.type === "shape" && el.shape !== "path" && el.stroke
+            ? `${el.strokeWidth || 0.3}mm solid ${el.stroke}`
+            : undefined,
       }}
     >
       {el.type === "text" ? (
-        <div className="h-full w-full whitespace-pre-wrap leading-tight">{text}</div>
+        <div
+          className="h-full w-full leading-tight"
+          style={{
+            overflow: "hidden",
+            wordBreak: "break-word",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {text}
+        </div>
       ) : null}
       {el.type === "image" && image ? (
         <img
@@ -247,13 +259,13 @@ function ElementView({
         />
       ) : null}
       {el.type === "image" && !image ? (
-        <div className="flex h-full w-full items-center justify-center bg-slate-200 text-[8px] text-slate-500">
-          Photo
+        <div className="flex h-full w-full items-center justify-center bg-slate-100 text-[7px] font-medium text-slate-500">
+          No photo
         </div>
       ) : null}
       {el.type === "qr" ? (
         el.qrSvg ? (
-          <div className="h-full w-full" dangerouslySetInnerHTML={{ __html: el.qrSvg }} />
+          <div className="h-full w-full bg-white p-[4%]" dangerouslySetInnerHTML={{ __html: el.qrSvg }} />
         ) : (
           <PlaceholderQr />
         )
@@ -268,6 +280,16 @@ function ElementView({
         )
       ) : null}
       {el.type === "icon" ? <IconGlyph name={el.icon} /> : null}
+      {el.type === "shape" && el.shape === "path" && el.pathD ? (
+        <svg
+          viewBox={`0 0 ${el.w} ${el.h}`}
+          className="h-full w-full"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <path d={el.pathD} fill={el.fill || "#0F1C2E"} />
+        </svg>
+      ) : null}
       {el.type === "shape" && el.shape === "line" ? (
         <div className="h-full w-full" style={{ background: el.stroke || el.fill || "#111" }} />
       ) : null}

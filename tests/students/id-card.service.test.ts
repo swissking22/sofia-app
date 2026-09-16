@@ -27,6 +27,10 @@ import {
   wizardDesign,
 } from '../../main/domain/id-card-templates'
 import {
+  parseStudentQrPayload,
+  studentQrPayload,
+} from '../../main/domain/id-card-classic-tokens'
+import {
   DEFAULT_ACADEMIC_CREST,
   DEFAULT_SAMPLE_SIGNATURE,
   DEFAULT_SAMPLE_STUDENT_PHOTO,
@@ -160,9 +164,13 @@ describe('template versioning and front/back', () => {
     expect(parseDesign(JSON.stringify(design)).widthMm).toBe(design.widthMm)
   })
 
-  it('does not delete templates that still have issued cards', () => {
+  it('allows deleting draft templates even when cards exist; blocks active ones with cards', () => {
     expect(canDeleteTemplate(3)).toBe(false)
     expect(canDeleteTemplate(0)).toBe(true)
+    expect(canDeleteTemplate(3, 'draft')).toBe(true)
+    expect(canDeleteTemplate(0, 'draft')).toBe(true)
+    expect(canDeleteTemplate(1, 'active')).toBe(false)
+    expect(canDeleteTemplate(0, 'archived')).toBe(true)
   })
 
   it('seeds five starting designs including Classic University Vertical', () => {
@@ -179,7 +187,7 @@ describe('template versioning and front/back', () => {
     expect(heritage?.name).toBe('THE HERITAGE')
     expect(heritage?.category).toBe('Premium')
     expect(heritage?.is_system).toBe(true)
-    expect(heritage?.orientation).toBe('landscape')
+    expect(heritage?.orientation).toBe('portrait')
 
     expect(academic).toBeDefined()
     expect(academic?.name).toBe('THE ACADEMIC')
@@ -194,17 +202,35 @@ describe('template versioning and front/back', () => {
     expect(signature?.orientation).toBe('landscape')
   })
 
-  it('guarantees CR80 landscape format and front+back elements for all three flagship templates', () => {
+  it('guarantees CR80 dimensions and front+back elements for all three flagship templates', () => {
     const designs = [
-      { name: 'Heritage', design: theHeritageDesign() },
-      { name: 'Academic', design: theAcademicDesign() },
-      { name: 'Signature', design: theSignatureDesign() },
+      {
+        name: 'Heritage',
+        design: theHeritageDesign(),
+        orientation: 'portrait' as const,
+        widthMm: 53.98,
+        heightMm: 85.6,
+      },
+      {
+        name: 'Academic',
+        design: theAcademicDesign(),
+        orientation: 'landscape' as const,
+        widthMm: 85.6,
+        heightMm: 53.98,
+      },
+      {
+        name: 'Signature',
+        design: theSignatureDesign(),
+        orientation: 'landscape' as const,
+        widthMm: 85.6,
+        heightMm: 53.98,
+      },
     ]
 
-    for (const { design } of designs) {
-      expect(design.orientation).toBe('landscape')
-      expect(design.widthMm).toBe(85.6)
-      expect(design.heightMm).toBe(53.98)
+    for (const { name, design, orientation, widthMm, heightMm } of designs) {
+      expect(design.orientation).toBe(orientation)
+      expect(design.widthMm).toBe(widthMm)
+      expect(design.heightMm).toBe(heightMm)
       expect(design.unit).toBe('mm')
 
       const frontElements = design.elements.filter((e) => e.side === 'front')
@@ -213,20 +239,76 @@ describe('template versioning and front/back', () => {
       expect(frontElements.length).toBeGreaterThan(5)
       expect(backElements.length).toBeGreaterThan(4)
 
-      // Must have student photo binding on front
       expect(
         frontElements.some((e) => e.type === 'image' && e.imageBinding === 'student.photo')
       ).toBe(true)
 
-      // Must have school logo/crest binding on front
       expect(
         frontElements.some((e) => e.type === 'image' && e.imageBinding === 'school.logo')
       ).toBe(true)
 
-      // Must have QR and barcode elements on card
       expect(design.elements.some((e) => e.type === 'qr')).toBe(true)
-      expect(design.elements.some((e) => e.type === 'barcode')).toBe(true)
+      // Template 1 Classic is QR-only; Academic & Signature keep barcode
+      if (name === 'Heritage') {
+        expect(design.elements.some((e) => e.type === 'barcode')).toBe(false)
+      } else {
+        expect(design.elements.some((e) => e.type === 'barcode')).toBe(true)
+      }
     }
+  })
+
+  it('Template 1 Classic uses 1:1 photo and keeps fields above footer decoration', () => {
+    const design = theHeritageDesign()
+    const photo = design.elements.find(
+      (e) => e.id === 'c1f_photo' && e.imageBinding === 'student.photo'
+    )
+    expect(photo?.w).toBe(24)
+    expect(photo?.h).toBe(24)
+    expect(photo?.w).toBe(photo?.h)
+    expect(photo?.objectFit).toBe('cover')
+
+    expect(design.elements.some((e) => e.type === 'barcode')).toBe(false)
+
+    const qr = design.elements.find((e) => e.type === 'qr' && e.side === 'back')
+    expect(qr?.qrBinding).toBe('{{student.qr_payload}}')
+    expect(design.elements.some((e) => e.type === 'qr' && e.side === 'front')).toBe(false)
+
+    const footerTop =
+      design.heightMm -
+      (design.elements.find((e) => e.id === 'c1f_foot_blue')?.h ?? 11) +
+      0
+    const footBlue = design.elements.find((e) => e.id === 'c1f_foot_blue')
+    expect(footBlue).toBeDefined()
+    const footerStartY = footBlue!.y
+
+    const frontText = design.elements.filter(
+      (e) => e.side === 'front' && e.type === 'text' && e.id.startsWith('c1f_')
+    )
+    for (const el of frontText) {
+      expect(el.y + el.h).toBeLessThanOrEqual(footerStartY - 3)
+    }
+
+    expect(design.elements.some((e) => e.shape === 'path' && e.pathD)).toBe(true)
+    expect(JSON.stringify(design)).not.toMatch(/#1F8A4C|#2BA85D/i)
+    expect(JSON.stringify(design)).toMatch(/#1580CF/i)
+  })
+
+  it('QR payload is deterministic from student_code and does not embed PII', () => {
+    const codeA = 'IAE-2026-00124'
+    const codeB = 'IAE-2026-00125'
+    const payloadA = studentQrPayload(codeA)
+    const payloadB = studentQrPayload(codeB)
+    expect(payloadA).toBe('sofia:stu:IAE-2026-00124')
+    expect(payloadA).toBe(studentQrPayload(codeA))
+    expect(payloadA).not.toBe(payloadB)
+    expect(payloadA).not.toMatch(/phone|email|address|parent|medical/i)
+
+    expect(parseStudentQrPayload(payloadA)).toBe(codeA)
+    expect(parseStudentQrPayload(codeA)).toBe(codeA)
+    expect(parseStudentQrPayload('sofia:v1:ID-8A72F91C')).toBeNull()
+
+    expect(qrSvg(payloadA, 128)).toContain('<svg')
+    expect(qrSvg(payloadA, 128)).toBe(qrSvg(payloadA, 128))
   })
 
   it('includes valid offline vector data URIs for crest, photo, and signature', () => {

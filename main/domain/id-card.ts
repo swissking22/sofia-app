@@ -43,6 +43,7 @@ export type ShapeKind =
   | 'circle'
   | 'ellipse'
   | 'line'
+  | 'path'
 export type ImageFit = 'cover' | 'contain' | 'fill'
 export type ImageBinding =
   | 'student.photo'
@@ -110,6 +111,8 @@ export interface CardElement {
   stroke?: string
   strokeWidth?: number
   shape?: ShapeKind
+  /** SVG path `d` for shape:'path' (coordinates in element mm space). */
+  pathD?: string
   qrBinding?: string
   barcodeBinding?: string
   icon?: IconKind
@@ -203,6 +206,9 @@ export const VARIABLE_CATALOG: VariableDef[] = [
   { key: 'student.class', label: 'Class', category: 'student', source: 'classes.name' },
   { key: 'student.stream', label: 'Stream', category: 'student', source: 'classes.stream' },
   { key: 'student.department', label: 'Department', category: 'student', source: 'sections.name' },
+  { key: 'student.admission_year', label: 'Admission Year', category: 'student', source: 'students.admission_year' },
+  { key: 'student.type', label: 'Student Type', category: 'student', source: 'students.status' },
+  { key: 'student.qr_payload', label: 'Student QR Payload', category: 'student', source: 'students.student_code' },
   { key: 'staff.name', label: 'Staff Name', category: 'staff', source: 'staff.name' },
   { key: 'staff.staff_id', label: 'Staff ID', category: 'staff', source: 'staff.employee_code' },
   { key: 'staff.role', label: 'Staff Role', category: 'staff', source: 'staff.job_role' },
@@ -294,6 +300,9 @@ export function sampleBindings(): BindingMap {
     'student.class': 'Form 5A',
     'student.stream': 'A',
     'student.department': 'General',
+    'student.admission_year': '2024',
+    'student.type': 'STUDENT',
+    'student.qr_payload': 'sofia:stu:IAE-2026-00124',
     'staff.name': 'Jean Mbarga',
     'staff.staff_id': 'STF-0042',
     'staff.role': 'Teacher',
@@ -527,7 +536,12 @@ export function validityWindow(
   }
 }
 
-export function canDeleteTemplate(issuedCount: number): boolean {
+/** Draft school templates are always removable; active/archived only when unused. */
+export function canDeleteTemplate(
+  issuedCount: number,
+  status?: TemplateStatus
+): boolean {
+  if (status === 'draft') return true
   return issuedCount === 0
 }
 
