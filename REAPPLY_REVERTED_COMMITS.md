@@ -103,7 +103,7 @@ git push origin 'reapply/*'
 - [ ] Baseline at `4d59a3c` launches on Windows
 - [x] After commit 1 — launches  *(cleared on `bisect/windows-launch`)*
 - [x] After commit 2 — launches  *(cleared on `bisect/windows-launch`)*
-- [ ] After commit 3 — launches *(updater / userData)*  *(FAILED stock + startup-order fix; testing restore of appId `com.sofia.app` / productName `SOFIA`)*
+- [ ] After commit 3 — launches *(updater / userData)*  *(appId restore still failed; next: fully disable electron-updater import graph)*
 - [ ] After commit 4 — launches *(cloud-config)*
 - [ ] After commit 5 — launches + CI packaging OK
 - [ ] (Optional) stash WIP re-applied

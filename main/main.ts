@@ -11,17 +11,33 @@ import { needsSetup, ensureValidSession } from './auth'
 
 const isProd = process.env.NODE_ENV === 'production'
 
-console.log('[SOFIA STARTUP] module loaded')
+function startupLog(message: string, detail?: unknown): void {
+  const line =
+    detail !== undefined
+      ? `[SOFIA STARTUP] ${message} ${String(detail)}`
+      : `[SOFIA STARTUP] ${message}`
+  console.log(line)
+  try {
+    const logPath = path.join(app.getPath('userData'), 'sofia-startup.log')
+    fs.appendFileSync(
+      logPath,
+      `${new Date().toISOString()} ${line}\n`,
+      'utf8'
+    )
+  } catch {
+    /* ignore log write failures */
+  }
+}
+
+startupLog('module loaded', app.getPath('userData'))
 
 if (isProd) {
   serve({ directory: 'app' })
 }
 
 function getStartPath(
-  repos: ReturnType<typeof createRepositories>,
-  needsRecoveryUi: boolean
+  repos: ReturnType<typeof createRepositories>
 ): string {
-  if (needsRecoveryUi) return 'recovery'
   if (ensureValidSession(repos)) return 'home'
   if (needsSetup(repos)) return 'register'
   return 'login'
@@ -39,40 +55,27 @@ function getRuntimeIconPath(): string | undefined {
 ;(async () => {
   try {
     await app.whenReady()
-    console.log('[SOFIA STARTUP] app.whenReady complete')
+    startupLog('app.whenReady complete')
 
     const iconPath = getRuntimeIconPath()
     if (iconPath && process.platform === 'darwin' && app.dock) {
       app.dock.setIcon(iconPath)
     }
 
-    console.log('[SOFIA STARTUP] database opening', app.getPath('userData'))
+    startupLog('database opening', app.getPath('userData'))
     const db = getDatabase()
-    console.log('[SOFIA STARTUP] database opened')
+    startupLog('database opened')
 
     const repos = createRepositories(db)
-    console.log('[SOFIA STARTUP] repositories created')
+    startupLog('repositories created')
 
     registerIpcHandlers(db, repos)
-    console.log('[SOFIA STARTUP] IPC registered')
+    startupLog('IPC registered (updater IPC disabled for bisect)')
 
-    // Load updater AFTER ready + userData pin so electron-updater / store
-    // never initialize against the pre-pin path during module import.
-    let needsRecoveryUi = false
-    let initAutoUpdater: ((window: Electron.BrowserWindow) => void) | null =
-      null
-    try {
-      const updater = await import('./updater')
-      const recovery = updater.completeUpdaterStartupEvaluation(db)
-      needsRecoveryUi = recovery.needsRecoveryUi
-      initAutoUpdater = updater.initAutoUpdater
-      console.log('[SOFIA STARTUP] updater startup evaluation complete')
-    } catch (err) {
-      console.error('[SOFIA STARTUP] updater evaluation failed (non-fatal)', err)
-    }
-
-    const startPath = getStartPath(repos, needsRecoveryUi)
-    console.log('[SOFIA STARTUP] start path resolved', startPath)
+    // BISECT: updater fully disabled — do not import('./updater') or
+    // electron-updater at all until Windows launch is restored.
+    const startPath = getStartPath(repos)
+    startupLog('start path resolved', startPath)
 
     const mainWindow = createWindow('main', {
       width: 1440,
@@ -85,9 +88,9 @@ function getRuntimeIconPath(): string | undefined {
         preload: path.join(import.meta.dirname, 'preload.js'),
       },
     })
-    console.log('[SOFIA STARTUP] window created')
+    startupLog('window created')
 
-    console.log('[SOFIA STARTUP] window loading', startPath)
+    startupLog('window loading', startPath)
     if (isProd) {
       await mainWindow.loadURL(`app://./${startPath}`)
     } else {
@@ -96,16 +99,10 @@ function getRuntimeIconPath(): string | undefined {
       mainWindow.webContents.openDevTools()
     }
 
-    try {
-      initAutoUpdater?.(mainWindow)
-      console.log('[SOFIA STARTUP] auto-updater initialized')
-    } catch (err) {
-      console.error('[SOFIA STARTUP] auto-updater init failed (non-fatal)', err)
-    }
-
-    console.log('[SOFIA STARTUP] startup complete')
+    startupLog('startup complete (updater disabled)')
   } catch (err) {
-    console.error('[SOFIA STARTUP] FAILURE', err)
+    const message = err instanceof Error ? err.stack || err.message : String(err)
+    startupLog('FAILURE', message)
     console.error('[sofia] Failed to start:', err)
     app.quit()
   }

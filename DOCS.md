@@ -598,6 +598,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | Windows launch bisect: appId restore alone did not fix launch. Disabling entire `electron-updater` import graph on `bisect/windows-launch` (no updater IPC, no UpdateNotifier, no dynamic updater import) while keeping userData pin — isolates whether electron-updater itself crashes packaged Windows. Startup also writes `%APPDATA%\\sofia\\sofia-startup.log`. |
 | 2026-09-15 | Windows launch bisect: after commit 3 still failed with startup-order fix; next isolation — restore original `appId` `com.sofia.app` / productName `SOFIA` (commit 3 had changed these to `com.sofia.school` / `Sofia`). |
 | 2026-09-15 | Bisect Windows launch: re-applied sync/packaging commit (`reapply/01`) on branch `bisect/windows-launch` while keeping current icon + signing config — test whether sync alone breaks Windows launch. |
 | 2026-09-15 | Windows launch bisect: commits 1–2 (sync / supabase-js) launch OK; **commit 3 (updater + userData pin)** breaks packaged Windows. Fix on `bisect/windows-launch`: pin `userData` before other imports, lazy `electron-store`, defer `electron-updater` import until after `app.whenReady`, non-fatal updater evaluation. |

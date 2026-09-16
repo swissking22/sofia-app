@@ -4,7 +4,8 @@ import { useRouter } from "next/router";
 import { authGetSession, authLogout, type SessionData } from "../../lib/auth";
 import { AppSidebar } from "./AppSidebar";
 import { AppHeader } from "./AppHeader";
-import { UpdateNotifier } from "../updates/UpdateNotifier";
+// BISECT: UpdateNotifier disabled with updater IPC / electron-updater.
+// import { UpdateNotifier } from "../updates/UpdateNotifier";
 
 interface AppShellProps {
   title: string;
@@ -82,7 +83,7 @@ export function AppShell({
           </main>
         </div>
       </div>
-      <UpdateNotifier />
+      {/* BISECT: <UpdateNotifier /> */}
     </>
   );
 }
