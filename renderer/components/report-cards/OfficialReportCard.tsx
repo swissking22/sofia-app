@@ -1,4 +1,3 @@
-import React from "react";
 import {
   formatDisplayDate,
   formatReportScore,
@@ -37,7 +36,10 @@ export function OfficialReportCard({ payload, generatedAt }: Props) {
       <header className="rc-gov-header">
         <div className="rc-gov-col rc-gov-fr">
           {Array.from({ length: rowCount }).map((_, i) => (
-            <p key={`fr-${i}`} className={i === 0 ? "rc-gov-strong" : "rc-gov-line"}>
+            <p
+              key={`fr-${i}`}
+              className={i === 0 ? "rc-gov-strong" : "rc-gov-line"}
+            >
               {fr[i] ?? ""}
             </p>
           ))}
@@ -54,7 +56,10 @@ export function OfficialReportCard({ payload, generatedAt }: Props) {
         </div>
         <div className="rc-gov-col rc-gov-en">
           {Array.from({ length: rowCount }).map((_, i) => (
-            <p key={`en-${i}`} className={i === 0 ? "rc-gov-strong" : "rc-gov-line"}>
+            <p
+              key={`en-${i}`}
+              className={i === 0 ? "rc-gov-strong" : "rc-gov-line"}
+            >
               {en[i] ?? ""}
             </p>
           ))}
@@ -120,8 +125,12 @@ export function OfficialReportCard({ payload, generatedAt }: Props) {
               {t.show_ca ? <th className="rc-col-num">CA /20</th> : null}
               {t.show_exam ? <th className="rc-col-num">Exam /20</th> : null}
               <th className="rc-col-num">Mark /20</th>
-              {t.show_coefficient ? <th className="rc-col-num">Coeff</th> : null}
-              {t.show_weighted ? <th className="rc-col-num">Weighted</th> : null}
+              {t.show_coefficient ? (
+                <th className="rc-col-num">Coeff</th>
+              ) : null}
+              {t.show_weighted ? (
+                <th className="rc-col-num">Weighted</th>
+              ) : null}
               <th className="rc-col-grade">Grade</th>
               {t.show_gce ? <th className="rc-col-grade">GCE</th> : null}
               {t.show_subject_remark ? (
@@ -132,10 +141,7 @@ export function OfficialReportCard({ payload, generatedAt }: Props) {
           <tbody>
             {subjects.length === 0 ? (
               <tr>
-                <td
-                  colSpan={9}
-                  className="rc-empty"
-                >
+                <td colSpan={9} className="rc-empty">
                   No offered subjects recorded for this term.
                 </td>
               </tr>
@@ -147,7 +153,9 @@ export function OfficialReportCard({ payload, generatedAt }: Props) {
                     <td className="rc-num">{formatReportScore(s.ca_score)}</td>
                   ) : null}
                   {t.show_exam ? (
-                    <td className="rc-num">{formatReportScore(s.exam_score)}</td>
+                    <td className="rc-num">
+                      {formatReportScore(s.exam_score)}
+                    </td>
                   ) : null}
                   <td className="rc-num rc-strong">
                     {formatReportScore(s.subject_mark)}
@@ -243,9 +251,7 @@ export function OfficialReportCard({ payload, generatedAt }: Props) {
       <section className="rc-remarks">
         <div className="rc-remark-box">
           <p className="rc-remark-label">Class Teacher&apos;s Remark</p>
-          <p className="rc-remark-body">
-            {payload.summary.remark || "\u00a0"}
-          </p>
+          <p className="rc-remark-body">{payload.summary.remark || "\u00a0"}</p>
         </div>
         <div className="rc-remark-box">
           <p className="rc-remark-label">Principal&apos;s Remark</p>

@@ -1,5 +1,3 @@
-import React from "react";
-
 /** Global print/layout styles for OfficialReportCard (view + setup preview). */
 export function ReportCardStyles() {
   return (
