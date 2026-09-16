@@ -31,6 +31,7 @@ import { registerDocumentsMgmtIpc } from './documents-mgmt'
 import { registerSystemAdminIpc } from './system-admin'
 import { registerResultsCalculationIpc } from './results-calculation'
 import { registerUpdaterIpc } from './updater'
+import { registerGateAttendanceIpc } from './gate-attendance'
 
 /** Register all IPC handlers for the main process. */
 export function registerIpcHandlers(
@@ -53,6 +54,7 @@ export function registerIpcHandlers(
   registerStudentIdIpc(repos)
   registerStudentMgmtIpc(repos)
   registerAcademicMgmtIpc(repos)
+  registerGateAttendanceIpc(repos)
   registerFinanceIpc(repos)
   registerFinanceMgmtIpc(repos)
   registerFinanceExtIpc(repos)

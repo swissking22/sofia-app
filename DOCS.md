@@ -242,7 +242,7 @@ Sofia includes three production system templates. Dimensions use physical millim
    - Navy (`#0F1C2E`) + **Sofia Blue** (`#1580CF`) SVG wave curves; Inter typography; tokens in `id-card-classic-tokens.ts` / factory `id-card-classic.ts`.
    - Front: school logo/name/motto, **24×24 mm (1:1)** photo, student name, STUDENT type, ID / class / department / DOB / admission year / level. **No barcode.** Content stays ≥3.5 mm above footer waves.
    - Back: property notice, school contacts, **QR only** (`sofia:stu:{student_code}` — deterministic, no PII), “SCAN TO VERIFY”, signature area, blue/navy footer curves.
-   - Offline lookup: scan/parse via `parseStudentQrPayload` → match `students.student_code` in SQLite. No scanner UI yet; payload is keyboard-wedge ready.
+   - Offline lookup: Gate Scanner at `/academic/attendance/gate-scanner` uses `parseStudentQrPayload` → `students.student_code` in SQLite (keyboard-wedge / USB HID).
    - System template rows refresh when the design hash changes; school copies are not overwritten.
 2. **THE ACADEMIC (Modern / International School) — landscape 85.60 × 53.98 mm**:
    - Contemporary geometric architecture with navy and vibrant electric blue (`#2563EB` / `#0284C7`) foundation.
@@ -282,11 +282,16 @@ A teacher is assigned to a **subject in a specific class** (not to subjects and 
 
 ### Attendance
 
+Class roster marking and entrance Gate Scanner (USB HID QR). Class sessions and gate check-ins are separate stores; both are offline-first.
+
 | Screen | Path | How to use |
 |--------|------|------------|
-| Sessions | `/academic/attendance` | List past sessions; open Take or Report |
+| Overview | `/academic/attendance` | Hub: Gate Scanner, Take attendance, Class report; list past class sessions |
+| Gate Scanner | `/academic/attendance/gate-scanner` | Dedicated entrance terminal (standard AppShell sidebar). Focus the scanner field, scan student ID QR (`sofia:stu:{student_code}` or bare `student_code`). Records **gate** attendance once per school day; duplicates show arrival time. Optional **Entrance look** styling. Requires `attendance.mark`. |
 | Take | `/academic/attendance/take` | Class + date → mark Present / Absent / Late / Excused (mark-all-present available) |
 | Report | `/academic/attendance/report` | Class + date range → per-student rates and totals |
+
+**Gate Scanner architecture:** Renderer `renderer/lib/gate-attendance.ts` → IPC `gate-attendance:scan` / `gate-attendance:today-summary` → `main/services/gate-attendance.ts` → `parseStudentQrPayload` + `students.findBySchoolAndCode` → `gate_attendance` table (unique per school + student + date + type). Sync via `enqueueSync` like other domain tables. Audio feedback: `renderer/lib/scanner-feedback.ts` (Web Audio).
 
 ### Continuous Assessment (CA)
 
@@ -595,6 +600,7 @@ Key libs for built modules:
 - Finance: `renderer/lib/finance-mgmt.ts` → `main/ipc/finance-mgmt.ts`; extensions `renderer/lib/finance-ext.ts` → `main/ipc/finance-ext.ts`
 - Communication: `renderer/lib/communication-mgmt.ts` → `main/ipc/communication-mgmt.ts` (setup: `communication.ts`)
 - Academic: `renderer/lib/academic-mgmt.ts` → `main/ipc/academic-mgmt.ts`; teaching progress `renderer/lib/teaching-progress.ts` → `main/ipc/teaching-progress.ts`
+- Gate Scanner: `renderer/lib/gate-attendance.ts` → `main/ipc/gate-attendance.ts` (`gate-attendance:scan`, `gate-attendance:today-summary`); service `main/services/gate-attendance.ts`; table `gate_attendance`; feedback `renderer/lib/scanner-feedback.ts`
 - Results calculation: `renderer/lib/results-calc.ts` → `main/ipc/results-calculation.ts` (`results-calc:defaults`, `results-calc:coefficients-list`, `results-calc:coefficients-save`, `results-calc:validate`, `results-calc:breakdown`, `results-calc:student-summary`); core calculation service `main/services/results/result-calculation.service.ts`; repositories `main/db/repositories/results-calculation.repository.ts` and `subject-coefficients.repository.ts`; table `result_subject_coefficients`
 - School day schedule: `renderer/lib/day-schedule.ts` → `main/ipc/day-schedule.ts` (`day-schedule:get` / `day-schedule:save`); domain `main/domain/day-schedule.ts`; stored on `schools` + `school_day_breaks`; feeds `academic:meta` period count/times for the timetable
 - Student ID cards: `renderer/lib/student-id-cards.ts` → `main/ipc/student-id-cards.ts`
@@ -610,6 +616,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | Gate Scanner uses standard AppShell sidebar (no chrome-less takeover); Entrance look is content-only styling. |
+| 2026-09-16 | Gate Scanner attendance: USB HID QR entrance check-in at `/academic/attendance/gate-scanner` using immutable `student_code`; `gate_attendance` table with same-day duplicate protection; offline SQLite + sync queue; Web Audio feedback; nav + Attendance hub links. |
 | 2026-09-16 | ID Cards: **draft** school templates can always be deleted (gallery + designer); deleting a draft soft-removes any test cards generated from it. Active/archived templates with issued cards still must be archived. |
 | 2026-09-16 | ID Cards Template 1: square **1:1** photo (24×24 mm); front field block kept clear of footer decorations with ≥3.5 mm gap. |
 | 2026-09-16 | ID Cards Template 1: Sofia Blue (`#1580CF`) accents (no green); **QR-only on back** (`sofia:stu:{student_code}`); removed front barcode; `parseStudentQrPayload` for future offline scanner; Templates 2–3 unchanged. |

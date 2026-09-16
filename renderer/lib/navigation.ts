@@ -83,6 +83,11 @@ export const NAV_SECTIONS: NavSection[] = [
         children: [
           { id: 'timetable', label: 'Timetable', href: '/academic/timetable' },
           { id: 'attendance', label: 'Attendance', href: '/academic/attendance' },
+          {
+            id: 'gate-scanner',
+            label: 'Gate Scanner',
+            href: '/academic/attendance/gate-scanner',
+          },
           { id: 'assignments', label: 'Assignments', href: '/academic/assignments', comingSoon: true },
           { id: 'continuous-assessment', label: 'Continuous Assessment', href: '/academic/ca' },
           { id: 'examinations', label: 'Examinations', href: '/academic/exams' },

@@ -628,6 +628,7 @@ export function createSchema(db: Database.Database): void {
   migrateSystemAdministrationTables(db)
   migrateResultsCalculationTables(db)
   migrateIdCardDesignerTables(db)
+  migrateGateAttendanceTables(db)
 }
 
 /** Add missing columns to schools without wiping existing data. */
@@ -3435,6 +3436,39 @@ function migrateIdCardDesignerTables(db: Database.Database): void {
       WHERE deleted_at IS NULL AND verification_code IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_id_cards_student
       ON student_id_cards(school_id, student_id, status);
+  `)
+}
+
+/** Gate / entrance QR scanner attendance (school-day check-in, not class roster). */
+function migrateGateAttendanceTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gate_attendance (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      student_id TEXT NOT NULL,
+      student_code TEXT NOT NULL,
+      attendance_date TEXT NOT NULL,
+      scanned_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'present',
+      attendance_type TEXT NOT NULL DEFAULT 'gate',
+      device_id TEXT,
+      scanned_by TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_gate_attendance_unique_day
+      ON gate_attendance(school_id, student_id, attendance_date, attendance_type)
+      WHERE deleted_at IS NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_gate_attendance_school_date
+      ON gate_attendance(school_id, attendance_date)
+      WHERE deleted_at IS NULL;
   `)
 }
 

@@ -37,6 +37,7 @@ import {
   TimetableRepository,
 } from './academic-mgmt.repository'
 import { StaffAttendanceRepository } from './staff-attendance.repository'
+import { GateAttendanceRepository } from './gate-attendance.repository'
 import { LeaveRepository } from './leave.repository'
 import { StaffNotificationRepository } from './staff-notification.repository'
 import { BudgetRepository } from './budget.repository'
@@ -89,6 +90,7 @@ export function createRepositories(db: Database.Database) {
     promotions: new PromotionRepository(db),
     timetable: new TimetableRepository(db),
     attendance: new AttendanceRepository(db),
+    gateAttendance: new GateAttendanceRepository(db),
     ca: new CaRepository(db),
     exams: new ExamRepository(db),
     results: new ResultsRepository(db),

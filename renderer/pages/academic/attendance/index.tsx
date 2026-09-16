@@ -109,13 +109,52 @@ export default function AttendanceIndexPage() {
       title="Attendance"
       breadcrumb={["Academic Management", "Attendance"]}
       heading="Attendance"
-      subtitle="View sessions and take daily attendance."
+      subtitle="Class sessions and entrance Gate Scanner."
     >
       {error ? (
         <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
           {error}
         </div>
       ) : null}
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Link
+          href="/academic/attendance/gate-scanner"
+          className="rounded-2xl border border-sky-200 bg-sky-50/80 p-4 transition hover:border-sky-300"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">
+            Entrance
+          </p>
+          <p className="mt-1 text-base font-bold text-slate-900">Gate Scanner</p>
+          <p className="mt-1 text-xs text-slate-500">
+            USB QR scanner check-in for student ID cards.
+          </p>
+        </Link>
+        <Link
+          href="/academic/attendance/take"
+          className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Classroom
+          </p>
+          <p className="mt-1 text-base font-bold text-slate-900">Take attendance</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Mark present / absent / late / excused by class.
+          </p>
+        </Link>
+        <Link
+          href="/academic/attendance/report"
+          className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Reports
+          </p>
+          <p className="mt-1 text-base font-bold text-slate-900">Class report</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Per-student rates for a class and date range.
+          </p>
+        </Link>
+      </div>
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex flex-wrap gap-2">

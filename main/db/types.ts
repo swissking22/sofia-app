@@ -937,6 +937,22 @@ export interface AttendanceRecord extends BaseRecord {
   status: AttendanceMark
 }
 
+/** Entrance / gate scanner check-in (distinct from class roster sessions). */
+export type GateAttendanceType = 'gate' | 'departure'
+export type GateAttendanceStatus = 'present'
+
+export interface GateAttendance extends BaseRecord {
+  school_id: string
+  student_id: string
+  student_code: string
+  attendance_date: string
+  scanned_at: string
+  status: GateAttendanceStatus
+  attendance_type: GateAttendanceType
+  device_id: string | null
+  scanned_by: string | null
+}
+
 export interface CaAssessment extends BaseRecord {
   school_id: string
   name: string

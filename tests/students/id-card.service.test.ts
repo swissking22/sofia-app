@@ -273,10 +273,6 @@ describe('template versioning and front/back', () => {
     expect(qr?.qrBinding).toBe('{{student.qr_payload}}')
     expect(design.elements.some((e) => e.type === 'qr' && e.side === 'front')).toBe(false)
 
-    const footerTop =
-      design.heightMm -
-      (design.elements.find((e) => e.id === 'c1f_foot_blue')?.h ?? 11) +
-      0
     const footBlue = design.elements.find((e) => e.id === 'c1f_foot_blue')
     expect(footBlue).toBeDefined()
     const footerStartY = footBlue!.y
