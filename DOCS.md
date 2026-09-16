@@ -105,7 +105,7 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 | Student ID | `/setup/student-id` | ID pattern (school code, year, sequence, …) |
 | Students | `/setup/students` | Bulk import / initial student load |
 | Finance | `/setup/finance` | Fee-related setup |
-| Documents | `/setup/documents` | Templates (report card, admission letter, receipt, certificate) |
+| Documents | `/setup/documents` | Templates (report card, admission letter, receipt, certificate). **Report card** shows a live scaled preview of the official A4 bilingual layout in the aside as you edit header, footer, logo, stamp, and signature toggles. |
 | Communication | `/setup/communication` | SMS/channels + notification templates |
 | Backup & Sync | `/setup/backup-sync` | Local backup location, sync status, test connection |
 
@@ -330,13 +330,21 @@ Sofia implements a school-configurable 7-step calculation pipeline for secondary
 
 ### Report cards
 
-Requires results that are computed / published / locked for that class + term. Report Cards consume finalized Results Processing data directly without a second calculation engine.
+Requires results that are computed / published / locked for that class + term. Report Cards **snapshot** finalized Results Processing data (no second calculation engine). Blank subject scores are omitted as “not offered” (blank ≠ zero), matching Sofia’s exclude policies.
 
 | Screen | Path | How to use |
 |--------|------|------------|
 | List | `/academic/report-cards` | Filter by class + term |
-| Generate | `/academic/report-cards/generate` | Build cards for the class/term |
-| View | `/academic/report-cards/view/:id` | Printable layout showing Subject, CA Avg, Exam, Subject Mark, Coefficient, Weighted Mark, Grade, and Remark, with summary cards for Total Weighted Marks, Total Coefficients, Term Average (/20), Rank, and Pass/Fail Status badge. |
+| Generate | `/academic/report-cards/generate` | Build official payloads for the class/term (embeds template snapshot for historical reproducibility) |
+| View / Print | `/academic/report-cards/view/:id` | Official A4 bilingual bulletin: ministry FR/EN header + centred logo, school identity, student details, academic grid (CA / Exam / Mark / Coeff / Weighted / Grade / GCE / Remark), performance summary, grading scale from the result-run profile, teacher/principal remarks, principal stamp & parent endorsement. **Print → Save as PDF**. |
+
+**Data flow:** Results run (`snapshot_json.config.grading`) → `report-cards:generate` → `report_cards.payload` (schema v1) → `OfficialReportCard` → browser print.
+
+**Template customization:** Setup document template key `report_card` supplies header/footer. Optional JSON in `body_text`: `{ "sofia_report_card": { "title_en": "...", "bilingual_header": { "fr_lines": [...], "en_lines": [...] }, "show_gce": true } }`. Presentation options are **snapshotted** into each card so later template edits do not rewrite history.
+
+**Setup preview:** `/setup/documents` renders `OfficialReportCard` with sample student data via `buildReportCardSetupPreviewPayload` (`renderer/lib/report-card.ts`) and `ReportCardSetupPreview` (scaled to the aside width). Logo, stamp, signature, header, and footer changes update the preview immediately.
+
+**Architecture:** Domain `main/domain/report-card.ts`; view `renderer/components/report-cards/OfficialReportCard.tsx`; helpers `renderer/lib/report-card.ts`; shared print styles `renderer/components/report-cards/ReportCardStyles.tsx`.
 
 ### Academic reports — `/academic/reports`
 
@@ -616,6 +624,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | Setup → Documents: report card template shows a live scaled preview of the official A4 bilingual layout (`ReportCardSetupPreview`) as header, footer, logo, stamp, and signature options change. |
+| 2026-09-16 | Official bilingual A4 Student Report Card: ministry FR/EN header, dynamic school branding, results-engine grades + GCE column, class stats, grading-scale legend, signatures; template snapshot in `report_cards.payload` for historical reproducibility. |
 | 2026-09-16 | Gate Scanner uses standard AppShell sidebar (no chrome-less takeover); Entrance look is content-only styling. |
 | 2026-09-16 | Gate Scanner attendance: USB HID QR entrance check-in at `/academic/attendance/gate-scanner` using immutable `student_code`; `gate_attendance` table with same-day duplicate protection; offline SQLite + sync queue; Web Audio feedback; nav + Attendance hub links. |
 | 2026-09-16 | ID Cards: **draft** school templates can always be deleted (gallery + designer); deleting a draft soft-removes any test cards generated from it. Active/archived templates with issued cards still must be archived. |

@@ -23,6 +23,8 @@ import {
   getNextSetupHref,
   saveSetupDraft,
 } from "../../lib/setup";
+import { ReportCardSetupPreview } from "../../components/report-cards/ReportCardSetupPreview";
+import { buildReportCardSetupPreviewPayload } from "../../lib/report-card";
 
 const textareaClass =
   "w-full min-h-[72px] resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -91,6 +93,47 @@ function DocumentPreviewPanel({ data }: { data: PreviewState }) {
     );
   }
 
+  if (t.template_key === "report_card") {
+    const payload = buildReportCardSetupPreviewPayload({
+      schoolName: data.schoolName,
+      headerText: t.header_text,
+      footerText: t.footer_text,
+      logoUrl,
+      stampUrl: data.stampUrl,
+      signatureUrl: data.signatureUrl,
+      signatureLabel: t.signature_label,
+      showLogo: t.show_logo,
+      showStamp: t.show_stamp,
+      showSignature: t.show_signature,
+    });
+
+    return (
+      <div className="space-y-3">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">Preview</h3>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                t.is_enabled
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {t.is_enabled ? "Enabled" : "Disabled"}
+            </span>
+          </div>
+
+          <ReportCardSetupPreview payload={payload} />
+
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+            Live preview of the official A4 bilingual report card. Sample
+            student data is shown; real cards use results from each term.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
@@ -133,33 +176,6 @@ function DocumentPreviewPanel({ data }: { data: PreviewState }) {
 
             {/* Body sample */}
             <div className="space-y-2 py-4 text-[10px] leading-relaxed text-slate-600">
-              {t.template_key === "report_card" ? (
-                <>
-                  <p>
-                    <span className="font-semibold text-slate-800">
-                      Student:
-                    </span>{" "}
-                    Jane Doe · F1A · 2025/2026
-                  </p>
-                  <div className="overflow-hidden rounded border border-slate-200">
-                    <div className="grid grid-cols-4 bg-slate-100 px-2 py-1 font-semibold text-slate-700">
-                      <span className="col-span-2">Subject</span>
-                      <span>CA</span>
-                      <span>Exam</span>
-                    </div>
-                    {["Mathematics", "English", "Biology"].map((s) => (
-                      <div
-                        key={s}
-                        className="grid grid-cols-4 border-t border-slate-100 px-2 py-1"
-                      >
-                        <span className="col-span-2">{s}</span>
-                        <span>18</span>
-                        <span>52</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : null}
               {t.template_key === "admission_letter" ? (
                 <>
                   <p>Dear Parent / Guardian,</p>

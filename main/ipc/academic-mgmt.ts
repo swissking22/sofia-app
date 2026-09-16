@@ -8,12 +8,24 @@ import type {
 } from '../db/types'
 import { cameroonStandardSecondary20, hasPermission, profileLabel } from '../domain/results-calculation'
 import {
+  CAMEROON_20_BANDS,
+  computeClassStats,
+  defaultReportCardTemplate,
+  extractGradingFromSnapshot,
+  gceGradeForMark20,
+  gradingScaleLegend,
+  isOfferedSubjectRow,
+  parseReportCardTemplateOverrides,
+  type ReportCardPayload,
+} from '../domain/report-card'
+import {
   describeTeacherClash,
   fanOutClassIds,
   findTeacherClashes,
   isCommonSubjectAtLevel,
 } from '../domain/timetable'
 import { calculateClassResults } from '../services/results/result-calculation.service'
+import { assetToDataUrl } from '../helpers/school-assets'
 
 const DAY_LABELS: Record<number, string> = {
   1: 'Monday',
@@ -1600,12 +1612,62 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
 
       const school = repos.schools.findById(schoolId)
       const year = repos.academicYears.getSetupDto(schoolId)
-      const className = repos.classes.findById(input.class_id)?.name ?? ''
+      const cls = repos.classes.findById(input.class_id)
+      const className = cls?.name ?? ''
+      const department =
+        cls?.section_id != null
+          ? repos.sections.findById(cls.section_id)?.name ?? null
+          : null
       const termName =
         year?.terms.find((t) => t.id === input.term_id)?.name ?? null
       const summaries = repos.results.findSummaries(run.id)
       const subjectRows = repos.results.findSubjectRows(run.id)
       const template = repos.documentTemplates.findByKey(schoolId, 'report_card')
+      const templateSnap = defaultReportCardTemplate(
+        parseReportCardTemplateOverrides(template?.body_text)
+      )
+      if (template?.header_text?.trim()) {
+        templateSnap.title_en = template.header_text.trim()
+      }
+      const gradingBands =
+        extractGradingFromSnapshot(run.snapshot_json) ?? CAMEROON_20_BANDS
+      const classStats = computeClassStats(summaries.map((s) => s.average))
+      const grading_scale = gradingScaleLegend(gradingBands)
+
+      let motto: string | null = null
+      try {
+        motto = repos.studentIdCards.getSettings(schoolId).motto || null
+      } catch {
+        motto = null
+      }
+
+      let principal_name: string | null = null
+      let principal_title: string | null = null
+      try {
+        const signs = repos.documents.listSignatories(schoolId)
+        const principal =
+          signs.find((s) => s.role_key === 'principal' && s.is_active !== 0) ||
+          signs.find((s) => s.role_key === 'headteacher' && s.is_active !== 0) ||
+          signs[0]
+        principal_name = principal?.display_name || null
+        principal_title = principal?.title || null
+      } catch {
+        /* optional */
+      }
+
+      const schoolBlock = {
+        name: school?.name ?? 'School',
+        motto,
+        address: school?.address ?? null,
+        phone: school?.phone ?? null,
+        email: school?.email ?? null,
+        website: school?.website ?? null,
+        logo_url: assetToDataUrl(school?.logo_path) || null,
+        stamp_url: assetToDataUrl(school?.stamp_path) || null,
+        signature_url: assetToDataUrl(school?.principal_signature_path) || null,
+        principal_name,
+        principal_title,
+      }
 
       let generated = 0
       for (const summary of summaries) {
@@ -1613,37 +1675,93 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         if (!student) continue
         const subjects = subjectRows
           .filter((r) => r.student_id === summary.student_id)
-          .map((r) => ({
-            subject_id: r.subject_id,
-            subject_name: repos.subjects.findById(r.subject_id)?.name ?? '—',
-            ca_score: r.ca_average ?? r.ca_score,
-            exam_score: r.exam_score,
-            subject_mark: r.subject_mark ?? r.total,
-            total: r.subject_mark ?? r.total,
-            coefficient: r.coefficient ?? 1,
-            weighted_mark: r.weighted_mark ?? (r.total * (r.coefficient ?? 1)),
-            grade: r.grade,
-            remark: r.remark ?? '',
-          }))
+          .filter((r) =>
+            isOfferedSubjectRow({
+              ca_score: r.ca_average ?? r.ca_score,
+              exam_score: r.exam_score,
+              subject_mark: r.subject_mark ?? r.total,
+              total: r.total,
+            })
+          )
+          .map((r) => {
+            const mark = r.subject_mark ?? r.total
+            return {
+              subject_id: r.subject_id,
+              subject_name: repos.subjects.findById(r.subject_id)?.name ?? '—',
+              ca_score: r.ca_average ?? r.ca_score,
+              exam_score: r.exam_score,
+              subject_mark: mark,
+              coefficient: r.coefficient ?? 1,
+              weighted_mark:
+                r.weighted_mark ??
+                (mark != null ? mark * (r.coefficient ?? 1) : null),
+              grade: r.grade,
+              gce_grade: gceGradeForMark20(mark),
+              remark: r.remark ?? '',
+            }
+          })
 
+        const payloadObj: ReportCardPayload = {
+          schema_version: 1,
+          template: templateSnap,
+          school: schoolBlock,
+          document: {
+            header: template?.header_text ?? templateSnap.title_en,
+            footer:
+              template?.footer_text ??
+              'Official school record — keep for your files.',
+          },
+          student: {
+            name: student.name,
+            student_code: student.student_code,
+            date_of_birth: student.date_of_birth,
+            gender: student.gender,
+            class_name: className,
+            department,
+          },
+          academic: {
+            year_name: year?.name ?? null,
+            term_name: termName,
+          },
+          subjects,
+          summary: {
+            total_weighted_marks: summary.total_weighted_marks ?? summary.total,
+            total_coefficients: summary.total_coefficients ?? null,
+            average: summary.average,
+            grade: summary.grade,
+            gce_grade: gceGradeForMark20(summary.average),
+            position: summary.position,
+            class_size: classStats.class_size,
+            class_average: classStats.class_average,
+            highest_average: classStats.highest_average,
+            lowest_average: classStats.lowest_average,
+            status:
+              summary.status ??
+              (summary.average >= 10 ? 'PASSED' : 'FAILED'),
+            remark: summary.remark,
+          },
+          grading_scale,
+        }
+
+        // Backward-compatible flat keys for older views / consumers
         const payload = JSON.stringify({
-          school_name: school?.name ?? 'School',
-          header: template?.header_text ?? 'Official Term Report Card',
-          footer: template?.footer_text ?? '',
+          ...payloadObj,
+          school_name: schoolBlock.name,
+          header: payloadObj.document.header,
+          footer: payloadObj.document.footer,
           student_name: student.name,
           student_code: student.student_code,
           class_name: className,
           term_name: termName,
           year_name: year?.name ?? null,
-          total_weighted_marks: summary.total_weighted_marks ?? summary.total,
-          total_coefficients: summary.total_coefficients ?? null,
-          average: summary.average,
+          total_weighted_marks: payloadObj.summary.total_weighted_marks,
+          total_coefficients: payloadObj.summary.total_coefficients,
+          average: payloadObj.summary.average,
           total: summary.total,
-          grade: summary.grade,
-          position: summary.position,
-          status: summary.status ?? (summary.average >= 10 ? 'PASSED' : 'FAILED'),
-          remark: summary.remark,
-          subjects,
+          grade: payloadObj.summary.grade,
+          position: payloadObj.summary.position,
+          status: payloadObj.summary.status,
+          remark: payloadObj.summary.remark,
         })
 
         repos.reportCards.upsertCard({
