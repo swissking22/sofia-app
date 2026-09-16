@@ -41,10 +41,15 @@ Restart the app after `seed:dev` so Electron picks up the new database. Seed dat
 Build installers with Nextron + electron-builder:
 
 ```bash
+npm install          # required — production deps (e.g. @supabase/supabase-js) must be in node_modules
 npm run build:win    # Windows NSIS x64; never publishes
-npm run build:mac    # macOS (local)
+npm run build:mac    # macOS: SOFIA-1.0.0.dmg (Intel) + SOFIA-1.0.0-arm64.dmg (Apple Silicon)
 npm run build:all    # both platforms
 ```
+
+If packaging logs `cannot find path for dependency …@undefined`, `node_modules` is incomplete — run `npm install` and rebuild. A packaged app that was built that way crashes at launch with `ERR_MODULE_NOT_FOUND` for `@supabase/supabase-js` (pulled in via sync IPC → `main/sync/supabase-client.ts`).
+
+On Intel Macs open `SOFIA-1.0.0.dmg` (not `*-arm64*`). On Apple Silicon open the arm64 DMG.
 
 GitHub Actions workflow: `.github/workflows/build-windows.yml` (`workflow_dispatch` or tag `v*`).
 
@@ -598,6 +603,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | Packaged Mac launch: `ERR_MODULE_NOT_FOUND` for `@supabase/supabase-js` because deps were missing from `node_modules` (electron-builder logged `@undefined` paths). Fixed by `npm install` + rebuild; docs note full install before `build:mac` / `build:win` and Intel vs arm64 DMG choice. |
 | 2026-09-16 | Windows launch bisect: appId restore alone did not fix launch. Disabling entire `electron-updater` import graph on `bisect/windows-launch` (no updater IPC, no UpdateNotifier, no dynamic updater import) while keeping userData pin — isolates whether electron-updater itself crashes packaged Windows. Startup also writes `%APPDATA%\\sofia\\sofia-startup.log`. |
 | 2026-09-15 | Windows launch bisect: after commit 3 still failed with startup-order fix; next isolation — restore original `appId` `com.sofia.app` / productName `SOFIA` (commit 3 had changed these to `com.sofia.school` / `Sofia`). |
 | 2026-09-15 | Bisect Windows launch: re-applied sync/packaging commit (`reapply/01`) on branch `bisect/windows-launch` while keeping current icon + signing config — test whether sync alone breaks Windows launch. |
