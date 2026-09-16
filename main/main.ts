@@ -49,7 +49,7 @@ function getStartPath(
   return 'login'
 }
 
-/** Dev-only PNG next to the project; packaged macOS uses the bundle .icns. */
+/** Dev and packaged runtime icon (dock + BrowserWindow). Bundle .icns/.ico come from electron-builder. */
 function getRuntimeIconPath(): string | undefined {
   const candidates = [
     path.join(import.meta.dirname, '../resources/icon.png'),

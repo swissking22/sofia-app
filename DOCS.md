@@ -42,10 +42,13 @@ Build installers with Nextron + electron-builder:
 
 ```bash
 npm install          # required — production deps (e.g. @supabase/supabase-js) must be in node_modules
+npm run icons        # regenerate resources/icon.png|.icns|.ico from renderer/assets/images/sofia-icon.png
 npm run build:win    # Windows NSIS x64; never publishes
 npm run build:mac    # macOS: SOFIA-1.0.0.dmg (Intel) + SOFIA-1.0.0-arm64.dmg (Apple Silicon)
 npm run build:all    # both platforms
 ```
+
+**App icons (source of truth):** `renderer/assets/images/sofia-icon.png` (UI + packaging). Run `npm run icons` after changing that file — it writes a 1024² `resources/icon.png`, plus `resources/icon.icns` (macOS) and multi-size `resources/icon.ico` (Windows, includes 256px). `resources/logo.png` is synced from `sofia-logo.png`. electron-builder uses `mac.icon` / `win.icon`; packaged apps also ship `icon.png` as an extraResource for dock / window chrome (`main/main.ts`).
 
 If packaging logs `cannot find path for dependency …@undefined`, `node_modules` is incomplete — run `npm install` and rebuild. A packaged app that was built that way crashes at launch with `ERR_MODULE_NOT_FOUND` for `@supabase/supabase-js` (pulled in via sync IPC → `main/sync/supabase-client.ts`).
 
@@ -604,6 +607,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-16 | App icons: regenerated `resources/icon.png` / `.icns` / `.ico` from official `renderer/assets/images/sofia-icon.png` (replaced incorrect white-bg experiment); added `npm run icons` (`scripts/generate-icons.mjs`); ship `icon.png` via `extraResources` for packaged dock/window icon. |
 | 2026-09-16 | Re-enabled Windows auto-update on `bisect/windows-launch` with **lazy `electron-updater`**: `loadAutoUpdater()` uses dynamic `import()` only when init/check/download/install runs; recovery eval + updater IPC + `UpdateNotifier` restored. Static import of `electron-updater` must not return (breaks packaged Windows). Retest Windows cold launch required. |
 | 2026-09-16 | Windows launch bisect **confirmed**: packaged Windows launches on `bisect/windows-launch` with sync + userData pin when the entire `electron-updater` import graph is disabled. Breaker is updater load, not pin/appId. Next: re-enable updater only via post-`whenReady` lazy import (see `REAPPLY_REVERTED_COMMITS.md`). |
 | 2026-09-16 | Packaged Mac launch: `ERR_MODULE_NOT_FOUND` for `@supabase/supabase-js` because deps were missing from `node_modules` (electron-builder logged `@undefined` paths). Fixed by `npm install` + rebuild; docs note full install before `build:mac` / `build:win` and Intel vs arm64 DMG choice. |
