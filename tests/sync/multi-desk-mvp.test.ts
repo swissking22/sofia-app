@@ -24,7 +24,11 @@ describe('Multi-desk sync MVP registry', () => {
     expect(SUPPORTED_SYNC_TABLES).toContain('issued_documents')
     expect(SUPPORTED_SYNC_TABLES).toContain('student_id_cards')
     expect(SUPPORTED_SYNC_TABLES).toContain('id_card_sequences')
-    expect(isGenericSyncTable('announcements')).toBe(false)
+    expect(SUPPORTED_SYNC_TABLES).toContain('announcements')
+    expect(SUPPORTED_SYNC_TABLES).toContain('internal_notices')
+    expect(SUPPORTED_SYNC_TABLES).toContain('communication_settings')
+    expect(SUPPORTED_SYNC_TABLES).toContain('parent_messages')
+    expect(isGenericSyncTable('backup_sync_settings')).toBe(false)
     expect(isGenericSyncTable('roles')).toBe(true)
   })
 })
@@ -669,5 +673,77 @@ describe('Generic pull apply', () => {
       .get('card-1') as { card_number: string; student_name: string }
     expect(card.card_number).toBe('IDC-0001')
     expect(card.student_name).toBe('Cid')
+  })
+
+  it('upserts internal_notices and announcements without re-enqueue', () => {
+    const now = new Date().toISOString()
+    expect(
+      applyGenericPulledChange(
+        db,
+        {
+          table_name: 'internal_notices',
+          record_id: 'notice-1',
+          operation: 'INSERT',
+          version: 1,
+          payload: {
+            id: 'notice-1',
+            school_id: schoolId,
+            title: 'Staff briefing',
+            body: 'Assembly at 8am',
+            audience: 'all',
+            priority: 'high',
+            sent_at: now,
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        schoolId
+      )
+    ).toBe('applied')
+
+    expect(
+      applyGenericPulledChange(
+        db,
+        {
+          table_name: 'announcements',
+          record_id: 'ann-1',
+          operation: 'INSERT',
+          version: 1,
+          payload: {
+            id: 'ann-1',
+            school_id: schoolId,
+            title: 'Fee reminder',
+            body: 'Term fees due Friday',
+            status: 'sent',
+            channels_json: '["sms","internal"]',
+            sent_at: now,
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        schoolId
+      )
+    ).toBe('applied')
+
+    const notice = db
+      .prepare(`SELECT title, priority FROM internal_notices WHERE id = ?`)
+      .get('notice-1') as { title: string; priority: string }
+    expect(notice.title).toBe('Staff briefing')
+    expect(notice.priority).toBe('high')
+
+    const ann = db
+      .prepare(`SELECT title, status FROM announcements WHERE id = ?`)
+      .get('ann-1') as { title: string; status: string }
+    expect(ann.title).toBe('Fee reminder')
+    expect(ann.status).toBe('sent')
+
+    const queued = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM sync_queue WHERE record_id IN ('notice-1', 'ann-1')`
+      )
+      .get() as { c: number }
+    expect(queued.c).toBe(0)
   })
 })

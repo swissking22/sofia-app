@@ -71,6 +71,20 @@ function omittedColumnDefault(
     rendered_html: '',
     display_name: '',
     title: table === 'document_signatories' ? '' : undefined,
+    channel_sms: 0,
+    channel_email: 1,
+    channel_internal: 1,
+    sms_provider: '',
+    sms_api_key: '',
+    sms_sender_name: '',
+    subject: '',
+    audience_type: 'all',
+    audience: 'all',
+    priority: 'normal',
+    channels_json: '[]',
+    recipient_count: 0,
+    direction: 'outbound',
+    channel: table === 'parent_messages' ? 'internal' : undefined,
   }
   return byColumn[column]
 }
@@ -138,6 +152,10 @@ function coerceValue(column: string, value: unknown): unknown {
       'crop_marks',
       'card_count',
       'current_version_number',
+      'channel_sms',
+      'channel_email',
+      'channel_internal',
+      'recipient_count',
     ].includes(column)
   ) {
     if (value === null || value === undefined) return null

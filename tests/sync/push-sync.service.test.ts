@@ -500,11 +500,11 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
 
   // 15. Unsupported tables are failed locally without RPC calls
   test('15. Unsupported pending tables are skipped without calling cloud RPC', async () => {
-    enqueueSync(db, 'announcements', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'INSERT', {
+    enqueueSync(db, 'backup_sync_settings', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'INSERT', {
       id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       school_id: schoolId,
     })
-    enqueueSync(db, 'communication_settings', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'INSERT', {
+    enqueueSync(db, 'report_settings', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'INSERT', {
       id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
       school_id: schoolId,
     })

@@ -87,6 +87,14 @@ export const GENERIC_SYNC_TABLES = [
   'id_card_generation_jobs',
   'id_card_generation_items',
   'id_card_print_history',
+  // Step 8 — communication
+  'communication_settings',
+  'notification_templates',
+  'announcements',
+  'internal_notices',
+  'communication_deliveries',
+  'parent_message_threads',
+  'parent_messages',
 ] as const
 
 export type GenericSyncTable = (typeof GENERIC_SYNC_TABLES)[number]
@@ -490,6 +498,41 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   id_card_print_history: [
     'id', 'school_id', 'job_id', 'card_ids_json', 'paper_size', 'cards_per_row',
     'card_count', 'printed_at', 'printed_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  communication_settings: [
+    'id', 'school_id', 'sms_provider', 'sms_api_key', 'sms_sender_name',
+    'channel_sms', 'channel_email', 'channel_internal',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  notification_templates: [
+    'id', 'school_id', 'template_key', 'title', 'subject', 'body', 'is_enabled',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  announcements: [
+    'id', 'school_id', 'title', 'body', 'audience_type', 'class_id',
+    'academic_level_id', 'status', 'channels_json', 'recipient_count', 'sent_at',
+    'created_by', 'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  internal_notices: [
+    'id', 'school_id', 'title', 'body', 'audience', 'priority', 'expires_at',
+    'sent_at', 'recipient_count', 'created_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  communication_deliveries: [
+    'id', 'school_id', 'announcement_id', 'student_id', 'thread_id', 'channel',
+    'recipient_name', 'recipient_contact', 'subject', 'body', 'status', 'sent_at',
+    'error_message', 'created_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  parent_message_threads: [
+    'id', 'school_id', 'student_id', 'guardian_name', 'guardian_phone',
+    'guardian_email', 'last_message_at',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  parent_messages: [
+    'id', 'school_id', 'thread_id', 'direction', 'channel', 'body', 'status',
+    'sent_at', 'created_by',
     'created_at', 'updated_at', 'deleted_at', 'version',
   ],
 }
