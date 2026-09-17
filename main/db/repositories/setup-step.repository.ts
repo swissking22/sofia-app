@@ -187,4 +187,35 @@ export class SetupStepRepository extends BaseRepository<SetupStepRecord> {
     tx()
     return record
   }
+
+  /** Mark every setup step completed (secondary desk after cloud join). */
+  completeAllSteps(): void {
+    this.ensureAllSteps()
+    const tx = this.db.transaction(() => {
+      for (const step of SETUP_STEPS) {
+        const existing = this.findById(step.id)
+        if (!existing || existing.status === 'completed') continue
+        const now = new Date().toISOString()
+        const record: SetupStepRecord = {
+          ...existing,
+          status: 'completed',
+          completed_at: now,
+          ...this.applyUpdateMeta(existing),
+          sync_status: 'synced',
+        }
+        this.db
+          .prepare(
+            `UPDATE setup_steps
+             SET status = @status,
+                 completed_at = @completed_at,
+                 updated_at = @updated_at,
+                 version = @version,
+                 sync_status = @sync_status
+             WHERE id = @id`
+          )
+          .run(record)
+      }
+    })
+    tx()
+  }
 }

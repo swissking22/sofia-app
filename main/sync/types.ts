@@ -142,9 +142,27 @@ export interface SyncWorkerResult {
   pull: PullSyncResult
 }
 
+export interface CloudSchoolSummary {
+  id: string
+  name: string
+  school_code: string | null
+  short_code: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  version?: number
+}
+
+export interface LookupSchoolByCodeResult {
+  ok: boolean
+  school?: CloudSchoolSummary
+  error?: string
+}
+
 export interface SupabaseSyncClientInterface {
   processSyncOperation(params: ProcessSyncRpcParams): Promise<ProcessSyncRpcResult>
   registerDevice(params: RegisterDeviceRpcParams): Promise<RegisterDeviceRpcResult>
   pullSyncChanges(params: PullSyncRpcParams): Promise<PullSyncRpcResult>
   updateSyncCursor(params: UpdateSyncCursorRpcParams): Promise<UpdateSyncCursorRpcResult>
+  lookupSchoolByCode?(code: string): Promise<LookupSchoolByCodeResult>
 }

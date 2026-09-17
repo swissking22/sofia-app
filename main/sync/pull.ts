@@ -15,7 +15,9 @@ import {
   isDeviceRegisteredForSchool,
   markDeviceRegisteredForSchool,
 } from './device'
+import { applyGenericPulledChange } from './apply-generic'
 import { recordSyncConflict } from './queue'
+import { isGenericSyncTable } from './tables'
 import { getSupabaseSyncClient } from './supabase-client'
 import type {
   PullSyncOptions,
@@ -337,6 +339,28 @@ export function applyPulledChangesTransaction(
           })
           applied += 1
         }
+      }
+
+      // =======================================================================
+      // BRANCH C: GENERIC MULTI-DESK MVP TABLES
+      // =======================================================================
+      else if (isGenericSyncTable(change.table_name)) {
+        const result = applyGenericPulledChange(
+          db,
+          {
+            table_name: change.table_name,
+            record_id: change.record_id,
+            operation: change.operation,
+            version: change.version,
+            payload: payload as Record<string, unknown>,
+          },
+          schoolId
+        )
+        if (result === 'applied') applied += 1
+        else if (result === 'conflict') {
+          applied += 1
+          conflicts += 1
+        } else skipped += 1
       } else {
         console.warn(`[SYNC] Unknown table in pull change: ${change.table_name}`)
         skipped += 1

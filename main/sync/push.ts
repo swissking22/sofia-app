@@ -6,6 +6,7 @@ import {
   markSynced,
   markUnsupportedPendingAsFailed,
   recordSyncConflict,
+  requeueFailedSupportedTables,
 } from './queue'
 import {
   getDeviceFingerprint,
@@ -33,6 +34,9 @@ function isPermanentSyncBarrier(error: string | undefined): boolean {
     e.includes('relation "sync_operations" does not exist')
   )
 }
+
+/** Once per process: lift historical "unsupported table" failures into the expanded allowlist. */
+let didRequeueExpandedTables = false
 
 export async function pushPendingSync(
   options: PushSyncOptions
@@ -73,8 +77,18 @@ export async function pushPendingSync(
     }
   }
 
-  // Drain Phase-1-unsupported outbox rows locally (no RPC) so Sync Now
-  // cannot burn batches on invoices/roles/etc.
+  // Once per process: lift historical "unsupported table" failures into the expanded allowlist
+  if (!didRequeueExpandedTables) {
+    const requeued = requeueFailedSupportedTables(db)
+    if (requeued > 0) {
+      console.log(
+        `[SYNC] Re-queued ${requeued} previously failed supported-table operations`
+      )
+    }
+    didRequeueExpandedTables = true
+  }
+
+  // Drain unsupported pending tables locally (finance etc. until later phases)
   markUnsupportedPendingAsFailed(db)
 
   // 2. Check and ensure device registration for this school
@@ -112,7 +126,7 @@ export async function pushPendingSync(
     }
   }
 
-  // 3. Select Phase 1 pending items only (created_at ASC + backoff)
+  // 3. Select supported pending items only (created_at ASC + backoff)
   const pendingRows = getPendingSyncItems(db, batchSize) as Array<{
     id: string
     table_name: string

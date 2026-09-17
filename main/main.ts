@@ -7,7 +7,7 @@ import { createWindow } from './helpers/create-window'
 import { getDatabase, closeDatabase } from './db'
 import { createRepositories } from './db/repositories'
 import { registerIpcHandlers } from './ipc'
-import { needsSetup, ensureValidSession } from './auth'
+import { ensureValidSession } from './auth'
 import {
   completeUpdaterStartupEvaluation,
   initAutoUpdater,
@@ -45,7 +45,7 @@ function getStartPath(
 ): string {
   if (needsRecoveryUi) return 'recovery'
   if (ensureValidSession(repos)) return 'home'
-  if (needsSetup(repos)) return 'register'
+  // Fresh install: login screen offers Join school + Create school
   return 'login'
 }
 

@@ -17,8 +17,9 @@ export default function LoginPage() {
   React.useEffect(() => {
     void (async () => {
       const state = await authGetSetupState();
-      if (state.needsSetup) {
-        await router.replace("/register");
+      // Fresh installs can Join or Create — do not force /register only.
+      if (!state.needsSetup) {
+        setChecking(false);
         return;
       }
       setChecking(false);
@@ -127,6 +128,15 @@ export default function LoginPage() {
           </button>
 
           <p className="mt-5 text-center text-sm text-slate-500">
+            Another office computer?{" "}
+            <Link
+              href="/join"
+              className="font-semibold text-blue-600 hover:underline"
+            >
+              Join existing school
+            </Link>
+          </p>
+          <p className="mt-2 text-center text-sm text-slate-500">
             Need to set up a school?{" "}
             <Link
               href="/register"

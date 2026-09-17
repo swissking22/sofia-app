@@ -1,11 +1,12 @@
 import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
 import type { SyncOperation } from '../db/types'
+import { SUPPORTED_SYNC_TABLES } from './tables'
 
-/** Phase 1 cloud push supports only these tables (matches process_sync_operation). */
-export const PHASE1_SYNC_TABLES = ['students', 'student_id_settings'] as const
+/** @deprecated Use SUPPORTED_SYNC_TABLES — kept for older imports/tests. */
+export const PHASE1_SYNC_TABLES = SUPPORTED_SYNC_TABLES
 
-const PHASE1_IN_LIST = PHASE1_SYNC_TABLES.map((t) => `'${t}'`).join(', ')
+const SUPPORTED_IN_LIST = SUPPORTED_SYNC_TABLES.map((t) => `'${t}'`).join(', ')
 
 /**
  * Enqueue a full-record snapshot for future sync.
@@ -51,9 +52,27 @@ export function markUnsupportedPendingAsFailed(
            retry_count = retry_count + 1,
            last_attempt_at = ?
        WHERE status = 'pending'
-         AND table_name NOT IN (${PHASE1_IN_LIST})`
+         AND table_name NOT IN (${SUPPORTED_IN_LIST})`
     )
     .run(new Date().toISOString())
+  return result.changes
+}
+
+/**
+ * After expanding SUPPORTED_SYNC_TABLES, re-queue rows that were failed only
+ * because they were previously unsupported so historical Setup data can push.
+ */
+export function requeueFailedSupportedTables(db: Database.Database): number {
+  const result = db
+    .prepare(
+      `UPDATE sync_queue
+       SET status = 'pending',
+           retry_count = 0,
+           last_attempt_at = NULL
+       WHERE status = 'failed'
+         AND table_name IN (${SUPPORTED_IN_LIST})`
+    )
+    .run()
   return result.changes
 }
 
@@ -70,7 +89,7 @@ export function getPendingSyncItems(
     .prepare(
       `SELECT * FROM sync_queue
        WHERE status = 'pending'
-         AND table_name IN (${PHASE1_IN_LIST})
+         AND table_name IN (${SUPPORTED_IN_LIST})
          AND (
            last_attempt_at IS NULL
            OR (
@@ -122,7 +141,7 @@ export function retryFailed(db: Database.Database, ids?: string[]): number {
         `UPDATE sync_queue
          SET status = 'pending'
          WHERE status = 'failed'
-           AND table_name IN (${PHASE1_IN_LIST})
+           AND table_name IN (${SUPPORTED_IN_LIST})
            AND id IN (${placeholders})`
       )
       .run(...ids)
@@ -133,7 +152,7 @@ export function retryFailed(db: Database.Database, ids?: string[]): number {
       `UPDATE sync_queue
        SET status = 'pending'
        WHERE status = 'failed'
-         AND table_name IN (${PHASE1_IN_LIST})`
+         AND table_name IN (${SUPPORTED_IN_LIST})`
     )
     .run()
   return result.changes
@@ -155,7 +174,7 @@ export function countPendingPhase1(db: Database.Database): number {
     .prepare(
       `SELECT COUNT(*) AS n FROM sync_queue
        WHERE status = 'pending'
-         AND table_name IN (${PHASE1_IN_LIST})`
+         AND table_name IN (${SUPPORTED_IN_LIST})`
     )
     .get() as { n: number }
   return row.n
@@ -167,7 +186,7 @@ export function countFailedPhase1(db: Database.Database): number {
     .prepare(
       `SELECT COUNT(*) AS n FROM sync_queue
        WHERE status = 'failed'
-         AND table_name IN (${PHASE1_IN_LIST})`
+         AND table_name IN (${SUPPORTED_IN_LIST})`
     )
     .get() as { n: number }
   return row.n

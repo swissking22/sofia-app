@@ -128,6 +128,79 @@ export class SchoolRepository extends BaseRepository<School> {
     return record
   }
 
+  /**
+   * Install a cloud school tenant locally for a secondary desk.
+   * Uses the remote UUID; does not enqueue (avoids push echo before pull).
+   */
+  insertJoinedSchool(input: {
+    id: string
+    name: string
+    email?: string | null
+    phone?: string | null
+    address?: string | null
+    school_code?: string | null
+    short_code?: string | null
+    version?: number
+  }): School {
+    const now = new Date().toISOString()
+    const short =
+      normalizeShortCode(input.short_code || '') ||
+      normalizeShortCode(input.school_code || '') ||
+      generateSchoolShortCode(input.name)
+    const record: School = {
+      id: input.id,
+      name: input.name,
+      email: input.email?.trim() || `${short.toLowerCase()}@joined.local`,
+      phone: input.phone ?? null,
+      country: null,
+      address: input.address ?? null,
+      logo_path: null,
+      school_code: input.school_code?.trim() || input.short_code?.trim() || short,
+      short_code: this.ensureUniqueShortCode(short, input.id),
+      school_type: null,
+      education_system: null,
+      school_category: null,
+      region: null,
+      division: null,
+      subdivision: null,
+      website: null,
+      stamp_path: null,
+      principal_signature_path: null,
+      max_teacher_periods: null,
+      day_start_time: null,
+      day_end_time: null,
+      period_duration_minutes: null,
+      periods_per_day: null,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+      sync_status: 'synced',
+      version: input.version ?? 1,
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO schools (
+           id, name, email, phone, country, address, logo_path,
+           school_code, short_code, school_type, education_system, school_category,
+           region, division, subdivision, website,
+           stamp_path, principal_signature_path, max_teacher_periods,
+           day_start_time, day_end_time, period_duration_minutes, periods_per_day,
+           created_at, updated_at, deleted_at, sync_status, version
+         ) VALUES (
+           @id, @name, @email, @phone, @country, @address, @logo_path,
+           @school_code, @short_code, @school_type, @education_system, @school_category,
+           @region, @division, @subdivision, @website,
+           @stamp_path, @principal_signature_path, @max_teacher_periods,
+           @day_start_time, @day_end_time, @period_duration_minutes, @periods_per_day,
+           @created_at, @updated_at, @deleted_at, @sync_status, @version
+         )`
+      )
+      .run(record)
+
+    return record
+  }
+
   update(id: string, input: UpdateInput<School>): School | undefined {
     const existing = this.findById(id)
     if (!existing) return undefined

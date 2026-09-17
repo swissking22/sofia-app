@@ -11,9 +11,14 @@ Offline-first school management desktop app (Nextron: Electron + Next.js + SQLit
 ## Getting started
 
 1. Launch the app (`npm run dev` in development).
-2. Complete registration / first login if prompted — **or** use [seed demo logins](#seed-demo-logins) after running the seeder.
-3. Run the **Setup wizard** (`/setup/...`) so core school data exists before day-to-day use (skip if you loaded seed data).
-4. Use the sidebar for day-to-day modules (School, Students, Academic, …).
+2. On a **new install**, the login screen offers:
+   - **Create an account** (`/register`) — first computer for this school (full Setup wizard).
+   - **Join existing school** (`/join`) — other office desks: enter the school short code, download accounts from the cloud, then log in with a shared user.
+3. Or use [seed demo logins](#seed-demo-logins) after running the seeder.
+4. Run the **Setup wizard** on the primary desk (`/setup/...`) so core school data exists before day-to-day use (skip if you loaded seed data / joined a desk).
+5. Use the sidebar for day-to-day modules (School, Students, Academic, …).
+
+**Join school requirements:** Primary desk must have synced users (Administration → Backup & Sync → Sync Now). Secondary desk needs network + matching school short code. Cloud RPC: `lookup_school_by_code` (migration `20260917083000_lookup_school_by_code.sql`).
 
 Items marked **Coming soon** in the sidebar are placeholders and are not documented as usable yet.
 
@@ -103,7 +108,7 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 | Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments) |
 | Permissions | `/setup/permissions` | Roles & permissions |
 | Student ID | `/setup/student-id` | ID pattern (school code, year, sequence, …) |
-| Students | `/setup/students` | Bulk import / initial student load |
+| Students | `/setup/students` | Required profile fields, admission types, and **CSV bulk import**. Template columns: Full Name, Date of Birth, Level, Department, Specialization, Residence Type, Gender. Sofia matches an **existing** class from level + department + specialization (never creates classes); residence is stored for day/boarding fee structures. |
 | Finance | `/setup/finance` | Fee-related setup |
 | Documents | `/setup/documents` | Templates (report card, admission letter, receipt, certificate). **Report card** shows a live scaled preview of the official A4 bilingual layout in the aside as you edit header, footer, logo, stamp, and signature toggles. |
 | Communication | `/setup/communication` | SMS/channels + notification templates |
@@ -143,9 +148,30 @@ Consistent UI across all student routes: filters at top, clean tables, status ba
 ### Students list — `/students`
 
 - **Filters:** admission year, level, department (section), **class**, search (name / student ID).
-- **Actions:** Add student, Import (opens setup students importer), bulk actions (mark alumni / delete).
+- **Actions:** Add student, **Import** (opens Setup → Students CSV importer), bulk actions (mark alumni / delete).
 - **Class list:** **Export class list** (CSV) and **Print class list** are available for the current filter. With **All classes**, print opens `/students/class-lists?class_id=all` (one page per class).
 - Click a name to open the student profile.
+
+### Bulk student import — `/setup/students`
+
+CSV only (Excel files must be saved as CSV). Download the template, then upload.
+
+| Column | Required | Notes |
+|--------|----------|--------|
+| Full Name | Yes | Extra spaces collapsed |
+| Date of Birth | No | `YYYY-MM-DD`, `DD/MM/YYYY`, or `DD-MM-YYYY` |
+| Level | Yes* | Matches academic level name or short code (`Form 1` / `F1`) |
+| Department | Yes* | Matches Academic Structure **section** (shown as Department) |
+| Specialization | No | Matches name or abbreviation (`Electrical` / `EL`) |
+| Residence Type | Yes | Normalized to `day` or `boarding` (`Day`, `externe`, `Boarder`, `internat`, …). Unknown values are skipped so boarders are not stored as day students |
+| Gender | No | Normalized to Male/Female (`M` / `F`) |
+| Class | No | Disambiguator when several classrooms share the same level + department + specialization (e.g. `Form 1 A` vs `Form 1 B`) |
+
+\*Level and department can be omitted only when **Class** uniquely matches an existing classroom name.
+
+Sofia **does not create classes**. It selects the existing classroom that fits the hierarchy. If none match, or more than one match, the row is skipped and the success message lists why (unknown level, ambiguous class, invalid residence, …). Imported students get a generated student ID; residence is used later when generating invoices against day vs boarding fee structures.
+
+IPC: `students:import` (`renderer/lib/students.ts` → `main/ipc/students.ts`; matching/normalization in `main/domain/student-import.ts`).
 
 ### Class lists — `/students/class-lists`
 
@@ -512,14 +538,35 @@ Sidebar placeholders only:
 
 Sofia uses an offline-first architecture where the local SQLite database functions as the source of truth for offline clients, and Supabase PostgreSQL serves as the cloud synchronization backend.
 
+### Multi-desk MVP (Steps 0–2 + light staff)
+
+Multiple office PCs share one school tenant via push/pull. **Synced today:**
+
+| Domain | Tables |
+|--------|--------|
+| Students (legacy typed) | `students`, `student_id_settings` |
+| School foundation | `schools`, `academic_years`, `academic_terms`, `academic_levels`, `sections`, `specializations`, `departments`, `classes`, `subjects`, `subject_classes`, `grading_systems`, `assessment_types`, `grade_bands` |
+| Users & RBAC | `permissions`, `roles`, `role_permissions`, `users` (password **hashes** only) |
+| Staff (light) | `staff`, `staff_subjects`, `staff_classes` |
+
+**Not yet synced:** finance (invoices/payments), attendance, results, documents, communication, binary assets (photos/logos).
+
+**How to add a table:** (1) add to `GENERIC_SYNC_TABLES` + column list in `main/sync/tables.ts`, (2) add name to `process_synced_entity` allow-list migration, (3) unit-test pull apply, (4) document here.
+
+**Code paths:** registry `main/sync/tables.ts`; generic pull `main/sync/apply-generic.ts`; outbox allowlist `main/sync/queue.ts` (`SUPPORTED_SYNC_TABLES`); client routes generic tables to RPC `process_synced_entity` (`main/sync/supabase-client.ts`); cloud migration `supabase/migrations/20260917080000_multi_desk_synced_entities.sql` (`public.synced_entities`).
+
+**Ops:** Primary desk completes Setup → creates users/roles → **Sync Now**. Secondary desks: open **Join existing school** (`/join`), enter school short code, wait for download, then **Log in** with shared accounts. Cloud RPC: `lookup_school_by_code`.
+
 - **Migrations**:
   - `supabase/migrations/20260907092153_init_cloud_sync_schema.sql` (schema foundation)
   - `supabase/migrations/20260907094133_add_process_sync_operation.sql` (Phase 1 Push Sync RPCs)
+  - `supabase/migrations/20260917080000_multi_desk_synced_entities.sql` (generic multi-desk entity RPC)
 - **Cloud Tables**:
   - `public.schools`: Tenant root (`id UUID PRIMARY KEY`, `name TEXT`, `school_code TEXT`, partial unique index on `school_code`).
   - `public.devices`: Registered desktop clients (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`).
   - `public.students`: Complete cloud mirror of local student records (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`, `student_code TEXT`, `name TEXT NOT NULL`, `class_id TEXT NOT NULL`, `admission_year INTEGER`, `academic_level_id TEXT`, `sequence_number INTEGER`, `gender TEXT`, `date_of_birth DATE`, `phone TEXT`, `email TEXT`, `address TEXT`, `admission_type TEXT`, `guardian_*`, `status TEXT`, `photo_path TEXT`, `residence_type TEXT`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`, `deleted_at TIMESTAMPTZ`, `version BIGINT`). Local-only `sync_status` is excluded.
   - `public.student_id_settings`: Cloud mirror of settings (`id UUID PRIMARY KEY`, `school_id UUID UNIQUE REFERENCES public.schools(id)`, `pattern TEXT`, `sequence_scope TEXT`, `next_sequence_number INTEGER`, `version BIGINT`). Local `sync_status` is excluded.
+  - `public.synced_entities`: Generic JSONB mirror for multi-desk MVP tables (`PRIMARY KEY (school_id, table_name, record_id)`, `payload`, `version`).
   - `public.sync_operations`: Ingestion buffer for operations pushed from local `sync_queue` (`id UUID PRIMARY KEY`, `payload JSONB`, `operation TEXT`, `status TEXT`, `error_message TEXT`, `applied_at TIMESTAMPTZ`).
   - `public.sync_changes`: Append-only cloud change log with identity sequence (`id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`). Global change cursor for future pull sync.
   - `public.sync_cursors`: Per-device pull checkpoints (`uq_sync_cursors_device_school UNIQUE (device_id, school_id)`).
@@ -531,7 +578,7 @@ Sofia uses an offline-first architecture where the local SQLite database functio
 
 ### Phase 1: Push Synchronization Engine
 
-Push synchronization mirrors local SQLite state to Supabase PostgreSQL without implementing remote-to-local pull sync, cursor advancement, or multi-device resolution (reserved for Phase 2).
+Push synchronization mirrors local SQLite state to Supabase. **Students / student_id_settings** use `process_sync_operation`. **Multi-desk MVP tables** use `process_synced_entity` → `synced_entities` + `sync_changes`.
 
 1. **Local Outbox & Push Service (`main/sync/push.ts` - `pushPendingSync()`)**:
    - Queries `sync_queue` in deterministic batch order: `SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 50`.
@@ -603,6 +650,7 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 Key libs for built modules:
 
 - Students: `renderer/lib/student-mgmt.ts` → `main/ipc/student-mgmt.ts` (includes `students:class-list` for print/export rosters; helpers in `main/domain/class-list.ts` / `renderer/lib/class-list.ts`)
+- Student CSV import: `renderer/lib/students.ts` → `main/ipc/students.ts` (`students:import`); normalize + existing-class match in `main/domain/student-import.ts`
 - Class order: `main/domain/class-order.ts` — level `sort_order`, then General → Commercial → Technical; applied in `ClassRepository.findStructureClasses` / `findBySchool` and section lists
 - Staff: `renderer/lib/staff-mgmt.ts` → `main/ipc/staff-mgmt.ts`
 - Finance: `renderer/lib/finance-mgmt.ts` → `main/ipc/finance-mgmt.ts`; extensions `renderer/lib/finance-ext.ts` → `main/ipc/finance-ext.ts`
@@ -616,7 +664,7 @@ Key libs for built modules:
 - Documents: `renderer/lib/documents-mgmt.ts` → `main/ipc/documents-mgmt.ts` (setup templates remain `renderer/lib/documents.ts`)
 - System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts`
 - Auto-update (Windows): `main/updater.ts` + `main/ipc/updater.ts` (`updater:*`); UI `UpdateNotifier` in `AppShell`. **`electron-updater` must stay a runtime dynamic import** (`loadAutoUpdater()` in `main/updater.ts`) — a static import is evaluated with the main chunk and breaks packaged Windows launch. Startup still pins `userData` first via `main/pin-user-data.ts`. Recovery evaluation does not load the updater module graph for native update checks until after the window is ready.
-- Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); PostgREST RPCs `process_sync_operation`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
+- Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); table registry `main/sync/tables.ts`; generic apply `main/sync/apply-generic.ts`; PostgREST RPCs `process_sync_operation`, `process_synced_entity`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
 
 ---
 
@@ -624,6 +672,9 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | Pre-login **Join existing school** (`/join`): secondary desks enter school short code, register device, pull users/structure from cloud, then log in with shared accounts. RPC `lookup_school_by_code`. Fresh installs open Login (Join + Create links). |
+| 2026-09-17 | Multi-desk sync MVP: generic `synced_entities` + `process_synced_entity` RPC; sync school foundation, users/RBAC, and light staff across desks (students already synced). Finance/results/docs still local-only. |
+| 2026-09-17 | Student CSV import matches existing classes from Level + Department + Specialization (never creates classes), stores date of birth and day/boarding residence for fee structures, and reports skip reasons. Template columns: Full Name, Date of Birth, Level, Department, Specialization, Residence Type, Gender. |
 | 2026-09-16 | Setup → Documents: report card template shows a live scaled preview of the official A4 bilingual layout (`ReportCardSetupPreview`) as header, footer, logo, stamp, and signature options change. |
 | 2026-09-16 | Official bilingual A4 Student Report Card: ministry FR/EN header, dynamic school branding, results-engine grades + GCE column, class stats, grading-scale legend, signatures; template snapshot in `report_cards.payload` for historical reproducibility. |
 | 2026-09-16 | Gate Scanner uses standard AppShell sidebar (no chrome-less takeover); Entrance look is content-only styling. |

@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { isGenericSyncTable } from './tables'
 import type {
   ProcessSyncRpcParams,
   ProcessSyncRpcResult,
@@ -9,6 +10,7 @@ import type {
   PullSyncRpcResult,
   RegisterDeviceRpcParams,
   RegisterDeviceRpcResult,
+  LookupSchoolByCodeResult,
   SupabaseSyncClientInterface,
   UpdateSyncCursorRpcParams,
   UpdateSyncCursorRpcResult,
@@ -370,7 +372,11 @@ export class SupabaseSyncClient implements SupabaseSyncClientInterface {
     params: ProcessSyncRpcParams
   ): Promise<ProcessSyncRpcResult> {
     try {
-      const { data, error } = await this.supabase.rpc('process_sync_operation', {
+      const rpcName = isGenericSyncTable(params.tableName)
+        ? 'process_synced_entity'
+        : 'process_sync_operation'
+
+      const { data, error } = await this.supabase.rpc(rpcName, {
         p_id: params.id,
         p_school_id: params.schoolId,
         p_device_id: params.deviceId,
@@ -543,6 +549,54 @@ export class SupabaseSyncClient implements SupabaseSyncClientInterface {
       return {
         ok: false,
         error: err?.message || 'Network failure while updating sync cursor',
+      }
+    }
+  }
+
+  async lookupSchoolByCode(code: string): Promise<LookupSchoolByCodeResult> {
+    try {
+      const { data, error } = await this.supabase.rpc('lookup_school_by_code', {
+        p_code: code,
+      })
+
+      if (error) {
+        return { ok: false, error: rpcErrorMessage(error) }
+      }
+
+      const result = data as Record<string, unknown> | null
+      if (!result || typeof result !== 'object') {
+        return { ok: false, error: 'Invalid school lookup response' }
+      }
+
+      if (result.success === false) {
+        return {
+          ok: false,
+          error: (result.error as string) || 'School not found',
+        }
+      }
+
+      const school = result.school as Record<string, unknown> | undefined
+      if (!school?.id || !school?.name) {
+        return { ok: false, error: 'School not found' }
+      }
+
+      return {
+        ok: true,
+        school: {
+          id: String(school.id),
+          name: String(school.name),
+          school_code: school.school_code != null ? String(school.school_code) : null,
+          short_code: school.short_code != null ? String(school.short_code) : null,
+          email: school.email != null ? String(school.email) : null,
+          phone: school.phone != null ? String(school.phone) : null,
+          address: school.address != null ? String(school.address) : null,
+          version: toFiniteNumber(school.version, 1),
+        },
+      }
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'Network failure while looking up school',
       }
     }
   }

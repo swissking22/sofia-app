@@ -532,6 +532,14 @@ export default function RegisterPage() {
           >
             Log In
           </Link>
+          {" · "}
+          Joining another desk?{" "}
+          <Link
+            href="/join"
+            className="font-semibold text-blue-600 hover:underline"
+          >
+            Join school
+          </Link>
         </p>
       </AuthSplitLayout>
     </>

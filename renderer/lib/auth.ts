@@ -90,6 +90,26 @@ export async function authLogin(input: LoginInput): Promise<AuthResult> {
   return (await window.ipc.invoke('auth:login', input)) as AuthResult
 }
 
+export type JoinSchoolResult =
+  | {
+      ok: true
+      schoolId: string
+      schoolName: string
+      schoolCode: string
+      usersPulled: number
+      applied: number
+    }
+  | { ok: false; error: string }
+
+/** Secondary desk: join an existing school by code and pull accounts from cloud. */
+export async function authJoinSchool(
+  schoolCode: string
+): Promise<JoinSchoolResult> {
+  return (await window.ipc.invoke('auth:join-school', {
+    schoolCode,
+  })) as JoinSchoolResult
+}
+
 export async function authLogout(): Promise<void> {
   await window.ipc.invoke('auth:logout')
 }

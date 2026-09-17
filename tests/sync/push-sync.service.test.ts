@@ -498,17 +498,17 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     expect(item.status).toBe('failed')
   })
 
-  // 15. Unsupported Phase-1 tables are failed locally without RPC calls
+  // 15. Unsupported tables are failed locally without RPC calls
   test('15. Unsupported pending tables are skipped without calling cloud RPC', async () => {
     enqueueSync(db, 'invoices', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'INSERT', {
       id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       school_id: schoolId,
       amount: 100,
     })
-    enqueueSync(db, 'roles', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'INSERT', {
+    enqueueSync(db, 'payments', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'INSERT', {
       id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
       school_id: schoolId,
-      name: 'Teacher',
+      amount: 50,
     })
 
     const beforeOps = mockClient.receivedOperations.length
@@ -521,11 +521,11 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     const inv = db
       .prepare(`SELECT status FROM sync_queue WHERE record_id = ?`)
       .get('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa') as { status: string }
-    const role = db
+    const pay = db
       .prepare(`SELECT status FROM sync_queue WHERE record_id = ?`)
       .get('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb') as { status: string }
     expect(inv.status).toBe('failed')
-    expect(role.status).toBe('failed')
+    expect(pay.status).toBe('failed')
   })
 
   // 16. Permanent RPC barriers abort the batch (no sync storm)

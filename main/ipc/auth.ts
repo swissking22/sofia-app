@@ -11,6 +11,7 @@ import {
   type RegisterAdminInput,
   type RegisterSchoolInput,
 } from '../auth'
+import { joinSchoolByCode } from '../services/join-school'
 
 /**
  * Register all auth IPC handlers.
@@ -38,6 +39,14 @@ export function registerAuthIpc(repos: Repositories): void {
     'auth:register-admin',
     async (_event, input: RegisterAdminInput) => {
       return registerAdmin(repos, input)
+    }
+  )
+
+  /** Secondary desk: join existing school by code, pull users, then login. */
+  ipcMain.handle(
+    'auth:join-school',
+    async (_event, input: { schoolCode?: string }) => {
+      return joinSchoolByCode(repos, String(input?.schoolCode || ''))
     }
   )
 
