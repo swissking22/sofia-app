@@ -548,8 +548,11 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 | School foundation | `schools`, `academic_years`, `academic_terms`, `academic_levels`, `sections`, `specializations`, `departments`, `classes`, `subjects`, `subject_classes`, `grading_systems`, `assessment_types`, `grade_bands` |
 | Users & RBAC | `permissions`, `roles`, `role_permissions`, `users` (password **hashes** only) |
 | Staff (light) | `staff`, `staff_subjects`, `staff_classes` |
+| Finance (Step 5) | `finance_settings` (counters use **MAX** local/remote), fee catalogs/structures/discounts, `invoices`, `invoice_lines`, `payments`, `receipts`, credits, expenses, ledger, audit, reminders, budgets, online payments, bank deposits |
 
-**Not yet synced:** finance (invoices/payments), attendance, results, documents, communication, binary assets (photos/logos).
+**Not yet synced:** attendance, results/report cards, documents, communication, timetable, binary assets (photos/logos).
+
+**Finance notes:** Invoice/receipt/payment/expense **numbers** travel with their rows (immutable after issue). Sequence counters on `finance_settings` never move backward when desks sync.
 
 **How to add a table:** (1) add to `GENERIC_SYNC_TABLES` + column list in `main/sync/tables.ts`, (2) add name to `process_synced_entity` allow-list migration, (3) unit-test pull apply, (4) document here.
 
@@ -672,6 +675,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | Multi-desk **finance sync (Step 5)**: fee config + invoices/payments/receipts/expenses/budgets/etc. via `synced_entities`; `finance_settings` counters merge with MAX(local, remote). Migration `20260917090000_finance_synced_entities.sql`. |
 | 2026-09-17 | Pre-login **Join existing school** (`/join`): secondary desks enter school short code, register device, pull users/structure from cloud, then log in with shared accounts. RPC `lookup_school_by_code`. Fresh installs open Login (Join + Create links). |
 | 2026-09-17 | Multi-desk sync MVP: generic `synced_entities` + `process_synced_entity` RPC; sync school foundation, users/RBAC, and light staff across desks (students already synced). Finance/results/docs still local-only. |
 | 2026-09-17 | Student CSV import matches existing classes from Level + Department + Specialization (never creates classes), stores date of birth and day/boarding residence for fee structures, and reports skip reasons. Template columns: Full Name, Date of Birth, Level, Department, Specialization, Residence Type, Gender. |

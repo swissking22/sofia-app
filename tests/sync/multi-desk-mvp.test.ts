@@ -12,7 +12,10 @@ describe('Multi-desk sync MVP registry', () => {
     expect(SUPPORTED_SYNC_TABLES).toContain('users')
     expect(SUPPORTED_SYNC_TABLES).toContain('roles')
     expect(SUPPORTED_SYNC_TABLES).toContain('staff')
-    expect(isGenericSyncTable('invoices')).toBe(false)
+    expect(SUPPORTED_SYNC_TABLES).toContain('invoices')
+    expect(SUPPORTED_SYNC_TABLES).toContain('payments')
+    expect(SUPPORTED_SYNC_TABLES).toContain('finance_settings')
+    expect(isGenericSyncTable('timetable_slots')).toBe(false)
     expect(isGenericSyncTable('roles')).toBe(true)
   })
 })
@@ -213,5 +216,108 @@ describe('Generic pull apply', () => {
     }
     expect(user.email).toBe('bursar@school.test')
     expect(user.password_hash).toBe('$2a$10$hashed')
+  })
+
+  it('merges finance_settings counters with MAX(local, remote)', () => {
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO finance_settings (
+        id, school_id, currency, payment_methods, receipt_prefix, receipt_next_number,
+        invoice_prefix, invoice_next_number, payment_prefix, payment_next_number,
+        expense_prefix, expense_next_number,
+        created_at, updated_at, sync_status, version
+      ) VALUES (
+        'fs-1', ?, 'XAF', '[]', 'RCP', 5,
+        'INV', 12, 'PAY', 3,
+        'EXP', 2,
+        ?, ?, 'synced', 1
+      )`
+    ).run(schoolId, now, now)
+
+    const result = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'finance_settings',
+        record_id: 'fs-1',
+        operation: 'UPDATE',
+        version: 2,
+        payload: {
+          id: 'fs-1',
+          school_id: schoolId,
+          currency: 'XAF',
+          invoice_next_number: 8,
+          receipt_next_number: 20,
+          payment_next_number: 1,
+          expense_next_number: 9,
+          updated_at: now,
+          version: 2,
+        },
+      },
+      schoolId
+    )
+    expect(result).toBe('applied')
+    const row = db
+      .prepare(
+        `SELECT invoice_next_number, receipt_next_number, payment_next_number, expense_next_number, version
+         FROM finance_settings WHERE id = ?`
+      )
+      .get('fs-1') as Record<string, number>
+    expect(row.invoice_next_number).toBe(12) // max(12, 8)
+    expect(row.receipt_next_number).toBe(20) // max(5, 20)
+    expect(row.payment_next_number).toBe(3) // max(3, 1)
+    expect(row.expense_next_number).toBe(9) // max(2, 9)
+    expect(row.version).toBe(2)
+  })
+
+  it('upserts invoice rows without re-enqueue', () => {
+    const now = new Date().toISOString()
+    const studentId = 'stu-fin-1'
+    db.prepare(
+      `INSERT INTO classes (
+        id, name, school_id, is_active, created_at, updated_at, sync_status, version
+      ) VALUES ('class-fin', 'F1A', ?, 1, ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+    db.prepare(
+      `INSERT INTO students (
+        id, name, class_id, school_id, status, created_at, updated_at, sync_status, version
+      ) VALUES (?, 'Ada', 'class-fin', ?, 'active', ?, ?, 'synced', 1)`
+    ).run(studentId, schoolId, now, now)
+
+    const result = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'invoices',
+        record_id: 'inv-1',
+        operation: 'INSERT',
+        version: 1,
+        payload: {
+          id: 'inv-1',
+          school_id: schoolId,
+          student_id: studentId,
+          invoice_number: 'INV-0001',
+          issue_date: '2026-09-01',
+          status: 'pending',
+          subtotal: 10000,
+          discount_total: 0,
+          net_payable: 10000,
+          amount_paid: 0,
+          balance: 10000,
+          created_at: now,
+          updated_at: now,
+          version: 1,
+        },
+      },
+      schoolId
+    )
+    expect(result).toBe('applied')
+    const inv = db
+      .prepare(`SELECT invoice_number, balance FROM invoices WHERE id = ?`)
+      .get('inv-1') as { invoice_number: string; balance: number }
+    expect(inv.invoice_number).toBe('INV-0001')
+    expect(inv.balance).toBe(10000)
+    const queued = db
+      .prepare(`SELECT COUNT(*) AS c FROM sync_queue WHERE record_id = 'inv-1'`)
+      .get() as { c: number }
+    expect(queued.c).toBe(0)
   })
 })

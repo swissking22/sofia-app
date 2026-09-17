@@ -5,6 +5,7 @@
 import type { Database } from 'better-sqlite3'
 import { recordSyncConflict } from './queue'
 import {
+  FINANCE_SEQUENCE_COLUMNS,
   GENERIC_TABLE_COLUMNS,
   isGenericSyncTable,
   type GenericSyncTable,
@@ -39,6 +40,16 @@ function coerceValue(column: string, value: unknown): unknown {
       'capacity',
       'failed_login_count',
       'version',
+      'is_mandatory',
+      'is_adjustment',
+      'is_recurring',
+      'allow_credit',
+      'require_full_deposit_reconciliation',
+      'reprint_count',
+      'invoice_next_number',
+      'payment_next_number',
+      'receipt_next_number',
+      'expense_next_number',
     ].includes(column)
   ) {
     if (value === null || value === undefined) return null
@@ -46,7 +57,37 @@ function coerceValue(column: string, value: unknown): unknown {
     const n = Number(value)
     return Number.isFinite(n) ? n : 0
   }
-  if (['weight_percent', 'coefficient', 'min_score', 'max_score'].includes(column)) {
+  if (
+    [
+      'weight_percent',
+      'coefficient',
+      'min_score',
+      'max_score',
+      'amount',
+      'subtotal',
+      'discount_total',
+      'net_payable',
+      'amount_paid',
+      'balance',
+      'credit_applied',
+      'balance_remaining',
+      'remaining',
+      'late_fee_value',
+      'discount_value',
+      'debit',
+      'credit',
+      'allocated_amount',
+      'alert_pct',
+      'warning_pct',
+      'critical_pct',
+      'utilization',
+      'spent',
+      'allocated',
+      'budget_alert_pct',
+      'budget_warning_pct',
+      'budget_critical_pct',
+    ].includes(column)
+  ) {
     if (value === null || value === undefined) return null
     const n = Number(value)
     return Number.isFinite(n) ? n : 0
@@ -94,6 +135,10 @@ function upsertRow(
     reattachRolePermissions = remapPermissionIdentity(db, recordId, payload.name)
   }
 
+  const existingRow = db
+    .prepare(`SELECT * FROM ${table} WHERE id = ?`)
+    .get(recordId) as Record<string, unknown> | undefined
+
   const allowed = GENERIC_TABLE_COLUMNS[table]
   const present = existingColumns(db, table)
   const cols = allowed.filter((c) => present.has(c) && c !== 'sync_status')
@@ -115,33 +160,72 @@ function upsertRow(
       continue
     }
     if (col === 'created_at') {
-      values.created_at = payload.created_at || now
+      values.created_at =
+        payload.created_at ||
+        (existingRow?.created_at as string) ||
+        now
       continue
     }
     if (col === 'deleted_at') {
       values.deleted_at =
         operation === 'DELETE'
           ? payload.deleted_at || now
-          : payload.deleted_at ?? null
+          : payload.deleted_at !== undefined
+            ? payload.deleted_at
+            : (existingRow?.deleted_at ?? null)
       continue
     }
     if (col === 'class_id' && table === 'subjects') {
       values.class_id =
         payload.class_id !== undefined && payload.class_id !== null
           ? payload.class_id
-          : ''
+          : existingRow?.class_id != null
+            ? existingRow.class_id
+            : ''
       continue
     }
     if (col === 'first_name' || col === 'last_name') {
-      values[col] = payload[col] != null ? String(payload[col]) : ''
+      values[col] =
+        payload[col] != null
+          ? String(payload[col])
+          : existingRow?.[col] != null
+            ? String(existingRow[col])
+            : ''
       continue
     }
     if (col === 'failed_login_count' || col === 'must_change_password') {
-      values[col] = coerceValue(col, payload[col] ?? 0)
+      values[col] = coerceValue(
+        col,
+        payload[col] ?? existingRow?.[col] ?? 0
+      )
       continue
     }
     if (col === 'status' && table === 'users') {
-      values.status = payload.status != null ? String(payload.status) : 'active'
+      values.status =
+        payload.status != null
+          ? String(payload.status)
+          : existingRow?.status != null
+            ? String(existingRow.status)
+            : 'active'
+      continue
+    }
+    // Prevent finance counter back-sliding across desks
+    if (
+      table === 'finance_settings' &&
+      (FINANCE_SEQUENCE_COLUMNS as readonly string[]).includes(col)
+    ) {
+      const remote = Number(payload[col])
+      const local = Number(existingRow?.[col] ?? 0)
+      values[col] = Math.max(
+        Number.isFinite(local) ? local : 0,
+        Number.isFinite(remote) ? remote : 0,
+        1
+      )
+      continue
+    }
+    // Preserve local NOT NULL / existing fields when remote payload omits them
+    if (payload[col] === undefined && existingRow && existingRow[col] !== undefined) {
+      values[col] = existingRow[col]
       continue
     }
     values[col] = coerceValue(col, payload[col])
