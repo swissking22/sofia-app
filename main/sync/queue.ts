@@ -192,6 +192,36 @@ export function countFailedPhase1(db: Database.Database): number {
   return row.n
 }
 
+/** Pending/failed Phase 1 counts grouped by table_name for admin health UI. */
+export function queueStatsByTable(
+  db: Database.Database
+): Array<{ table_name: string; pending: number; failed: number; synced: number }> {
+  const rows = db
+    .prepare(
+      `SELECT table_name,
+              SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+              SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) AS synced
+       FROM sync_queue
+       WHERE table_name IN (${SUPPORTED_IN_LIST})
+       GROUP BY table_name
+       HAVING pending > 0 OR failed > 0 OR synced > 0
+       ORDER BY failed DESC, pending DESC, table_name ASC`
+    )
+    .all() as Array<{
+    table_name: string
+    pending: number
+    failed: number
+    synced: number
+  }>
+  return rows.map((r) => ({
+    table_name: r.table_name,
+    pending: Number(r.pending) || 0,
+    failed: Number(r.failed) || 0,
+    synced: Number(r.synced) || 0,
+  }))
+}
+
 /**
  * Handle network error during push:
  * Increments retry_count, updates last_attempt_at, but PRESERVES status as 'pending'

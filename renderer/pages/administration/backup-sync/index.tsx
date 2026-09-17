@@ -10,7 +10,10 @@ import {
   StudentTable,
   fieldClass,
 } from "../../../components/students/ui";
-import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import { TabBar as DocTabs } from "../../../components/documents/ui";
 import {
   fetchBackups,
@@ -73,18 +76,27 @@ export default function AdminBackupSyncPage() {
   const conflicts = (sync?.conflicts ?? []) as Array<Record<string, unknown>>;
   const pendingCount = Number(dash.pending ?? 0);
   const failedCount = Number(dash.failed ?? 0);
-  const hasChangesToSync = pendingCount > 0;
+  const byTable = (Array.isArray(dash.by_table) ? dash.by_table : []) as Array<{
+    table_name: string;
+    pending: number;
+    failed: number;
+    synced: number;
+  }>;
   const syncBusy = syncing || retrying;
 
   async function handleSyncNow() {
-    if (!hasChangesToSync || syncBusy) return;
+    if (syncBusy) return;
     setSyncing(true);
     setError("");
     setSuccess("");
     try {
       const r = await runAdminSync();
       if (r.ok) {
-        setSuccess("Sync finished.");
+        setSuccess(
+          pendingCount > 0
+            ? "Sync finished (push + pull)."
+            : "Sync finished (pulled latest from cloud).",
+        );
         await load();
       } else {
         setError(r.error);
@@ -122,7 +134,7 @@ export default function AdminBackupSyncPage() {
       title="Backup & Sync"
       breadcrumb={["System Administration", "Backup & Sync"]}
       heading="Backup & Sync"
-      subtitle="Protect the local SQLite database and push pending changes when a connection is available."
+      subtitle="Protect the local SQLite database and sync with other school desks when online."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
       {success ? <PageAlert tone="success">{success}</PageAlert> : null}
@@ -149,12 +161,14 @@ export default function AdminBackupSyncPage() {
               {backups[0]
                 ? String(backups[0].created_at).replace("T", " ").slice(0, 19)
                 : preUpdate[0]
-                  ? String(preUpdate[0].createdAt).replace("T", " ").slice(0, 19)
+                  ? String(preUpdate[0].createdAt)
+                      .replace("T", " ")
+                      .slice(0, 19)
                   : "Never"}
             </p>
             <p className="text-slate-600">
-              Automatic backups: Enabled (before each update + optional scheduled
-              local snapshots)
+              Automatic backups: Enabled (before each update + optional
+              scheduled local snapshots)
             </p>
           </div>
           <div className="mb-4 flex gap-2">
@@ -189,9 +203,7 @@ export default function AdminBackupSyncPage() {
                     <td className="px-4 py-3 text-xs">
                       {Number(b.fileSize || 0).toLocaleString()} bytes
                     </td>
-                    <td className="px-4 py-3">
-                      {b.verified ? "Yes" : "No"}
-                    </td>
+                    <td className="px-4 py-3">{b.verified ? "Yes" : "No"}</td>
                   </tr>
                 ))}
               </StudentTable>
@@ -254,7 +266,7 @@ export default function AdminBackupSyncPage() {
           ) : null}
           <div className="mb-4 flex gap-2">
             <PrimaryButton
-              disabled={!hasChangesToSync || syncBusy}
+              disabled={syncBusy}
               onClick={() => void handleSyncNow()}
             >
               {syncing ? (
@@ -276,10 +288,27 @@ export default function AdminBackupSyncPage() {
               {retrying ? "Retrying…" : "Retry failed"}
             </SecondaryButton>
           </div>
-          {!hasChangesToSync && !syncing ? (
-            <p className="mb-4 text-sm text-slate-500">
-              No pending changes to sync.
-            </p>
+          <p className="mb-4 text-sm text-slate-500">
+            Sync Now always pushes pending changes and pulls the latest from
+            cloud (safe when pending is 0 — secondary desks use it to refresh).
+            Branding logos and student photos download when Storage has them.
+          </p>
+          {byTable.length > 0 ? (
+            <div className="mb-6">
+              <h3 className="mb-2 text-sm font-semibold">Queue by table</h3>
+              <StudentTable columns={["Table", "Pending", "Failed", "Synced"]}>
+                {byTable.map((row) => (
+                  <tr key={row.table_name}>
+                    <td className="px-4 py-3 font-mono text-xs">
+                      {row.table_name}
+                    </td>
+                    <td className="px-4 py-3">{row.pending}</td>
+                    <td className="px-4 py-3">{row.failed}</td>
+                    <td className="px-4 py-3">{row.synced}</td>
+                  </tr>
+                ))}
+              </StudentTable>
+            </div>
           ) : null}
           <h3 className="mb-2 text-sm font-semibold">Sync history</h3>
           <StudentTable

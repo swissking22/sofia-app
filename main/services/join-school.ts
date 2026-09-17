@@ -120,6 +120,27 @@ export async function joinSchoolByCode(
     }
   }
 
+  // Best-effort branding/photo download (Storage may be empty on first join)
+  const storage = syncClient as {
+    uploadAsset?: unknown
+    downloadAsset?: unknown
+  }
+  if (
+    typeof storage.downloadAsset === 'function' &&
+    typeof storage.uploadAsset === 'function'
+  ) {
+    try {
+      const { downloadMissingSyncedAssets } = await import('../sync/assets')
+      await downloadMissingSyncedAssets({
+        db,
+        schoolId: remote.id,
+        storage: syncClient as import('../sync/types').AssetStorageClient,
+      })
+    } catch {
+      /* non-fatal — path strings still present for later Sync Now */
+    }
+  }
+
   const usersPulled = repos.users.findAll().length
   if (usersPulled === 0) {
     return {

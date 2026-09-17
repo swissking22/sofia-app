@@ -203,6 +203,21 @@ export async function pushPendingSync(
         console.log(`[SYNC] Student ${item.record_id} uploaded`)
       }
       console.log(`[SYNC] Operation ${item.id} acknowledged`)
+      if (options.onSynced) {
+        try {
+          await options.onSynced({
+            id: String(item.id),
+            table_name: String(item.table_name),
+            record_id: String(item.record_id),
+            payload: String(item.payload ?? '{}'),
+          })
+        } catch (err) {
+          console.warn(
+            `[SYNC] onSynced hook failed for ${item.id}:`,
+            err instanceof Error ? err.message : err
+          )
+        }
+      }
     } else {
       failed += 1
 

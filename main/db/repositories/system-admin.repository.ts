@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
-import { countByStatus, countFailedPhase1, countPendingPhase1, retryFailed } from '../../sync/queue'
+import { countByStatus, countFailedPhase1, countPendingPhase1, queueStatsByTable, retryFailed } from '../../sync/queue'
 import {
   DEFAULT_CURRENCY,
   DEFAULT_TIMEZONE,
@@ -509,6 +509,7 @@ export class SystemAdminRepository {
       failed: countFailedPhase1(this.db),
       conflicts: openConflicts,
       timezone: settings.timezone,
+      by_table: queueStatsByTable(this.db),
     }
   }
 

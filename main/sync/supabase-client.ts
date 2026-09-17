@@ -3,6 +3,7 @@ import path from 'path'
 import { app } from 'electron'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { isGenericSyncTable } from './tables'
+import { SCHOOL_ASSETS_BUCKET } from './assets'
 import type {
   ProcessSyncRpcParams,
   ProcessSyncRpcResult,
@@ -597,6 +598,53 @@ export class SupabaseSyncClient implements SupabaseSyncClientInterface {
       return {
         ok: false,
         error: err?.message || 'Network failure while looking up school',
+      }
+    }
+  }
+
+  async uploadAsset(
+    objectKey: string,
+    data: Buffer,
+    contentType: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    try {
+      const { error } = await this.supabase.storage
+        .from(SCHOOL_ASSETS_BUCKET)
+        .upload(objectKey, data, {
+          contentType,
+          upsert: true,
+        })
+      if (error) {
+        return { ok: false, error: error.message }
+      }
+      return { ok: true }
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'Network failure while uploading asset',
+      }
+    }
+  }
+
+  async downloadAsset(
+    objectKey: string
+  ): Promise<{ ok: boolean; data?: Buffer; error?: string }> {
+    try {
+      const { data, error } = await this.supabase.storage
+        .from(SCHOOL_ASSETS_BUCKET)
+        .download(objectKey)
+      if (error) {
+        return { ok: false, error: error.message }
+      }
+      if (!data) {
+        return { ok: false, error: 'Empty asset download' }
+      }
+      const ab = await data.arrayBuffer()
+      return { ok: true, data: Buffer.from(ab) }
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'Network failure while downloading asset',
       }
     }
   }

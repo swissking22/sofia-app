@@ -552,16 +552,29 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 | Academics & attendance (Step 6) | `timetable_slots`; class + gate + staff attendance; CA/exams/scores; calculation profiles/coefficients; `result_runs` (+ rows/summaries); `report_cards` |
 | Documents & ID cards (Step 7) | `document_templates`, numbering sequences (MAX), signatories, `issued_documents` (+ versions/audit); ID card templates/versions/settings/sequences (MAX), issued cards, generation jobs/items, print history |
 | Communication (Step 8) | `communication_settings`, `notification_templates`, `announcements`, `internal_notices`, `communication_deliveries`, `parent_message_threads`, `parent_messages` |
+| Assets & ops (Step 9) | Supabase Storage bucket `school-assets` for school logo/stamp/signature + student photos; Admin Sync Now works with pending=0 (pull-only); queue health **by table** |
 
-**Not yet synced:** binary asset *files* (photos/logos/stamps — path strings sync; file bytes stay local / Storage later), `backup_sync_settings`, `report_settings`.
+**Not yet synced as files:** expense receipts, bank deposit scans, ID-card template art embedded only as JSON, arbitrary student document attachments (path strings may sync; bytes not mirrored yet).
 
 **Finance notes:** Invoice/receipt/payment/expense **numbers** travel with their rows (immutable after issue). Sequence counters on `finance_settings` never move backward when desks sync.
 
 **Academics notes:** Result-run status never regresses (`draft` → `computed` → `published` → `locked`). Locked runs ignore remote DELETE. Child score/attendance rows without a local `school_id` column still sync (push attaches tenant id in the cloud payload).
 
-**Documents notes:** Document and ID-card **numbers** travel with issued rows. Sequence counters (`document_number_sequences.next_number`, `id_card_sequences.next_number`) use **MAX**(local, remote). Template HTML/JSON and rendered HTML sync as text; signature/logo *files* do not.
+**Documents notes:** Document and ID-card **numbers** travel with issued rows. Sequence counters (`document_number_sequences.next_number`, `id_card_sequences.next_number`) use **MAX**(local, remote). Template HTML/JSON and rendered HTML sync as text; signature/logo *files* use Storage when present.
 
 **Communication notes:** Notices/announcements and parent threads sync as rows. Channel toggles and SMS provider settings travel with `communication_settings` (same-school desks share config).
+
+**Asset notes:** Object key `{school_id}/{table}/{record_id}/{field}.{ext}` in bucket `school-assets`. Upload after successful push when the local file exists; download on pull/Join/Sync Now when the path string is present but the file is missing locally. Local paths are rewritten under `userData/uploads/…`.
+
+### Multi-desk ops guide
+
+| Topic | Guidance |
+|-------|----------|
+| Primary desk | One machine should own **finance numbering** day-to-day (bursar). Others may still issue invoices offline; counters merge with MAX on sync — sync soon after busy periods. |
+| How often to Sync Now | At least morning / midday / end of day on every desk; immediately after Join school on a new PC; after bulk imports. |
+| New PC | Install → open **Join existing school** → enter short code → wait for download → log in with a shared account → Sync Now once more for assets. |
+| Wipe / reinstall | Join again (or restore a local backup). Full pull starts at cursor 0. Photos/logos appear after Storage migration is applied and a desk that has the files has pushed. |
+| Health | Administration → Backup & Sync → **Queue by table** shows pending/failed per domain. Retry failed, then Sync Now. |
 
 **How to add a table:** (1) add to `GENERIC_SYNC_TABLES` + column list in `main/sync/tables.ts`, (2) add name to `process_synced_entity` allow-list migration, (3) unit-test pull apply, (4) document here.
 
@@ -578,6 +591,7 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
   - `supabase/migrations/20260917100000_academics_synced_entities.sql` (academics/attendance allow-list)
   - `supabase/migrations/20260917110000_documents_id_cards_synced_entities.sql` (documents/ID cards allow-list)
   - `supabase/migrations/20260917120000_communication_synced_entities.sql` (communication allow-list)
+  - `supabase/migrations/20260917130000_school_assets_storage.sql` (Storage bucket `school-assets`)
 - **Cloud Tables**:
   - `public.schools`: Tenant root (`id UUID PRIMARY KEY`, `name TEXT`, `school_code TEXT`, partial unique index on `school_code`).
   - `public.devices`: Registered desktop clients (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`).
@@ -689,6 +703,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | Login hides Join/Create when local users already exist (those routes redirect to Login once setup is done); shows a short note instead. |
+| 2026-09-17 | Multi-desk **Step 9**: Storage bucket `school-assets` for logo/stamp/signature + student photos; Sync Now enabled for pull-only; Admin sync dashboard shows queue **by table**; ops guide for primary desk / Sync cadence. Migration `20260917130000_school_assets_storage.sql`. |
 | 2026-09-17 | Multi-desk **communication sync (Step 8)**: announcements, internal notices, deliveries, parent threads/messages, notification templates, and channel settings via `synced_entities`. Migration `20260917120000_communication_synced_entities.sql`. |
 | 2026-09-17 | Multi-desk **documents & ID cards sync (Step 7)**: templates, issued docs, ID card designer metadata/jobs/cards via `synced_entities`; document/ID sequence counters merge with MAX. Migration `20260917110000_documents_id_cards_synced_entities.sql`. Binary asset files remain local. |
 | 2026-09-17 | Multi-desk **academics & attendance sync (Step 6)**: timetable, class/gate/staff attendance, CA/exams, result calculation + runs/rows/summaries, report cards via `synced_entities`; locked result runs do not regress or soft-delete on pull. Migration `20260917100000_academics_synced_entities.sql`. |

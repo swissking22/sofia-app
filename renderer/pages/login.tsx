@@ -13,15 +13,14 @@ export default function LoginPage() {
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [checking, setChecking] = React.useState(true);
+  const [showSetupLinks, setShowSetupLinks] = React.useState(false);
 
   React.useEffect(() => {
     void (async () => {
       const state = await authGetSetupState();
-      // Fresh installs can Join or Create — do not force /register only.
-      if (!state.needsSetup) {
-        setChecking(false);
-        return;
-      }
+      // Fresh installs (no local users) can Join or Create.
+      // Devices that already have accounts stay on Login only.
+      setShowSetupLinks(state.needsSetup);
       setChecking(false);
     })();
   }, [router]);
@@ -127,24 +126,33 @@ export default function LoginPage() {
             {loading ? "Signing in…" : "Log in"}
           </button>
 
-          <p className="mt-5 text-center text-sm text-slate-500">
-            Another office computer?{" "}
-            <Link
-              href="/join"
-              className="font-semibold text-blue-600 hover:underline"
-            >
-              Join existing school
-            </Link>
-          </p>
-          <p className="mt-2 text-center text-sm text-slate-500">
-            Need to set up a school?{" "}
-            <Link
-              href="/register"
-              className="font-semibold text-blue-600 hover:underline"
-            >
-              Create an account
-            </Link>
-          </p>
+          {showSetupLinks ? (
+            <>
+              <p className="mt-5 text-center text-sm text-slate-500">
+                Another office computer?{" "}
+                <Link
+                  href="/join"
+                  className="font-semibold text-blue-600 hover:underline"
+                >
+                  Join existing school
+                </Link>
+              </p>
+              <p className="mt-2 text-center text-sm text-slate-500">
+                Need to set up a school?{" "}
+                <Link
+                  href="/register"
+                  className="font-semibold text-blue-600 hover:underline"
+                >
+                  Create an account
+                </Link>
+              </p>
+            </>
+          ) : (
+            <p className="mt-5 text-center text-sm text-slate-500">
+              This computer already has school accounts. Sign in above, or use a
+              fresh install / clear local app data to join a different school.
+            </p>
+          )}
         </form>
       </AuthSplitLayout>
     </>

@@ -136,7 +136,8 @@ export default function JoinSchoolPage() {
           <p className="mb-4 text-xs leading-relaxed text-slate-500">
             Ask the main office for the school short code. That computer must
             have run <span className="font-medium">Sync Now</span> at least once
-            so your account is in the cloud.
+            so your accounts are in the cloud. After joining, Sync Now again to
+            pull logos and student photos when available.
           </p>
 
           <button

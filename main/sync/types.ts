@@ -47,6 +47,13 @@ export interface PushSyncOptions {
   schoolId?: string
   batchSize?: number
   client?: SupabaseSyncClientInterface
+  /** Optional hook after a queue item is successfully acknowledged by cloud. */
+  onSynced?: (item: {
+    id: string
+    table_name: string
+    record_id: string
+    payload: string
+  }) => Promise<void> | void
 }
 
 export interface PushSyncResult {
@@ -165,4 +172,24 @@ export interface SupabaseSyncClientInterface {
   pullSyncChanges(params: PullSyncRpcParams): Promise<PullSyncRpcResult>
   updateSyncCursor(params: UpdateSyncCursorRpcParams): Promise<UpdateSyncCursorRpcResult>
   lookupSchoolByCode?(code: string): Promise<LookupSchoolByCodeResult>
+  uploadAsset?(
+    objectKey: string,
+    data: Buffer,
+    contentType: string
+  ): Promise<{ ok: boolean; error?: string }>
+  downloadAsset?(
+    objectKey: string
+  ): Promise<{ ok: boolean; data?: Buffer; error?: string }>
+}
+
+/** Minimal Storage surface used by asset sync (injectable in tests). */
+export interface AssetStorageClient {
+  uploadAsset(
+    objectKey: string,
+    data: Buffer,
+    contentType: string
+  ): Promise<{ ok: boolean; error?: string }>
+  downloadAsset(
+    objectKey: string
+  ): Promise<{ ok: boolean; data?: Buffer; error?: string }>
 }

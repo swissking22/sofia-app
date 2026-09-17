@@ -519,9 +519,9 @@ export function registerSystemAdminIpc(repos: Repositories): void {
       admin().recordSyncRun({
         school_id: schoolId,
         processed: result.processed,
-        successful: result.processed,
+        successful: result.successful,
         failed: result.failed,
-        conflicts: 0,
+        conflicts: result.conflicts,
         duration_ms: Date.now() - started,
         status: result.failed ? 'failed' : 'successful',
       })
@@ -529,7 +529,7 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         school_id: schoolId,
         actor_user_id: s.userId,
         action: result.failed ? 'sync.failed' : 'sync.completed',
-        description: `${result.processed} processed, ${result.failed} failed`,
+        description: `${result.processed} processed, ${result.failed} failed, ${result.conflicts} conflicts`,
         result: result.failed ? 'failure' : 'success',
       })
       return { ok: true, data: result }
