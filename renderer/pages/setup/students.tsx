@@ -13,6 +13,7 @@ import {
   DEFAULT_STUDENT_ID_FORMAT,
   downloadStudentImportTemplate,
   fetchStudentSettings,
+  formatStudentImportSummary,
   importStudents,
   parseStudentCsv,
   saveStudentSettings,
@@ -52,7 +53,7 @@ function StudentsAside() {
         </li>
         <li className="flex items-start gap-2">
           <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-(--sofia-primary)" />
-          Excel/CSV import template
+          CSV import (level, department, residence)
         </li>
         <li className="flex items-start gap-2">
           <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-(--sofia-primary)" />
@@ -191,7 +192,7 @@ function StudentSetupForm() {
       const rows = parseStudentCsv(text);
       if (!rows.length) {
         setError(
-          "Could not parse the file. Use the template headers (Full Name, Class, …).",
+          "Could not parse the file. Use the template headers (Full Name, Date of Birth, Level, Department, Specialization, Residence Type).",
         );
         return;
       }
@@ -202,13 +203,7 @@ function StudentSetupForm() {
         return;
       }
       setStudentCount(res.data.student_count);
-      setSuccess(
-        `Imported ${res.data.imported} student${res.data.imported === 1 ? "" : "s"}${
-          res.data.skipped
-            ? ` (${res.data.skipped} skipped — check Class names)`
-            : ""
-        }.`,
-      );
+      setSuccess(formatStudentImportSummary(res.data));
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -285,7 +280,7 @@ function StudentSetupForm() {
 
       <FormSection
         title="Student Import"
-        description="Bulk-prepare the student database from an Excel or CSV file."
+        description="Bulk-prepare the student database from a CSV of name, date of birth, level, department, specialization, and residence."
         layout="stack"
       >
         <input
@@ -318,8 +313,11 @@ function StudentSetupForm() {
           </button>
         </div>
         <p className="text-xs text-slate-500">
-          Template opens in Excel. Class names must match classes from Academic
-          Structure. Current students in database:{" "}
+          Template opens in Excel. Sofia matches each row to an existing class
+          from Level + Department + Specialization (it does not create classes).
+          Residence (Day / Boarding) is stored for fee structures. If several
+          classes share that combination, add a Class column (e.g. Form 1 B).
+          Current students in database:{" "}
           <span className="font-semibold text-slate-700">{studentCount}</span>
         </p>
       </FormSection>

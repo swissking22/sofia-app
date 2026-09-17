@@ -5,6 +5,12 @@ import type {
   StudentSettingsDto,
   StudentSettingsSaveInput,
 } from '../db/repositories/student-settings.repository'
+import {
+  resolveStudentImport,
+  tallySkipReasons,
+  type StudentImportCsvRow,
+  type StudentImportSkipReason,
+} from '../domain/student-import'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -49,49 +55,46 @@ export function registerStudentsIpc(repos: Repositories): void {
     'students:import',
     (
       _e,
-      input: {
-        students: Array<{
-          full_name: string
-          class_name?: string | null
-          gender?: string | null
-        }>
-      }
-    ): Result<{ imported: number; skipped: number; student_count: number }> => {
+      input: { students: StudentImportCsvRow[] }
+    ): Result<{
+      imported: number
+      skipped: number
+      student_count: number
+      skip_reasons: Array<{ reason: StudentImportSkipReason; count: number }>
+    }> => {
       const schoolId = resolveSchoolId(repos)
       if (!schoolId) return { ok: false, error: 'No school found.' }
       if (!input?.students?.length) {
         return { ok: false, error: 'No students to import.' }
       }
 
-      const classes = repos.classes.findStructureClasses(schoolId)
-      const byName = new Map(
-        classes.map((c) => [c.name.trim().toLowerCase(), c.id])
-      )
+      const structure = {
+        levels: repos.academicLevels.findBySchool(schoolId),
+        sections: repos.sections.findBySchool(schoolId),
+        specializations: repos.specializations.findBySchool(schoolId),
+        classes: repos.classes.findStructureClasses(schoolId),
+      }
 
       let imported = 0
-      let skipped = 0
+      const skipReasons: StudentImportSkipReason[] = []
 
       try {
         for (const row of input.students) {
-          const name = row.full_name?.trim()
-          if (!name) {
-            skipped += 1
+          const resolved = resolveStudentImport(row, structure)
+          if (!resolved.ok) {
+            skipReasons.push(resolved.reason)
             continue
           }
-          const className = row.class_name?.trim().toLowerCase()
-          const classId = className ? byName.get(className) : undefined
-          if (!classId) {
-            skipped += 1
-            continue
-          }
-          const cls = repos.classes.findById(classId)
+          const cls = repos.classes.findById(resolved.data.class_id)
           repos.students.create({
-            name,
-            class_id: classId,
+            name: resolved.data.name,
+            class_id: resolved.data.class_id,
             school_id: schoolId,
             academic_level_id: cls?.academic_level_id ?? null,
             admission_year: new Date().getFullYear(),
-            gender: row.gender ?? null,
+            gender: resolved.data.gender,
+            date_of_birth: resolved.data.date_of_birth,
+            residence_type: resolved.data.residence_type,
           })
           imported += 1
         }
@@ -101,8 +104,9 @@ export function registerStudentsIpc(repos: Repositories): void {
           ok: true,
           data: {
             imported,
-            skipped,
+            skipped: skipReasons.length,
             student_count: dto.student_count,
+            skip_reasons: tallySkipReasons(skipReasons),
           },
         }
       } catch (err) {
