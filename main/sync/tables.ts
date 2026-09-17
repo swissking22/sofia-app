@@ -72,6 +72,21 @@ export const GENERIC_SYNC_TABLES = [
   'result_subject_rows',
   'result_student_summaries',
   'report_cards',
+  // Step 7 — documents & ID cards (paths/metadata only; binary assets stay local)
+  'document_templates',
+  'document_number_sequences',
+  'document_signatories',
+  'issued_documents',
+  'issued_document_versions',
+  'document_audit_log',
+  'student_id_card_templates',
+  'id_card_template_versions',
+  'id_card_settings',
+  'id_card_sequences',
+  'student_id_cards',
+  'id_card_generation_jobs',
+  'id_card_generation_items',
+  'id_card_print_history',
 ] as const
 
 export type GenericSyncTable = (typeof GENERIC_SYNC_TABLES)[number]
@@ -99,6 +114,18 @@ export const FINANCE_SEQUENCE_COLUMNS = [
   'receipt_next_number',
   'expense_next_number',
 ] as const
+
+/**
+ * Per-table sequence columns that must never move backward across desks.
+ * Keyed by generic sync table name.
+ */
+export const SEQUENCE_MAX_BY_TABLE: Partial<
+  Record<string, readonly string[]>
+> = {
+  finance_settings: FINANCE_SEQUENCE_COLUMNS,
+  document_number_sequences: ['next_number'],
+  id_card_sequences: ['next_number'],
+}
 
 /**
  * Result-run lifecycle — never regress when desks sync
@@ -387,6 +414,82 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   report_cards: [
     'id', 'school_id', 'student_id', 'class_id', 'term_id', 'academic_year_id',
     'result_run_id', 'status', 'generated_at', 'payload',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  document_templates: [
+    'id', 'school_id', 'template_key', 'title', 'header_text', 'footer_text', 'logo_path',
+    'show_logo', 'show_stamp', 'show_signature', 'signature_label', 'is_enabled',
+    'body_text', 'document_family', 'type_code', 'category', 'description',
+    'required_fields', 'number_pattern', 'signatory_role', 'is_default',
+    'requires_approval', 'created_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  document_number_sequences: [
+    'id', 'school_id', 'type_code', 'year_key', 'next_number',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  document_signatories: [
+    'id', 'school_id', 'role_key', 'display_name', 'title', 'signature_path', 'is_active',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  issued_documents: [
+    'id', 'school_id', 'document_family', 'template_id', 'template_key', 'document_number',
+    'verification_code', 'student_id', 'academic_year_id', 'term_id', 'status',
+    'version_number', 'supersedes_id', 'generated_by', 'issued_at', 'issued_by',
+    'voided_at', 'rendered_html', 'metadata_json',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  issued_document_versions: [
+    'id', 'school_id', 'issued_document_id', 'version_number', 'rendered_html',
+    'metadata_json', 'created_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  document_audit_log: [
+    'id', 'school_id', 'action', 'entity_type', 'entity_id', 'user_id', 'payload_json',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  student_id_card_templates: [
+    'id', 'school_id', 'name', 'is_default', 'front_layout', 'back_layout', 'show_photo',
+    'validity_months', 'is_system', 'category', 'description', 'card_type', 'status',
+    'orientation', 'width_mm', 'height_mm', 'unit', 'sample_key', 'current_version_id',
+    'current_version_number', 'updated_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  id_card_template_versions: [
+    'id', 'school_id', 'template_id', 'version_number', 'design_json', 'created_by',
+    'created_at',
+  ],
+  id_card_settings: [
+    'id', 'school_id', 'settings_json',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  id_card_sequences: [
+    'id', 'school_id', 'scope_key', 'next_number',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  student_id_cards: [
+    'id', 'school_id', 'student_id', 'student_code', 'academic_year_id', 'template_id',
+    'class_id', 'class_name', 'student_name', 'valid_from', 'valid_to', 'generated_at',
+    'generated_by', 'template_version_id', 'card_number', 'verification_code',
+    'issue_date', 'expiry_date', 'status', 'card_kind', 'replaced_card_id',
+    'replacement_reason', 'printed_at', 'issued_at', 'issued_by', 'job_id',
+    'snapshot_json', 'revoked_at', 'revoked_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  id_card_generation_jobs: [
+    'id', 'school_id', 'job_number', 'template_id', 'template_version_id',
+    'academic_year_id', 'card_kind', 'status', 'total', 'processed', 'successful',
+    'failed', 'skipped', 'paper_size', 'cards_per_row', 'margin_mm', 'gap_x_mm',
+    'gap_y_mm', 'crop_marks', 'missing_photo_policy', 'created_by', 'completed_at',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  id_card_generation_items: [
+    'id', 'school_id', 'job_id', 'student_id', 'card_id', 'status', 'error', 'warning',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  id_card_print_history: [
+    'id', 'school_id', 'job_id', 'card_ids_json', 'paper_size', 'cards_per_row',
+    'card_count', 'printed_at', 'printed_by',
     'created_at', 'updated_at', 'deleted_at', 'version',
   ],
 }

@@ -20,7 +20,11 @@ describe('Multi-desk sync MVP registry', () => {
     expect(SUPPORTED_SYNC_TABLES).toContain('gate_attendance')
     expect(SUPPORTED_SYNC_TABLES).toContain('result_runs')
     expect(SUPPORTED_SYNC_TABLES).toContain('report_cards')
-    expect(isGenericSyncTable('document_templates')).toBe(false)
+    expect(SUPPORTED_SYNC_TABLES).toContain('document_templates')
+    expect(SUPPORTED_SYNC_TABLES).toContain('issued_documents')
+    expect(SUPPORTED_SYNC_TABLES).toContain('student_id_cards')
+    expect(SUPPORTED_SYNC_TABLES).toContain('id_card_sequences')
+    expect(isGenericSyncTable('announcements')).toBe(false)
     expect(isGenericSyncTable('roles')).toBe(true)
   })
 })
@@ -510,5 +514,160 @@ describe('Generic pull apply', () => {
       .prepare(`SELECT COUNT(*) AS c FROM sync_queue WHERE record_id = 'rc-1'`)
       .get() as { c: number }
     expect(queued.c).toBe(0)
+  })
+
+  it('merges document_number_sequences with MAX(local, remote)', () => {
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO document_number_sequences (
+        id, school_id, type_code, year_key, next_number,
+        created_at, updated_at, sync_status, version
+      ) VALUES ('seq-doc-1', ?, 'ADM', '2026', 7, ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+
+    const result = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'document_number_sequences',
+        record_id: 'seq-doc-1',
+        operation: 'UPDATE',
+        version: 2,
+        payload: {
+          id: 'seq-doc-1',
+          school_id: schoolId,
+          type_code: 'ADM',
+          year_key: '2026',
+          next_number: 4,
+          updated_at: now,
+          version: 2,
+        },
+      },
+      schoolId
+    )
+    expect(result).toBe('applied')
+    const row = db
+      .prepare(`SELECT next_number, version FROM document_number_sequences WHERE id = ?`)
+      .get('seq-doc-1') as { next_number: number; version: number }
+    expect(row.next_number).toBe(7)
+    expect(row.version).toBe(2)
+  })
+
+  it('upserts document_templates without re-enqueue', () => {
+    const now = new Date().toISOString()
+    const result = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'document_templates',
+        record_id: 'tpl-1',
+        operation: 'INSERT',
+        version: 1,
+        payload: {
+          id: 'tpl-1',
+          school_id: schoolId,
+          template_key: 'admission_letter',
+          title: 'Admission Letter',
+          header_text: 'Header',
+          footer_text: 'Footer',
+          document_family: 'admission',
+          type_code: 'ADM',
+          is_enabled: 1,
+          created_at: now,
+          updated_at: now,
+          version: 1,
+        },
+      },
+      schoolId
+    )
+    expect(result).toBe('applied')
+    const tpl = db
+      .prepare(`SELECT title, template_key FROM document_templates WHERE id = ?`)
+      .get('tpl-1') as { title: string; template_key: string }
+    expect(tpl.title).toBe('Admission Letter')
+    expect(tpl.template_key).toBe('admission_letter')
+    const queued = db
+      .prepare(`SELECT COUNT(*) AS c FROM sync_queue WHERE record_id = 'tpl-1'`)
+      .get() as { c: number }
+    expect(queued.c).toBe(0)
+  })
+
+  it('merges id_card_sequences with MAX and upserts issued card metadata', () => {
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO classes (
+        id, name, school_id, is_active, created_at, updated_at, sync_status, version
+      ) VALUES ('class-idc', 'F1C', ?, 1, ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+    db.prepare(
+      `INSERT INTO students (
+        id, name, class_id, school_id, status, created_at, updated_at, sync_status, version
+      ) VALUES ('stu-idc-1', 'Cid', 'class-idc', ?, 'active', ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+    db.prepare(
+      `INSERT INTO id_card_sequences (
+        id, school_id, scope_key, next_number,
+        created_at, updated_at, sync_status, version
+      ) VALUES ('seq-idc-1', ?, 'CARD-2026', 3, ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+
+    expect(
+      applyGenericPulledChange(
+        db,
+        {
+          table_name: 'id_card_sequences',
+          record_id: 'seq-idc-1',
+          operation: 'UPDATE',
+          version: 2,
+          payload: {
+            id: 'seq-idc-1',
+            school_id: schoolId,
+            scope_key: 'CARD-2026',
+            next_number: 11,
+            updated_at: now,
+            version: 2,
+          },
+        },
+        schoolId
+      )
+    ).toBe('applied')
+
+    const seq = db
+      .prepare(`SELECT next_number FROM id_card_sequences WHERE id = ?`)
+      .get('seq-idc-1') as { next_number: number }
+    expect(seq.next_number).toBe(11)
+
+    expect(
+      applyGenericPulledChange(
+        db,
+        {
+          table_name: 'student_id_cards',
+          record_id: 'card-1',
+          operation: 'INSERT',
+          version: 1,
+          payload: {
+            id: 'card-1',
+            school_id: schoolId,
+            student_id: 'stu-idc-1',
+            student_code: 'STU-001',
+            academic_year_id: 'year-1',
+            student_name: 'Cid',
+            valid_from: '2026-09-01',
+            valid_to: '2027-08-31',
+            generated_at: now,
+            card_number: 'IDC-0001',
+            status: 'generated',
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        schoolId
+      )
+    ).toBe('applied')
+
+    const card = db
+      .prepare(`SELECT card_number, student_name FROM student_id_cards WHERE id = ?`)
+      .get('card-1') as { card_number: string; student_name: string }
+    expect(card.card_number).toBe('IDC-0001')
+    expect(card.student_name).toBe('Cid')
   })
 })

@@ -5,14 +5,75 @@
 import type { Database } from 'better-sqlite3'
 import { recordSyncConflict } from './queue'
 import {
-  FINANCE_SEQUENCE_COLUMNS,
   GENERIC_TABLE_COLUMNS,
   isGenericSyncTable,
   preferResultRunStatus,
+  SEQUENCE_MAX_BY_TABLE,
   type GenericSyncTable,
 } from './tables'
 
 export type GenericApplyResult = 'applied' | 'skipped' | 'conflict'
+
+/** Schema-aligned defaults when a remote INSERT omits NOT NULL columns. */
+function omittedColumnDefault(
+  table: GenericSyncTable,
+  column: string
+): unknown {
+  const byColumn: Record<string, unknown> = {
+    show_logo: 1,
+    show_stamp: 1,
+    show_signature: 1,
+    is_enabled: 1,
+    is_default: 0,
+    requires_approval: 0,
+    show_photo: 1,
+    validity_months: 12,
+    is_system: 0,
+    is_active: 1,
+    is_mandatory: 0,
+    is_adjustment: 0,
+    is_recurring: 0,
+    header_text: '',
+    footer_text: '',
+    body_text: '',
+    signature_label: 'Principal',
+    document_family: 'official',
+    type_code: 'DOC',
+    category: table === 'student_id_card_templates' ? 'Standard' : 'administrative',
+    description: '',
+    required_fields: '[]',
+    number_pattern: '{SCHOOL_CODE}/{TYPE}/{YEAR}/{SEQUENCE}',
+    signatory_role: 'principal',
+    card_kind: 'new',
+    status:
+      table === 'student_id_cards' || table === 'issued_documents'
+        ? 'generated'
+        : table === 'student_id_card_templates'
+          ? 'draft'
+          : undefined,
+    front_layout: 'classic',
+    back_layout: 'info',
+    orientation: 'landscape',
+    unit: 'mm',
+    width_mm: 85.6,
+    height_mm: 53.98,
+    current_version_number: 1,
+    paper_size: 'A4',
+    cards_per_row: 2,
+    margin_mm: 10,
+    gap_x_mm: 4,
+    gap_y_mm: 4,
+    crop_marks: 0,
+    missing_photo_policy: 'generate_without',
+    card_ids_json: '[]',
+    settings_json: '{}',
+    metadata_json: '{}',
+    rendered_html: '',
+    display_name: '',
+    title: table === 'document_signatories' ? '' : undefined,
+  }
+  return byColumn[column]
+}
 
 function existingColumns(db: Database, table: string): Set<string> {
   try {
@@ -59,6 +120,24 @@ function coerceValue(column: string, value: unknown): unknown {
       'version_number',
       'allow_overlap',
       'calculation_version',
+      'show_logo',
+      'show_stamp',
+      'show_signature',
+      'is_enabled',
+      'is_default',
+      'requires_approval',
+      'show_photo',
+      'validity_months',
+      'next_number',
+      'total',
+      'processed',
+      'successful',
+      'failed',
+      'skipped',
+      'cards_per_row',
+      'crop_marks',
+      'card_count',
+      'current_version_number',
     ].includes(column)
   ) {
     if (value === null || value === undefined) return null
@@ -106,6 +185,11 @@ function coerceValue(column: string, value: unknown): unknown {
       'gpa',
       'total_coefficients',
       'total_weighted_marks',
+      'width_mm',
+      'height_mm',
+      'margin_mm',
+      'gap_x_mm',
+      'gap_y_mm',
     ].includes(column)
   ) {
     if (value === null || value === undefined) return null
@@ -229,11 +313,9 @@ function upsertRow(
             : 'active'
       continue
     }
-    // Prevent finance counter back-sliding across desks
-    if (
-      table === 'finance_settings' &&
-      (FINANCE_SEQUENCE_COLUMNS as readonly string[]).includes(col)
-    ) {
+    // Prevent sequence counter back-sliding across desks
+    const seqCols = SEQUENCE_MAX_BY_TABLE[table]
+    if (seqCols && (seqCols as readonly string[]).includes(col)) {
       const remote = Number(payload[col])
       const local = Number(existingRow?.[col] ?? 0)
       values[col] = Math.max(
@@ -252,6 +334,13 @@ function upsertRow(
     if (payload[col] === undefined && existingRow && existingRow[col] !== undefined) {
       values[col] = existingRow[col]
       continue
+    }
+    if (payload[col] === undefined) {
+      const insertDefault = omittedColumnDefault(table, col)
+      if (insertDefault !== undefined) {
+        values[col] = insertDefault
+        continue
+      }
     }
     values[col] = coerceValue(col, payload[col])
   }
