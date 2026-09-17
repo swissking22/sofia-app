@@ -549,10 +549,13 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 | Users & RBAC | `permissions`, `roles`, `role_permissions`, `users` (password **hashes** only) |
 | Staff (light) | `staff`, `staff_subjects`, `staff_classes` |
 | Finance (Step 5) | `finance_settings` (counters use **MAX** local/remote), fee catalogs/structures/discounts, `invoices`, `invoice_lines`, `payments`, `receipts`, credits, expenses, ledger, audit, reminders, budgets, online payments, bank deposits |
+| Academics & attendance (Step 6) | `timetable_slots`; class + gate + staff attendance; CA/exams/scores; calculation profiles/coefficients; `result_runs` (+ rows/summaries); `report_cards` |
 
-**Not yet synced:** attendance, results/report cards, documents, communication, timetable, binary assets (photos/logos).
+**Not yet synced:** documents / ID cards, communication, binary assets (photos/logos).
 
 **Finance notes:** Invoice/receipt/payment/expense **numbers** travel with their rows (immutable after issue). Sequence counters on `finance_settings` never move backward when desks sync.
+
+**Academics notes:** Result-run status never regresses (`draft` → `computed` → `published` → `locked`). Locked runs ignore remote DELETE. Child score/attendance rows without a local `school_id` column still sync (push attaches tenant id in the cloud payload).
 
 **How to add a table:** (1) add to `GENERIC_SYNC_TABLES` + column list in `main/sync/tables.ts`, (2) add name to `process_synced_entity` allow-list migration, (3) unit-test pull apply, (4) document here.
 
@@ -564,6 +567,9 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
   - `supabase/migrations/20260907092153_init_cloud_sync_schema.sql` (schema foundation)
   - `supabase/migrations/20260907094133_add_process_sync_operation.sql` (Phase 1 Push Sync RPCs)
   - `supabase/migrations/20260917080000_multi_desk_synced_entities.sql` (generic multi-desk entity RPC)
+  - `supabase/migrations/20260917083000_lookup_school_by_code.sql` (Join school RPC)
+  - `supabase/migrations/20260917090000_finance_synced_entities.sql` (finance allow-list)
+  - `supabase/migrations/20260917100000_academics_synced_entities.sql` (academics/attendance allow-list)
 - **Cloud Tables**:
   - `public.schools`: Tenant root (`id UUID PRIMARY KEY`, `name TEXT`, `school_code TEXT`, partial unique index on `school_code`).
   - `public.devices`: Registered desktop clients (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`).
@@ -675,6 +681,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-17 | Multi-desk **academics & attendance sync (Step 6)**: timetable, class/gate/staff attendance, CA/exams, result calculation + runs/rows/summaries, report cards via `synced_entities`; locked result runs do not regress or soft-delete on pull. Migration `20260917100000_academics_synced_entities.sql`. |
 | 2026-09-17 | Multi-desk **finance sync (Step 5)**: fee config + invoices/payments/receipts/expenses/budgets/etc. via `synced_entities`; `finance_settings` counters merge with MAX(local, remote). Migration `20260917090000_finance_synced_entities.sql`. |
 | 2026-09-17 | Pre-login **Join existing school** (`/join`): secondary desks enter school short code, register device, pull users/structure from cloud, then log in with shared accounts. RPC `lookup_school_by_code`. Fresh installs open Login (Join + Create links). |
 | 2026-09-17 | Multi-desk sync MVP: generic `synced_entities` + `process_synced_entity` RPC; sync school foundation, users/RBAC, and light staff across desks (students already synced). Finance/results/docs still local-only. |

@@ -8,6 +8,7 @@ import {
   FINANCE_SEQUENCE_COLUMNS,
   GENERIC_TABLE_COLUMNS,
   isGenericSyncTable,
+  preferResultRunStatus,
   type GenericSyncTable,
 } from './tables'
 
@@ -50,6 +51,14 @@ function coerceValue(column: string, value: unknown): unknown {
       'payment_next_number',
       'receipt_next_number',
       'expense_next_number',
+      'day_of_week',
+      'period_number',
+      'position',
+      'failed_subjects',
+      'passed_subjects',
+      'version_number',
+      'allow_overlap',
+      'calculation_version',
     ].includes(column)
   ) {
     if (value === null || value === undefined) return null
@@ -86,6 +95,17 @@ function coerceValue(column: string, value: unknown): unknown {
       'budget_alert_pct',
       'budget_warning_pct',
       'budget_critical_pct',
+      'score',
+      'total',
+      'average',
+      'ca_score',
+      'exam_score',
+      'ca_average',
+      'subject_mark',
+      'weighted_mark',
+      'gpa',
+      'total_coefficients',
+      'total_weighted_marks',
     ].includes(column)
   ) {
     if (value === null || value === undefined) return null
@@ -223,6 +243,11 @@ function upsertRow(
       )
       continue
     }
+    // Never regress published/locked result runs to draft/computed
+    if (table === 'result_runs' && col === 'status') {
+      values.status = preferResultRunStatus(existingRow?.status, payload.status)
+      continue
+    }
     // Preserve local NOT NULL / existing fields when remote payload omits them
     if (payload[col] === undefined && existingRow && existingRow[col] !== undefined) {
       values[col] = existingRow[col]
@@ -309,9 +334,20 @@ export function applyGenericPulledChange(
     .get(recordId) as Record<string, unknown> | undefined
 
   if (existing) {
+    // Locked result runs are immutable on pull (no soft-delete / rewrite races)
+    if (
+      table === 'result_runs' &&
+      String(existing.status) === 'locked' &&
+      change.operation === 'DELETE'
+    ) {
+      return 'skipped'
+    }
+
     const localVersion = Number(existing.version) || 1
-    if (remoteVersion < localVersion) return 'skipped'
-    if (remoteVersion === localVersion) {
+    // Tables without a local version column (e.g. profile versions) always apply
+    const hasLocalVersion = Object.prototype.hasOwnProperty.call(existing, 'version')
+    if (hasLocalVersion && remoteVersion < localVersion) return 'skipped'
+    if (hasLocalVersion && remoteVersion === localVersion) {
       if (change.operation === 'DELETE' && !existing.deleted_at) {
         upsertRow(db, table, payload, remoteVersion, 'DELETE')
         return 'applied'

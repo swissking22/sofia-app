@@ -15,7 +15,12 @@ describe('Multi-desk sync MVP registry', () => {
     expect(SUPPORTED_SYNC_TABLES).toContain('invoices')
     expect(SUPPORTED_SYNC_TABLES).toContain('payments')
     expect(SUPPORTED_SYNC_TABLES).toContain('finance_settings')
-    expect(isGenericSyncTable('timetable_slots')).toBe(false)
+    expect(SUPPORTED_SYNC_TABLES).toContain('timetable_slots')
+    expect(SUPPORTED_SYNC_TABLES).toContain('attendance_sessions')
+    expect(SUPPORTED_SYNC_TABLES).toContain('gate_attendance')
+    expect(SUPPORTED_SYNC_TABLES).toContain('result_runs')
+    expect(SUPPORTED_SYNC_TABLES).toContain('report_cards')
+    expect(isGenericSyncTable('document_templates')).toBe(false)
     expect(isGenericSyncTable('roles')).toBe(true)
   })
 })
@@ -317,6 +322,192 @@ describe('Generic pull apply', () => {
     expect(inv.balance).toBe(10000)
     const queued = db
       .prepare(`SELECT COUNT(*) AS c FROM sync_queue WHERE record_id = 'inv-1'`)
+      .get() as { c: number }
+    expect(queued.c).toBe(0)
+  })
+
+  it('upserts attendance session + record without re-enqueue', () => {
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO classes (
+        id, name, school_id, is_active, created_at, updated_at, sync_status, version
+      ) VALUES ('class-att', 'F1A', ?, 1, ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+    db.prepare(
+      `INSERT INTO students (
+        id, name, class_id, school_id, status, created_at, updated_at, sync_status, version
+      ) VALUES ('stu-att-1', 'Ada', 'class-att', ?, 'active', ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+
+    expect(
+      applyGenericPulledChange(
+        db,
+        {
+          table_name: 'attendance_sessions',
+          record_id: 'sess-1',
+          operation: 'INSERT',
+          version: 1,
+          payload: {
+            id: 'sess-1',
+            school_id: schoolId,
+            class_id: 'class-att',
+            session_date: '2026-09-17',
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        schoolId
+      )
+    ).toBe('applied')
+
+    expect(
+      applyGenericPulledChange(
+        db,
+        {
+          table_name: 'attendance_records',
+          record_id: 'rec-1',
+          operation: 'INSERT',
+          version: 1,
+          payload: {
+            id: 'rec-1',
+            session_id: 'sess-1',
+            student_id: 'stu-att-1',
+            status: 'present',
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        schoolId
+      )
+    ).toBe('applied')
+
+    const rec = db
+      .prepare(`SELECT status FROM attendance_records WHERE id = ?`)
+      .get('rec-1') as { status: string }
+    expect(rec.status).toBe('present')
+  })
+
+  it('keeps locked result_run status when remote sends draft', () => {
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO classes (
+        id, name, school_id, is_active, created_at, updated_at, sync_status, version
+      ) VALUES ('class-res', 'F2A', ?, 1, ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+    db.prepare(
+      `INSERT INTO result_runs (
+        id, school_id, class_id, status, created_at, updated_at, sync_status, version
+      ) VALUES ('run-1', ?, 'class-res', 'locked', ?, ?, 'synced', 2)`
+    ).run(schoolId, now, now)
+
+    const result = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'result_runs',
+        record_id: 'run-1',
+        operation: 'UPDATE',
+        version: 3,
+        payload: {
+          id: 'run-1',
+          school_id: schoolId,
+          class_id: 'class-res',
+          status: 'draft',
+          updated_at: now,
+          version: 3,
+        },
+      },
+      schoolId
+    )
+    expect(result).toBe('applied')
+    const run = db
+      .prepare(`SELECT status, version FROM result_runs WHERE id = ?`)
+      .get('run-1') as { status: string; version: number }
+    expect(run.status).toBe('locked')
+    expect(run.version).toBe(3)
+  })
+
+  it('skips DELETE on locked result_runs', () => {
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO classes (
+        id, name, school_id, is_active, created_at, updated_at, sync_status, version
+      ) VALUES ('class-lock', 'F3A', ?, 1, ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+    db.prepare(
+      `INSERT INTO result_runs (
+        id, school_id, class_id, status, created_at, updated_at, sync_status, version
+      ) VALUES ('run-lock', ?, 'class-lock', 'locked', ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+
+    const result = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'result_runs',
+        record_id: 'run-lock',
+        operation: 'DELETE',
+        version: 2,
+        payload: {
+          id: 'run-lock',
+          school_id: schoolId,
+          deleted_at: now,
+          version: 2,
+        },
+      },
+      schoolId
+    )
+    expect(result).toBe('skipped')
+    const run = db
+      .prepare(`SELECT deleted_at, status FROM result_runs WHERE id = ?`)
+      .get('run-lock') as { deleted_at: string | null; status: string }
+    expect(run.deleted_at).toBeNull()
+    expect(run.status).toBe('locked')
+  })
+
+  it('upserts report_cards payload without re-enqueue', () => {
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO classes (
+        id, name, school_id, is_active, created_at, updated_at, sync_status, version
+      ) VALUES ('class-rc', 'F1B', ?, 1, ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+    db.prepare(
+      `INSERT INTO students (
+        id, name, class_id, school_id, status, created_at, updated_at, sync_status, version
+      ) VALUES ('stu-rc-1', 'Bea', 'class-rc', ?, 'active', ?, ?, 'synced', 1)`
+    ).run(schoolId, now, now)
+
+    const result = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'report_cards',
+        record_id: 'rc-1',
+        operation: 'INSERT',
+        version: 1,
+        payload: {
+          id: 'rc-1',
+          school_id: schoolId,
+          student_id: 'stu-rc-1',
+          class_id: 'class-rc',
+          status: 'generated',
+          payload: '{"average":72}',
+          generated_at: now,
+          created_at: now,
+          updated_at: now,
+          version: 1,
+        },
+      },
+      schoolId
+    )
+    expect(result).toBe('applied')
+    const card = db
+      .prepare(`SELECT payload, status FROM report_cards WHERE id = ?`)
+      .get('rc-1') as { payload: string; status: string }
+    expect(card.payload).toBe('{"average":72}')
+    expect(card.status).toBe('generated')
+    const queued = db
+      .prepare(`SELECT COUNT(*) AS c FROM sync_queue WHERE record_id = 'rc-1'`)
       .get() as { c: number }
     expect(queued.c).toBe(0)
   })

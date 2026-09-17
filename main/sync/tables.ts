@@ -53,6 +53,25 @@ export const GENERIC_SYNC_TABLES = [
   'online_payment_transactions',
   'bank_deposits',
   'bank_deposit_allocations',
+  // Step 6 — academics & attendance
+  'timetable_slots',
+  'attendance_sessions',
+  'attendance_records',
+  'gate_attendance',
+  'staff_attendance',
+  'ca_assessments',
+  'ca_scores',
+  'exam_sessions',
+  'exam_papers',
+  'exam_scores',
+  'result_calculation_profiles',
+  'result_calculation_profile_versions',
+  'result_calculation_class_assignments',
+  'result_subject_coefficients',
+  'result_runs',
+  'result_subject_rows',
+  'result_student_summaries',
+  'report_cards',
 ] as const
 
 export type GenericSyncTable = (typeof GENERIC_SYNC_TABLES)[number]
@@ -80,6 +99,28 @@ export const FINANCE_SEQUENCE_COLUMNS = [
   'receipt_next_number',
   'expense_next_number',
 ] as const
+
+/**
+ * Result-run lifecycle — never regress when desks sync
+ * (draft → computed → published → locked).
+ */
+export const RESULT_RUN_STATUS_RANK: Record<string, number> = {
+  draft: 0,
+  computed: 1,
+  published: 2,
+  locked: 3,
+}
+
+export function preferResultRunStatus(
+  local: unknown,
+  remote: unknown
+): string {
+  const l = String(local || 'draft')
+  const r = String(remote || 'draft')
+  const lr = RESULT_RUN_STATUS_RANK[l] ?? 0
+  const rr = RESULT_RUN_STATUS_RANK[r] ?? 0
+  return rr >= lr ? r : l
+}
 
 /**
  * Columns written on generic pull upsert (must exist on local SQLite).
@@ -266,6 +307,86 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   ],
   bank_deposit_allocations: [
     'id', 'school_id', 'bank_deposit_id', 'payment_id', 'amount',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  timetable_slots: [
+    'id', 'school_id', 'class_id', 'subject_id', 'staff_id', 'day_of_week',
+    'period_number', 'room', 'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  attendance_sessions: [
+    'id', 'school_id', 'class_id', 'session_date', 'notes',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  attendance_records: [
+    'id', 'session_id', 'student_id', 'status',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  gate_attendance: [
+    'id', 'school_id', 'student_id', 'student_code', 'attendance_date', 'scanned_at',
+    'status', 'attendance_type', 'device_id', 'scanned_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  staff_attendance: [
+    'id', 'school_id', 'staff_id', 'date', 'status', 'notes', 'marked_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  ca_assessments: [
+    'id', 'school_id', 'name', 'subject_id', 'class_id', 'term_id', 'academic_year_id',
+    'weight_percent', 'max_score', 'assessment_date',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  ca_scores: [
+    'id', 'assessment_id', 'student_id', 'score', 'score_status',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  exam_sessions: [
+    'id', 'school_id', 'name', 'term_id', 'academic_year_id', 'start_date', 'end_date',
+    'status', 'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  exam_papers: [
+    'id', 'exam_session_id', 'subject_id', 'class_id', 'max_score', 'exam_date',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  exam_scores: [
+    'id', 'paper_id', 'student_id', 'score', 'score_status',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  result_calculation_profiles: [
+    'id', 'school_id', 'name', 'description', 'academic_year_id', 'period_mode', 'status',
+    'created_by', 'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  result_calculation_profile_versions: [
+    'id', 'school_id', 'profile_id', 'version_number', 'config_json', 'config_hash',
+    'created_by', 'created_at',
+  ],
+  result_calculation_class_assignments: [
+    'id', 'school_id', 'profile_id', 'class_id', 'academic_level_id', 'department_id',
+    'allow_overlap', 'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  result_subject_coefficients: [
+    'id', 'school_id', 'subject_id', 'class_id', 'academic_level_id', 'academic_year_id',
+    'coefficient', 'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  result_runs: [
+    'id', 'school_id', 'class_id', 'term_id', 'academic_year_id', 'status',
+    'computed_at', 'published_at', 'calculation_profile_id', 'calculation_version',
+    'calculation_hash', 'snapshot_json', 'calculated_by', 'approved_at', 'approved_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  result_subject_rows: [
+    'id', 'result_run_id', 'student_id', 'subject_id', 'ca_score', 'exam_score', 'total',
+    'grade', 'sequence_scores_json', 'ca_average', 'subject_mark', 'coefficient',
+    'weighted_mark', 'remark', 'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  result_student_summaries: [
+    'id', 'result_run_id', 'student_id', 'average', 'total', 'grade', 'position', 'remark',
+    'promotion_outcome', 'gpa', 'failed_subjects', 'total_coefficients',
+    'total_weighted_marks', 'passed_subjects', 'status',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  report_cards: [
+    'id', 'school_id', 'student_id', 'class_id', 'term_id', 'academic_year_id',
+    'result_run_id', 'status', 'generated_at', 'payload',
     'created_at', 'updated_at', 'deleted_at', 'version',
   ],
 }
