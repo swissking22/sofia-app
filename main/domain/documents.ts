@@ -1,3 +1,5 @@
+import { DEFAULT_BILINGUAL_HEADER } from './report-card'
+
 /** Shared document numbering, templates, and rendering (no React, no SQL). */
 
 export const DEFAULT_NUMBER_PATTERN = '{SCHOOL_CODE}/{TYPE}/{YEAR}/{SEQUENCE}'
@@ -409,11 +411,54 @@ export function wrapOfficialHtml(input: {
   showSignature?: boolean
   signatureLabel?: string
   signatoryName?: string
+  /** School contact line (address · phone · email). */
+  schoolContact?: string | null
+  /**
+   * When true (default), render the Cameroon bilingual ministry letterhead
+   * used on official report cards (FR left, logo centre, EN right).
+   */
+  showBilingualHeader?: boolean
+  bilingualHeader?: { fr_lines: string[]; en_lines: string[] }
 }): string {
-  const logo =
+  const showBilingual = input.showBilingualHeader !== false
+  const headerLines = input.bilingualHeader ?? DEFAULT_BILINGUAL_HEADER
+  const fr = headerLines.fr_lines
+  const en = headerLines.en_lines
+  const rowCount = Math.max(fr.length, en.length)
+
+  const logoInner =
     input.showLogo && input.logoUrl
+      ? `<img src="${escapeHtml(input.logoUrl)}" alt="" />`
+      : `<div class="doc-logo-fallback" aria-hidden="true">${escapeHtml(
+          (input.schoolName || 'S').slice(0, 1).toUpperCase()
+        )}</div>`
+
+  const bilingualBlock = showBilingual
+    ? `<header class="doc-gov-header">
+    <div class="doc-gov-col doc-gov-fr">
+      ${Array.from({ length: rowCount })
+        .map((_, i) => {
+          const text = fr[i] ?? ''
+          const cls = i === 0 ? 'doc-gov-strong' : 'doc-gov-line'
+          return `<p class="${cls}">${escapeHtml(text)}</p>`
+        })
+        .join('\n      ')}
+    </div>
+    <div class="doc-gov-logo">${logoInner}</div>
+    <div class="doc-gov-col doc-gov-en">
+      ${Array.from({ length: rowCount })
+        .map((_, i) => {
+          const text = en[i] ?? ''
+          const cls = i === 0 ? 'doc-gov-strong' : 'doc-gov-line'
+          return `<p class="${cls}">${escapeHtml(text)}</p>`
+        })
+        .join('\n      ')}
+    </div>
+  </header>`
+    : input.showLogo && input.logoUrl
       ? `<img src="${escapeHtml(input.logoUrl)}" alt="" class="doc-logo" />`
       : ''
+
   const stamp =
     input.showStamp && input.stampUrl
       ? `<img src="${escapeHtml(input.stampUrl)}" alt="" class="doc-stamp" />`
@@ -422,10 +467,15 @@ export function wrapOfficialHtml(input: {
     input.showSignature && input.signatureUrl
       ? `<img src="${escapeHtml(input.signatureUrl)}" alt="" class="doc-sign-img" />`
       : ''
+  const contact = (input.schoolContact || '').trim()
+
   return `<article class="sofia-document">
-  <header class="doc-header">
-    ${logo}
+  ${bilingualBlock}
+  <section class="doc-school-identity">
     <p class="doc-school">${escapeHtml(input.schoolName)}</p>
+    ${contact ? `<p class="doc-contact">${escapeHtml(contact)}</p>` : ''}
+  </section>
+  <div class="doc-title-block">
     <h1 class="doc-title">${escapeHtml(input.title)}</h1>
     ${input.header ? `<p class="doc-header-text">${input.header}</p>` : ''}
     ${
@@ -433,7 +483,7 @@ export function wrapOfficialHtml(input: {
         ? `<p class="doc-number">No. ${escapeHtml(input.documentNumber)}</p>`
         : ''
     }
-  </header>
+  </div>
   <div class="doc-body">${input.body}</div>
   <footer class="doc-footer">
     ${input.footer ? `<p>${input.footer}</p>` : ''}
@@ -456,18 +506,67 @@ export function wrapOfficialHtml(input: {
 }
 
 export const DOCUMENT_PRINT_CSS = `
-.sofia-document { font-family: Georgia, "Times New Roman", serif; color: #0f172a; max-width: 210mm; margin: 0 auto; }
-.doc-header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; }
-.doc-logo { height: 64px; object-fit: contain; margin: 0 auto 8px; }
-.doc-school { font-size: 18px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin: 0; }
-.doc-title { font-size: 20px; margin: 8px 0 4px; }
-.doc-header-text, .doc-number { font-size: 13px; color: #334155; margin: 4px 0 0; }
-.doc-body { font-size: 14px; line-height: 1.55; min-height: 240px; }
+.sofia-document { font-family: "Times New Roman", Times, Georgia, serif; color: #111; max-width: 210mm; margin: 0 auto; font-size: 11pt; line-height: 1.35; }
+.doc-gov-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: start;
+  border-bottom: 1.5px solid #111;
+  padding-bottom: 10px;
+}
+.doc-gov-col { font-size: 8.5pt; line-height: 1.25; }
+.doc-gov-fr { text-align: left; }
+.doc-gov-en { text-align: right; }
+.doc-gov-strong {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 0 0 2px;
+}
+.doc-gov-line { margin: 0 0 2px; font-style: italic; }
+.doc-gov-logo {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.doc-gov-logo img { max-width: 64px; max-height: 64px; object-fit: contain; }
+.doc-logo-fallback {
+  width: 56px;
+  height: 56px;
+  border: 1.5px solid #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 20pt;
+}
+.doc-logo { height: 64px; object-fit: contain; margin: 0 auto 8px; display: block; }
+.doc-school-identity { text-align: center; margin-top: 10px; }
+.doc-school {
+  font-size: 16pt;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin: 0;
+}
+.doc-contact { margin: 4px 0 0; font-size: 8.5pt; color: #333; }
+.doc-title-block {
+  text-align: center;
+  margin: 14px 0 16px;
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 10px;
+}
+.doc-title { font-size: 14pt; margin: 0; text-transform: uppercase; letter-spacing: 0.06em; }
+.doc-header-text, .doc-number { font-size: 10pt; color: #334155; margin: 4px 0 0; }
+.doc-body { font-size: 11pt; line-height: 1.55; min-height: 240px; }
 .doc-body p { margin: 0 0 10px; }
-.doc-body table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+.doc-body table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 10pt; }
 .doc-body th, .doc-body td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
 .doc-body th { background: #f8fafc; }
-.doc-footer { margin-top: 28px; border-top: 1px solid #cbd5e1; padding-top: 16px; font-size: 12px; color: #475569; }
+.doc-footer { margin-top: 28px; border-top: 1px solid #cbd5e1; padding-top: 16px; font-size: 10pt; color: #475569; }
 .doc-auth { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 24px; }
 .doc-sign-img { height: 48px; object-fit: contain; }
 .doc-sign-line { min-height: 40px; border-bottom: 1px solid #64748b; min-width: 180px; margin: 0; }

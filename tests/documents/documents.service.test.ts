@@ -15,6 +15,7 @@ import {
   resolveTemplate,
   sequenceKey,
   transcriptExclusionMessage,
+  wrapOfficialHtml,
 } from '../../main/domain/documents'
 
 describe('Document numbering', () => {
@@ -178,5 +179,26 @@ describe('Admission / certificate / transcript rules', () => {
 
   it('writes CFA amounts in words for receipts', () => {
     expect(amountInWords(2500)).toBe('Two thousand five hundred CFA francs')
+  })
+
+  it('wraps official documents with the bilingual ministry header', () => {
+    const html = wrapOfficialHtml({
+      title: 'Letter of Admission',
+      header: 'Admission',
+      body: '<p>Welcome.</p>',
+      footer: '',
+      schoolName: 'Light World Mission',
+      schoolContact: 'Tel: 123',
+      showLogo: true,
+      showStamp: false,
+      showSignature: false,
+    })
+    expect(html).toContain('doc-gov-header')
+    expect(html).toMatch(/CAMEROUN/i)
+    expect(html).toMatch(/CAMEROON/i)
+    expect(html).toMatch(/MINISTÈRE DES ENSEIGNEMENTS SECONDAIRES/i)
+    expect(html).toMatch(/MINISTRY OF SECONDARY EDUCATION/i)
+    expect(html).toContain('Light World Mission')
+    expect(html).toContain('Letter of Admission')
   })
 })

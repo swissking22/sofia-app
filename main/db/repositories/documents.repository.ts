@@ -1257,6 +1257,14 @@ export class DocumentsRepository {
     }
 
     const resolvedBody = resolveTemplate(template.body_text || '<p></p>', values, blocks)
+    const schoolContact = [
+      school.address,
+      school.phone ? `Tel: ${school.phone}` : null,
+      school.email,
+      school.website,
+    ]
+      .filter(Boolean)
+      .join(' · ')
     const html = wrapOfficialHtml({
       title: template.title,
       header: resolveTemplate(template.header_text || '', values),
@@ -1266,6 +1274,7 @@ export class DocumentsRepository {
           : resolvedBody,
       footer: resolveTemplate(template.footer_text || '', values),
       schoolName: school.name,
+      schoolContact: schoolContact || null,
       documentNumber: opts.documentNumber !== 'DRAFT' ? opts.documentNumber : undefined,
       verification: opts.verification && opts.verification !== 'SOFIA-PREVIEW' ? opts.verification : undefined,
       logoUrl: assetToDataUrl(template.logo_path) || assetToDataUrl(school.logo_path),
@@ -1278,6 +1287,7 @@ export class DocumentsRepository {
       showSignature: template.show_signature === 1,
       signatureLabel: template.signature_label,
       signatoryName: signatory?.display_name,
+      showBilingualHeader: true,
     })
 
     return { html, warnings, values, template }

@@ -495,12 +495,14 @@ Official letter/certificate generation from existing Sofia records. There is **o
 
 Print / PDF uses the same browser print-to-PDF path as receipts and ID cards (A4 CSS). Restart the app after first load so numbering tables migrate.
 
+**Letterhead:** Admission letters, receipts, certificates, transcripts, and other official documents rendered via `wrapOfficialHtml` share the same Cameroon **bilingual ministry header** as the student report card (FR left · school logo centre · EN right), then school name / contact, then the document title. Defaults come from `DEFAULT_BILINGUAL_HEADER` in `main/domain/report-card.ts`.
+
 | Screen | Path | How to use |
 |--------|------|------------|
-| Admission letters | `/documents/admission-letters` | Filter year/class/department/status/date. Generate or bulk-generate personalized letters from enrolled students. View / print / regenerate (previous copy is superseded, not deleted). |
+| Admission letters | `/documents/admission-letters` | Filter year/class/department/status/date. Generate or bulk-generate personalized letters from enrolled students. View / print / regenerate (previous copy is superseded, not deleted). Official bilingual letterhead is included automatically. |
 | Certificates | `/documents/certificates` | Tabs: issued certificates and certificate types. Create types (leaving, completion, achievement, participation, conduct, or custom). Each issued certificate gets a unique number from the school pattern (default `{SCHOOL_CODE}/{TYPE}/{YEAR}/{SEQUENCE}`). |
 | Transcripts | `/documents/transcripts` | Generate from **published or locked** result runs only. Draft terms show: “Results for {term} have not yet been finalized…”. Scope: current year, selected year/term, or full history. |
-| Receipt templates | `/documents/receipt-templates` | Appearance of **Finance & Fees → Receipts**. Set one default per school. Variables such as `{{receipt.number}}` and `{{payment.amount}}`. Do not record payments here. |
+| Receipt templates | `/documents/receipt-templates` | Appearance of **Finance & Fees → Receipts**. Set one default per school. Variables such as `{{receipt.number}}` and `{{payment.amount}}`. Printed receipts use the same bilingual ministry letterhead as admission letters. Do not record payments here. |
 | Official documents | `/documents/official` | Enrollment, recommendation, confirmation, transfer, withdrawal, plus custom types. |
 | Print | `/documents/print/[id]` | Preview, print, or Save as PDF. Verification ID (`SOFIA-XXXXXX`) is on the footer. |
 
@@ -703,6 +705,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-18 | Official documents (admission letters, receipts, certificates, transcripts) share the report-card Cameroon bilingual ministry letterhead (FR · logo · EN) via `wrapOfficialHtml` / `DOCUMENT_PRINT_CSS`; defaults from `DEFAULT_BILINGUAL_HEADER`. |
 | 2026-09-18 | Billing respects day vs boarding fee packages: generate-invoice lists only structures matching the student residence (and department/level/class); bulk generate pre-filters by `applies_to_residence`; fee-structure form clarifies Day / Boarding packages for mixed schools. |
 | 2026-09-18 | Fee structures can target a **department** (Academic Structure section: General / Commercial / Technical). Invoice generation and bulk billing enforce department + level + class + residence scope (`main/domain/fee-structure-scope.ts`). Light World seed stores `section_id` on fee packages so Gen/Commercial bands stay distinct from Technical. |
 | 2026-09-17 | Login hides Join/Create when local users already exist (those routes redirect to Login once setup is done); shows a short note instead. |
