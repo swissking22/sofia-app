@@ -209,8 +209,12 @@ function DocumentPreviewPanel({ data }: { data: PreviewState }) {
                       <span>50,000 XAF</span>
                     </div>
                     <div className="mt-1 flex justify-between border-t border-slate-100 pt-1 font-semibold text-slate-800">
-                      <span>Total</span>
+                      <span>Amount paid</span>
                       <span>50,000 XAF</span>
+                    </div>
+                    <div className="mt-1 flex justify-between text-slate-700">
+                      <span>Balance remaining</span>
+                      <span>25,000 XAF</span>
                     </div>
                   </div>
                 </>

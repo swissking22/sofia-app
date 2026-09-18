@@ -7,6 +7,7 @@ import {
   amountInWords,
   assertTransition,
   canDeleteTemplate,
+  CATALOG_TEMPLATES,
   filterOfficialRows,
   formatDocumentNumber,
   isOfficialResultStatus,
@@ -200,5 +201,13 @@ describe('Admission / certificate / transcript rules', () => {
     expect(html).toMatch(/MINISTRY OF SECONDARY EDUCATION/i)
     expect(html).toContain('Light World Mission')
     expect(html).toContain('Letter of Admission')
+  })
+
+  it('default receipt catalog body includes amount paid and balance', () => {
+    const receipt = CATALOG_TEMPLATES.find((t) => t.key === 'receipt')
+    expect(receipt?.body).toMatch(/receipt\.amountPaid|payment\.amount/)
+    expect(receipt?.body).toMatch(/receipt\.balance/)
+    expect(receipt?.body).toMatch(/Amount paid/i)
+    expect(receipt?.body).toMatch(/Balance remaining/i)
   })
 })

@@ -109,8 +109,27 @@ export function collapseSpaces(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+/** Capitalize the first letter of a name token; keep the rest lowercased. */
+function capitalizeToken(token: string): string {
+  if (!token) return token
+  return token
+    .split(/([-'])/)
+    .map((part) => {
+      if (part === '-' || part === "'") return part
+      if (!part) return part
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+    })
+    .join('')
+}
+
+/** Collapse spaces and title-case each word (e.g. ADA BIYA → Ada Biya). */
 export function normalizeFullName(value: string | null | undefined): string {
-  return collapseSpaces(value ?? '')
+  const collapsed = collapseSpaces(value ?? '')
+  if (!collapsed) return ''
+  return collapsed
+    .split(' ')
+    .map((word) => capitalizeToken(word))
+    .join(' ')
 }
 
 export function normalizeResidence(
@@ -128,13 +147,19 @@ export function normalizeGender(
 ): string | null {
   const raw = collapseSpaces(value ?? '').toLowerCase()
   if (!raw) return null
-  if (['male', 'm', 'boy', 'homme', 'garcon', 'garçon'].includes(raw)) {
+  if (
+    ['male', 'm', 'boy', 'homme', 'garcon', 'garçon', 'masculin'].includes(raw)
+  ) {
     return 'Male'
   }
-  if (['female', 'f', 'girl', 'femme', 'fille'].includes(raw)) {
+  if (
+    ['female', 'f', 'girl', 'femme', 'fille', 'feminin', 'féminin'].includes(
+      raw
+    )
+  ) {
     return 'Female'
   }
-  return collapseSpaces(value ?? '') || null
+  return null
 }
 
 export function normalizeDateOfBirth(

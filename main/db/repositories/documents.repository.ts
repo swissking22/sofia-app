@@ -53,7 +53,12 @@ export class DocumentsRepository {
       for (const def of CATALOG_TEMPLATES) {
         const existing = this.findTemplateByKey(schoolId, def.key)
         if (existing) {
-          if (!existing.body_text) {
+          const body = existing.body_text || ''
+          const receiptMissingTotals =
+            def.key === 'receipt' &&
+            (!/payment\.amount|receipt\.amountPaid/.test(body) ||
+              !/student\.balance|receipt\.balance/.test(body))
+          if (!body || receiptMissingTotals) {
             this.db
               .prepare(
                 `UPDATE document_templates
@@ -65,7 +70,9 @@ export class DocumentsRepository {
                      number_pattern = CASE WHEN IFNULL(number_pattern,'') = '' THEN @number_pattern ELSE number_pattern END,
                      signatory_role = @signatory_role,
                      is_default = CASE WHEN is_default = 1 THEN 1 ELSE @is_default END,
-                     requires_approval = @requires_approval
+                     requires_approval = @requires_approval,
+                     updated_at = @updated_at,
+                     version = version + 1
                  WHERE id = @id`
               )
               .run({
@@ -79,6 +86,7 @@ export class DocumentsRepository {
                 signatory_role: def.signatoryRole,
                 is_default: def.isDefault ? 1 : 0,
                 requires_approval: def.requiresApproval ? 1 : 0,
+                updated_at: new Date().toISOString(),
               })
           }
           continue
@@ -1186,6 +1194,29 @@ export class DocumentsRepository {
       .all(schoolId) as Array<{ grade: string; min_score: number; max_score: number }>
 
     const amountNum = finance ? Number(finance.amount) : 0
+    const balanceNum = finance ? Number(finance.balance) : NaN
+    const money = (n: number) =>
+      `${(Number.isFinite(n) ? n : 0).toLocaleString()} ${currency}`
+
+    const invoiceTotals = finance
+      ? (this.db
+          .prepare(
+            `SELECT amount_paid, balance, net_payable FROM invoices
+             WHERE id = ? AND deleted_at IS NULL`
+          )
+          .get(finance.invoice_id) as
+          | { amount_paid: number; balance: number; net_payable: number }
+          | undefined)
+      : undefined
+
+    const formattedAmountPaid = finance ? money(amountNum) : ''
+    const formattedReceiptBalance = finance
+      ? money(Number.isFinite(balanceNum) ? balanceNum : 0)
+      : ''
+    const outstanding =
+      formattedReceiptBalance ||
+      money(Number(this.outstandingOf(schoolId, input.student_id)) || 0)
+
     const values: Ctx = {
       'school.name': school.name,
       'school.shortCode': school.short_code,
@@ -1203,7 +1234,7 @@ export class DocumentsRepository {
       'student.gender': student.gender || '',
       'student.dateOfBirth': student.date_of_birth || '',
       'student.status': student.status,
-      'student.balance': finance?.balance || this.outstandingOf(schoolId, input.student_id),
+      'student.balance': outstanding,
       'academic.year': year?.name || '',
       'academic.term': term?.name || '',
       'academic.average': average,
@@ -1212,7 +1243,9 @@ export class DocumentsRepository {
       'academic.status': academicStatus,
       'receipt.number': finance?.receipt_number || '',
       'receipt.date': finance?.receipt_date || '',
-      'payment.amount': finance ? `${amountNum.toLocaleString()} ${currency}` : '',
+      'receipt.amountPaid': formattedAmountPaid,
+      'receipt.balance': formattedReceiptBalance,
+      'payment.amount': formattedAmountPaid,
       'payment.amountWords': finance ? amountInWords(amountNum, 'CFA francs') : '',
       'payment.method': finance?.method || '',
       'payment.reference': finance?.reference || '',
@@ -1223,6 +1256,12 @@ export class DocumentsRepository {
               .get(finance.invoice_id) as { invoice_number: string } | undefined
           )?.invoice_number ?? '')
         : '',
+      'invoice.amountPaid': invoiceTotals
+        ? money(Number(invoiceTotals.amount_paid) || 0)
+        : '',
+      'invoice.balance': invoiceTotals
+        ? money(Number(invoiceTotals.balance) || 0)
+        : formattedReceiptBalance,
       'document.number': opts.documentNumber,
       'document.date': (input.document_date || new Date().toISOString().slice(0, 10)),
       'document.type': template.title,

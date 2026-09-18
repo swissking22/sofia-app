@@ -81,8 +81,11 @@ const uniqueStructure: StudentImportStructure = {
 }
 
 describe('student import normalization', () => {
-  it('collapses extra spaces in names', () => {
+  it('collapses extra spaces and title-cases each name', () => {
     expect(normalizeFullName('  Ada   Biya ')).toBe('Ada Biya')
+    expect(normalizeFullName('ADA BIYA')).toBe('Ada Biya')
+    expect(normalizeFullName('ada biya')).toBe('Ada Biya')
+    expect(normalizeFullName("JEAN-PAUL O'BRIEN")).toBe("Jean-Paul O'Brien")
   })
 
   it('parses date of birth in ISO and DMY forms', () => {
@@ -103,9 +106,15 @@ describe('student import normalization', () => {
     expect(normalizeResidence('')).toBe(null)
   })
 
-  it('normalizes gender to Male/Female', () => {
+  it('normalizes sex/gender codes to Male/Female', () => {
     expect(normalizeGender('m')).toBe('Male')
+    expect(normalizeGender('M')).toBe('Male')
+    expect(normalizeGender('male')).toBe('Male')
+    expect(normalizeGender('f')).toBe('Female')
+    expect(normalizeGender('F')).toBe('Female')
+    expect(normalizeGender('female')).toBe('Female')
     expect(normalizeGender('fille')).toBe('Female')
+    expect(normalizeGender('unknown')).toBe(null)
     expect(normalizeGender('')).toBe(null)
   })
 })

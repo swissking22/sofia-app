@@ -158,13 +158,13 @@ CSV only (Excel files must be saved as CSV). Download the template, then upload.
 
 | Column | Required | Notes |
 |--------|----------|--------|
-| Full Name | Yes | Extra spaces collapsed |
+| Full Name | Yes | Extra spaces collapsed; each word title-cased (`ADA BIYA` → `Ada Biya`) |
 | Date of Birth | No | `YYYY-MM-DD`, `DD/MM/YYYY`, or `DD-MM-YYYY` |
 | Level | Yes* | Matches academic level name or short code (`Form 1` / `F1`) |
 | Department | Yes* | Matches Academic Structure **section** (shown as Department) |
 | Specialization | No | Matches name or abbreviation (`Electrical` / `EL`) |
 | Residence Type | Yes | Normalized to `day` or `boarding` (`Day`, `externe`, `Boarder`, `internat`, …). Unknown values are skipped so boarders are not stored as day students |
-| Gender | No | Normalized to Male/Female (`M` / `F`) |
+| Gender | No | Normalized to Male/Female (`M` / `F` / `male` / `female`) |
 | Class | No | Disambiguator when several classrooms share the same level + department + specialization (e.g. `Form 1 A` vs `Form 1 B`) |
 
 \*Level and department can be omitted only when **Class** uniquely matches an existing classroom name.
@@ -502,7 +502,7 @@ Print / PDF uses the same browser print-to-PDF path as receipts and ID cards (A4
 | Admission letters | `/documents/admission-letters` | Filter year/class/department/status/date. Generate or bulk-generate personalized letters from enrolled students. View / print / regenerate (previous copy is superseded, not deleted). Official bilingual letterhead is included automatically. |
 | Certificates | `/documents/certificates` | Tabs: issued certificates and certificate types. Create types (leaving, completion, achievement, participation, conduct, or custom). Each issued certificate gets a unique number from the school pattern (default `{SCHOOL_CODE}/{TYPE}/{YEAR}/{SEQUENCE}`). |
 | Transcripts | `/documents/transcripts` | Generate from **published or locked** result runs only. Draft terms show: “Results for {term} have not yet been finalized…”. Scope: current year, selected year/term, or full history. |
-| Receipt templates | `/documents/receipt-templates` | Appearance of **Finance & Fees → Receipts**. Set one default per school. Variables such as `{{receipt.number}}` and `{{payment.amount}}`. Printed receipts use the same bilingual ministry letterhead as admission letters. Do not record payments here. |
+| Receipt templates | `/documents/receipt-templates` | Appearance of **Finance & Fees → Receipts**. Set one default per school. Printed receipts show **Amount paid** (`{{receipt.amountPaid}}` / `{{payment.amount}}`) and **Balance remaining** (`{{receipt.balance}}`), plus invoice totals. Variables such as `{{receipt.number}}` and `{{payment.amountWords}}`. Do not record payments here. |
 | Official documents | `/documents/official` | Enrollment, recommendation, confirmation, transfer, withdrawal, plus custom types. |
 | Print | `/documents/print/[id]` | Preview, print, or Save as PDF. Verification ID (`SOFIA-XXXXXX`) is on the footer. |
 
@@ -705,6 +705,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-18 | Student CSV import title-cases full names (`ADA BIYA` → `Ada Biya`, including hyphen/apostrophe tokens) and stores sex as Male/Female from `M`/`F`/`male`/`female`. |
+| 2026-09-18 | Receipt templates include **Amount paid** and **Balance remaining** (`{{receipt.amountPaid}}`, `{{receipt.balance}}`, plus invoice totals). Default body updated; existing receipt templates missing those fields are backfilled on catalog ensure. |
 | 2026-09-18 | Official documents (admission letters, receipts, certificates, transcripts) share the report-card Cameroon bilingual ministry letterhead (FR · logo · EN) via `wrapOfficialHtml` / `DOCUMENT_PRINT_CSS`; defaults from `DEFAULT_BILINGUAL_HEADER`. |
 | 2026-09-18 | Billing respects day vs boarding fee packages: generate-invoice lists only structures matching the student residence (and department/level/class); bulk generate pre-filters by `applies_to_residence`; fee-structure form clarifies Day / Boarding packages for mixed schools. |
 | 2026-09-18 | Fee structures can target a **department** (Academic Structure section: General / Commercial / Technical). Invoice generation and bulk billing enforce department + level + class + residence scope (`main/domain/fee-structure-scope.ts`). Light World seed stores `section_id` on fee packages so Gen/Commercial bands stay distinct from Technical. |

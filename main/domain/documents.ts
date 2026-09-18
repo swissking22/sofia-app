@@ -60,11 +60,15 @@ export const DOCUMENT_VARIABLES: DocumentVariableDef[] = [
   { key: 'academic.status', label: 'Academic status', category: 'academic' },
   { key: 'receipt.number', label: 'Receipt number', category: 'finance' },
   { key: 'receipt.date', label: 'Receipt date', category: 'finance' },
+  { key: 'receipt.amountPaid', label: 'Amount paid (receipt)', category: 'finance' },
+  { key: 'receipt.balance', label: 'Balance remaining (after this payment)', category: 'finance' },
   { key: 'payment.amount', label: 'Amount paid', category: 'finance' },
   { key: 'payment.amountWords', label: 'Amount in words', category: 'finance' },
   { key: 'payment.method', label: 'Payment method', category: 'finance' },
   { key: 'payment.reference', label: 'Payment reference', category: 'finance' },
   { key: 'invoice.reference', label: 'Invoice reference', category: 'finance' },
+  { key: 'invoice.amountPaid', label: 'Invoice amount paid (total)', category: 'finance' },
+  { key: 'invoice.balance', label: 'Invoice balance remaining', category: 'finance' },
   { key: 'document.number', label: 'Document number', category: 'document' },
   { key: 'document.date', label: 'Document date', category: 'document' },
   { key: 'document.type', label: 'Document type', category: 'document' },
@@ -169,11 +173,15 @@ const FAMILY_VARIABLES: Record<DocumentFamily, string[]> = {
     'student.balance',
     'receipt.number',
     'receipt.date',
+    'receipt.amountPaid',
+    'receipt.balance',
     'payment.amount',
     'payment.amountWords',
     'payment.method',
     'payment.reference',
     'invoice.reference',
+    'invoice.amountPaid',
+    'invoice.balance',
     'signatory.name',
     'signatory.title',
   ],
@@ -628,10 +636,10 @@ export const CATALOG_TEMPLATES: CatalogTemplateDef[] = [
     footer: 'Thank you for your payment. Keep this receipt for your records.',
     body: `<p><strong>Receipt:</strong> {{receipt.number}} &nbsp; <strong>Date:</strong> {{receipt.date}}</p>
 <p><strong>Student:</strong> {{student.name}} ({{student.id}})<br/>Class: {{student.class}}</p>
-<p><strong>Amount paid:</strong> {{payment.amount}} ({{payment.amountWords}})<br/>
+<p><strong>Amount paid:</strong> {{receipt.amountPaid}} ({{payment.amountWords}})<br/>
+<strong>Balance remaining:</strong> {{receipt.balance}}<br/>
 Method: {{payment.method}} &nbsp; Reference: {{payment.reference}}<br/>
-Invoice: {{invoice.reference}}<br/>
-Outstanding balance: {{student.balance}}</p>
+Invoice: {{invoice.reference}} (paid to date: {{invoice.amountPaid}}, balance: {{invoice.balance}})</p>
 {{receipt.lines}}`,
     signatureLabel: 'Bursar',
     signatoryRole: 'bursar',
