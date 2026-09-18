@@ -415,6 +415,8 @@ export interface FeeStructure extends BaseRecord {
   academic_year_id: string
   academic_term_id: string | null
   academic_level_id: string | null
+  /** Department / stream (sections.id). Null = all departments. */
+  section_id: string | null
   class_id: string | null
   is_active: number
   notes: string | null

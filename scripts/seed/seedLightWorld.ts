@@ -921,11 +921,11 @@ export function seedLightWorld(ctx: SeedContext): void {
     const structureInsert = db.prepare(
       `INSERT INTO fee_structures (
         id, school_id, name, academic_year_id, academic_term_id,
-        academic_level_id, class_id, is_active, notes, applies_to_residence,
+        academic_level_id, section_id, class_id, is_active, notes, applies_to_residence,
         created_at, updated_at, deleted_at, sync_status, version
       ) VALUES (
         @id, @school_id, @name, @academic_year_id, NULL,
-        @academic_level_id, @class_id, @is_active, @notes, @applies_to_residence,
+        @academic_level_id, @section_id, @class_id, @is_active, @notes, @applies_to_residence,
         @created_at, @updated_at, @deleted_at, @sync_status, @version
       )`
     )
@@ -955,6 +955,7 @@ export function seedLightWorld(ctx: SeedContext): void {
           name: `${cls.name} — ${residence === 'day' ? 'Day' : 'Boarder'} 2025/2026`,
           academic_year_id: yearId,
           academic_level_id: cls.academic_level_id,
+          section_id: cls.section_id,
           class_id: cls.id,
           is_active: 1,
           notes: INSTALLMENT_NOTES,
@@ -1006,6 +1007,7 @@ export function seedLightWorld(ctx: SeedContext): void {
       name: 'Additional payments catalogue 2025/2026',
       academic_year_id: yearId,
       academic_level_id: null,
+      section_id: null,
       class_id: null,
       is_active: 0,
       notes:

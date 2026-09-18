@@ -440,8 +440,8 @@ Fee categories and currency come from Setup → Finance. Receipt header/footer u
 
 | Screen | Path | How to use |
 |--------|------|------------|
-| Fee structure | `/finance/fee-structure` | List packages with total, year, level/class, active badge, and day/boarding applicability. Managers create structures with fee lines (tuition, boarding, dormitory, transport, …), amount, frequency, mandatory, late fee, and **Applies to** (all / day / boarding). Activate/deactivate or soft-delete. |
-| Student billing | `/finance/billing` | Filter invoices by status/search. Generate for one student (structure, due date, carry arrears, discount) or bulk by class/structure. Drawer shows lines and allows adjustments. Generation is refused if the structure’s residence scope does not match the student. |
+| Fee structure | `/finance/fee-structure` | List packages with total, year, **level / department / class**, active badge, and **day/boarding** applicability. Managers create structures with fee lines, **Department**, and **Applies to** (all / day / boarding). For mixed day+boarding schools, create separate Day and Boarding packages. Billing refuses a structure whose department, level, class, or residence does not match the student. |
+| Student billing | `/finance/billing` | Filter invoices by status/search. Generate for one student: fee structures are filtered to the student’s **day/boarding** residence plus department/level/class. Bulk generate only targets students matching the package’s residence scope. Generation is refused if scope does not match. |
 | Payments | `/finance/payments` | Payment history. Record against an outstanding invoice (amount, method, reference, optional use of credit). **Online payment** starts a request (`pending`/`processing`); Confirm/Fail/Cancel after the provider settles. A request is not a successful payment — student balance and receipt update only on verified success. |
 | Receipts | `/finance/receipts` | List + search. View/print drawer or full page `/finance/receipts/:id`. Managers can log a reprint. |
 | Outstanding | `/finance/outstanding` | Toggle student vs class grouping; aging columns (current / 1–30 / 60+). Select students and send in-app fee reminders. |
@@ -684,7 +684,7 @@ Key libs for built modules:
 - Student CSV import: `renderer/lib/students.ts` → `main/ipc/students.ts` (`students:import`); normalize + existing-class match in `main/domain/student-import.ts`
 - Class order: `main/domain/class-order.ts` — level `sort_order`, then General → Commercial → Technical; applied in `ClassRepository.findStructureClasses` / `findBySchool` and section lists
 - Staff: `renderer/lib/staff-mgmt.ts` → `main/ipc/staff-mgmt.ts`
-- Finance: `renderer/lib/finance-mgmt.ts` → `main/ipc/finance-mgmt.ts`; extensions `renderer/lib/finance-ext.ts` → `main/ipc/finance-ext.ts`
+- Finance: `renderer/lib/finance-mgmt.ts` → `main/ipc/finance-mgmt.ts`; extensions `renderer/lib/finance-ext.ts` → `main/ipc/finance-ext.ts`; fee package scope (residence / department / level / class) in `main/domain/fee-structure-scope.ts`
 - Communication: `renderer/lib/communication-mgmt.ts` → `main/ipc/communication-mgmt.ts` (setup: `communication.ts`)
 - Academic: `renderer/lib/academic-mgmt.ts` → `main/ipc/academic-mgmt.ts`; teaching progress `renderer/lib/teaching-progress.ts` → `main/ipc/teaching-progress.ts`
 - Gate Scanner: `renderer/lib/gate-attendance.ts` → `main/ipc/gate-attendance.ts` (`gate-attendance:scan`, `gate-attendance:today-summary`); service `main/services/gate-attendance.ts`; table `gate_attendance`; feedback `renderer/lib/scanner-feedback.ts`
@@ -703,6 +703,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-18 | Billing respects day vs boarding fee packages: generate-invoice lists only structures matching the student residence (and department/level/class); bulk generate pre-filters by `applies_to_residence`; fee-structure form clarifies Day / Boarding packages for mixed schools. |
+| 2026-09-18 | Fee structures can target a **department** (Academic Structure section: General / Commercial / Technical). Invoice generation and bulk billing enforce department + level + class + residence scope (`main/domain/fee-structure-scope.ts`). Light World seed stores `section_id` on fee packages so Gen/Commercial bands stay distinct from Technical. |
 | 2026-09-17 | Login hides Join/Create when local users already exist (those routes redirect to Login once setup is done); shows a short note instead. |
 | 2026-09-17 | Multi-desk **Step 9**: Storage bucket `school-assets` for logo/stamp/signature + student photos; Sync Now enabled for pull-only; Admin sync dashboard shows queue **by table**; ops guide for primary desk / Sync cadence. Migration `20260917130000_school_assets_storage.sql`. |
 | 2026-09-17 | Multi-desk **communication sync (Step 8)**: announcements, internal notices, deliveries, parent threads/messages, notification templates, and channel settings via `synced_entities`. Migration `20260917120000_communication_synced_entities.sql`. |

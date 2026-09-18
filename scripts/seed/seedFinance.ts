@@ -83,11 +83,11 @@ function seedFeeStructures(ctx: SeedContext, now: string): void {
   const structureInsert = db.prepare(`
     INSERT INTO fee_structures (
       id, school_id, name, academic_year_id, academic_term_id,
-      academic_level_id, class_id, is_active, notes,
+      academic_level_id, section_id, class_id, is_active, notes,
       created_at, updated_at, deleted_at, sync_status, version
     ) VALUES (
       @id, @school_id, @name, @academic_year_id, @academic_term_id,
-      @academic_level_id, @class_id, 1, @notes,
+      @academic_level_id, @section_id, @class_id, 1, @notes,
       @created_at, @updated_at, @deleted_at, @sync_status, @version
     )
   `)
@@ -120,6 +120,7 @@ function seedFeeStructures(ctx: SeedContext, now: string): void {
       academic_year_id: yearId,
       academic_term_id: termId,
       academic_level_id: cls.academic_level_id,
+      section_id: cls.section_id ?? null,
       class_id: cls.id,
       notes: 'Seeded fee structure',
     })

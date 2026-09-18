@@ -32,10 +32,12 @@ export interface FinanceMeta {
   payment_methods: string[];
   categories: Array<{ id: string; name: string; category_key: string }>;
   levels: Array<{ id: string; name: string }>;
+  sections: Array<{ id: string; name: string }>;
   classes: Array<{
     id: string;
     name: string;
     academic_level_id: string | null;
+    section_id: string | null;
   }>;
   years: Array<{ id: string; name: string; is_current: number }>;
   terms: Array<{ id: string; name: string; academic_year_id: string }>;
@@ -46,6 +48,7 @@ export interface FinanceMeta {
     class_id: string;
     class_name: string | null;
     academic_level_id: string | null;
+    residence_type?: string;
   }>;
 }
 
@@ -67,15 +70,87 @@ export interface FeeStructureDto {
   academic_year_id: string;
   academic_term_id: string | null;
   academic_level_id: string | null;
+  section_id?: string | null;
   class_id: string | null;
   is_active: number;
   notes: string | null;
   year_name: string | null;
   level_name: string | null;
+  section_name?: string | null;
   class_name: string | null;
   applies_to_residence?: "all" | "day" | "boarding";
   lines: FeeStructureLineDto[];
   total: number;
+}
+
+export function residenceLabel(
+  value: string | null | undefined
+): "Day" | "Boarding" | "—" {
+  if (value === "boarding") return "Boarding";
+  if (value === "day") return "Day";
+  return "—";
+}
+
+export function structureResidenceLabel(
+  value: FeeStructureDto["applies_to_residence"] | string | null | undefined
+): string {
+  if (value === "boarding") return "Boarding";
+  if (value === "day") return "Day";
+  return "Day & boarding";
+}
+
+/** Short scope suffix for dropdown labels (department · day/boarding). */
+export function structureScopeSuffix(s: FeeStructureDto): string {
+  const parts = [
+    s.level_name,
+    s.section_name,
+    s.class_name,
+    s.applies_to_residence && s.applies_to_residence !== "all"
+      ? structureResidenceLabel(s.applies_to_residence)
+      : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "All students";
+}
+
+/**
+ * Client-side mirror of fee-structure scope matching for billing UI filters.
+ * Server still enforces the same rules on generate.
+ */
+export function structureMatchesStudent(
+  structure: Pick<
+    FeeStructureDto,
+    | "applies_to_residence"
+    | "academic_level_id"
+    | "section_id"
+    | "class_id"
+    | "is_active"
+  >,
+  student: {
+    residence_type?: string | null;
+    academic_level_id?: string | null;
+    class_id?: string | null;
+    section_id?: string | null;
+  }
+): boolean {
+  if (structure.is_active === 0) return false;
+
+  const residence = student.residence_type === "boarding" ? "boarding" : "day";
+  const applies = structure.applies_to_residence || "all";
+  if (applies !== "all" && applies !== residence) return false;
+
+  if (structure.class_id && structure.class_id !== student.class_id) {
+    return false;
+  }
+  if (structure.section_id && structure.section_id !== student.section_id) {
+    return false;
+  }
+  if (
+    structure.academic_level_id &&
+    structure.academic_level_id !== student.academic_level_id
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export interface FeeDiscountDto {
@@ -285,6 +360,7 @@ export async function createStructure(input: {
   academic_year_id: string;
   academic_term_id?: string | null;
   academic_level_id?: string | null;
+  section_id?: string | null;
   class_id?: string | null;
   notes?: string | null;
   applies_to_residence?: "all" | "day" | "boarding";

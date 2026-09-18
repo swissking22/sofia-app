@@ -78,6 +78,7 @@ export default function FeeStructurePage() {
   const [yearId, setYearId] = React.useState("");
   const [termId, setTermId] = React.useState("");
   const [levelId, setLevelId] = React.useState("");
+  const [sectionId, setSectionId] = React.useState("");
   const [classId, setClassId] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [appliesTo, setAppliesTo] = React.useState<"all" | "day" | "boarding">(
@@ -100,12 +101,23 @@ export default function FeeStructurePage() {
     const target = rows.filter((r) => selected.includes(r.id));
     if (!target.length) return;
     const csv = [
-      ["Name", "Year", "Level", "Class", "Residence", "Total", "Lines Count", "Status"].join(","),
+      [
+        "Name",
+        "Year",
+        "Level",
+        "Department",
+        "Class",
+        "Residence",
+        "Total",
+        "Lines Count",
+        "Status",
+      ].join(","),
       ...target.map((r) =>
         [
           `"${r.name}"`,
           `"${r.year_name || ""}"`,
           `"${r.level_name || ""}"`,
+          `"${r.section_name || ""}"`,
           `"${r.class_name || ""}"`,
           `"${r.applies_to_residence || "all"}"`,
           r.total,
@@ -129,9 +141,11 @@ export default function FeeStructurePage() {
   const termsForYear = (meta?.terms ?? []).filter(
     (t) => t.academic_year_id === yearId,
   );
-  const classesForLevel = (meta?.classes ?? []).filter(
-    (c) => !levelId || c.academic_level_id === levelId,
-  );
+  const classesForLevel = (meta?.classes ?? []).filter((c) => {
+    if (levelId && c.academic_level_id !== levelId) return false;
+    if (sectionId && c.section_id !== sectionId) return false;
+    return true;
+  });
 
   const load = React.useCallback(async () => {
     const [metaRes, listRes] = await Promise.all([
@@ -159,6 +173,7 @@ export default function FeeStructurePage() {
     setName("");
     setTermId("");
     setLevelId("");
+    setSectionId("");
     setClassId("");
     setNotes("");
     setAppliesTo("all");
@@ -216,6 +231,7 @@ export default function FeeStructurePage() {
         academic_year_id: yearId,
         academic_term_id: termId || null,
         academic_level_id: levelId || null,
+        section_id: sectionId || null,
         class_id: classId || null,
         notes: notes.trim() || null,
         applies_to_residence: appliesTo,
@@ -280,7 +296,7 @@ export default function FeeStructurePage() {
       title="Fee Structure"
       breadcrumb={["Finance & Fees", "Fee Structure"]}
       heading="Fee Structure"
-      subtitle="Define tuition and fee packages by year, level, or class."
+      subtitle="Define tuition and fee packages by year, level, department, or class."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
       {success ? <PageAlert tone="success">{success}</PageAlert> : null}
@@ -320,7 +336,7 @@ export default function FeeStructurePage() {
           />,
           "Name",
           "Year",
-          "Level / class",
+          "Level / department / class",
           "Total",
           "Lines",
           "Status",
@@ -332,7 +348,10 @@ export default function FeeStructurePage() {
           <EmptyRow colSpan={8} message="No fee structures yet." />
         ) : (
           rows.map((row) => (
-            <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+            <tr
+              key={row.id}
+              className="border-t border-slate-100 hover:bg-slate-50/80"
+            >
               <td className="px-4 py-3">
                 <input
                   type="checkbox"
@@ -347,8 +366,9 @@ export default function FeeStructurePage() {
                 {row.year_name ?? "—"}
               </td>
               <td className="px-4 py-3 text-slate-600">
-                {[row.level_name, row.class_name].filter(Boolean).join(" · ") ||
-                  "All"}
+                {[row.level_name, row.section_name, row.class_name]
+                  .filter(Boolean)
+                  .join(" · ") || "All"}
                 {row.applies_to_residence &&
                 row.applies_to_residence !== "all" ? (
                   <div className="text-xs text-slate-500">
@@ -438,14 +458,14 @@ export default function FeeStructurePage() {
         >
           <FormSection
             title="Details"
-            description="Scope this package to a year, term, level, or class."
+            description="Scope this package to a year, term, level, department, or class."
           >
             <FormField label="Name" required fullWidth>
               <input
                 className={fieldClass}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Form 1 Term 1 fees"
+                placeholder="e.g. Form 1 Technical Day fees"
                 required
               />
             </FormField>
@@ -498,6 +518,23 @@ export default function FeeStructurePage() {
                 ))}
               </select>
             </FormField>
+            <FormField label="Department (optional)">
+              <select
+                className={selectClass}
+                value={sectionId}
+                onChange={(e) => {
+                  setSectionId(e.target.value);
+                  setClassId("");
+                }}
+              >
+                <option value="">All departments</option>
+                {(meta?.sections ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </FormField>
             <FormField label="Class (optional)">
               <select
                 className={selectClass}
@@ -520,11 +557,16 @@ export default function FeeStructurePage() {
                   setAppliesTo(e.target.value as "all" | "day" | "boarding")
                 }
               >
-                <option value="all">All students</option>
+                <option value="all">All students (day & boarding)</option>
                 <option value="day">Day students only</option>
                 <option value="boarding">Boarding students only</option>
               </select>
             </FormField>
+            <p className="col-span-full text-xs text-slate-500">
+              For schools with both day and boarding students, create separate
+              packages (Day vs Boarding) so boarders are not billed the day fee
+              and vice versa.
+            </p>
             <FormField label="Notes" fullWidth>
               <textarea
                 className={fieldClass}

@@ -259,7 +259,8 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   ],
   fee_structures: [
     'id', 'school_id', 'name', 'academic_year_id', 'academic_term_id', 'academic_level_id',
-    'class_id', 'is_active', 'notes', 'created_at', 'updated_at', 'deleted_at', 'version',
+    'section_id', 'class_id', 'is_active', 'notes', 'applies_to_residence',
+    'created_at', 'updated_at', 'deleted_at', 'version',
   ],
   fee_structure_lines: [
     'id', 'school_id', 'fee_structure_id', 'fee_category_id', 'name', 'amount', 'frequency',

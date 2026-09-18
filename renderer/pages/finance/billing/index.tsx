@@ -18,7 +18,10 @@ import {
   useDebouncedValue,
 } from "../../../components/finance/ui";
 import { Icon } from "../../../components/ui/Icon";
-import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import {
   INVOICE_STATUS_LABELS,
   adjustInvoice,
@@ -29,6 +32,9 @@ import {
   fetchStructures,
   formatMoney,
   generateInvoice,
+  residenceLabel,
+  structureMatchesStudent,
+  structureScopeSuffix,
   type DiscountMode,
   type FinanceMeta,
   type FeeStructureDto,
@@ -69,7 +75,8 @@ export default function BillingPage() {
   const [adjAmount, setAdjAmount] = React.useState("");
   const [selected, setSelected] = React.useState<string[]>([]);
 
-  const allSelected = invoices.length > 0 && selected.length === invoices.length;
+  const allSelected =
+    invoices.length > 0 && selected.length === invoices.length;
   function toggle(id: string) {
     setSelected((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -83,7 +90,18 @@ export default function BillingPage() {
     const target = invoices.filter((inv) => selected.includes(inv.id));
     if (!target.length) return;
     const csv = [
-      ["Invoice Number", "Student", "Student ID", "Class", "Issued Date", "Due Date", "Net Payable", "Amount Paid", "Balance", "Status"].join(","),
+      [
+        "Invoice Number",
+        "Student",
+        "Student ID",
+        "Class",
+        "Issued Date",
+        "Due Date",
+        "Net Payable",
+        "Amount Paid",
+        "Balance",
+        "Status",
+      ].join(","),
       ...target.map((inv) =>
         [
           `"${inv.invoice_number}"`,
@@ -110,6 +128,45 @@ export default function BillingPage() {
 
   const canManage = meta?.can_manage ?? false;
   const currency = meta?.currency ?? "";
+
+  const selectedStudent = React.useMemo(
+    () => (meta?.students ?? []).find((s) => s.id === studentId) ?? null,
+    [meta?.students, studentId],
+  );
+
+  const selectedStudentContext = React.useMemo(() => {
+    if (!selectedStudent) return null;
+    const cls = (meta?.classes ?? []).find(
+      (c) => c.id === selectedStudent.class_id,
+    );
+    return {
+      residence_type: selectedStudent.residence_type || "day",
+      academic_level_id:
+        selectedStudent.academic_level_id || cls?.academic_level_id || null,
+      class_id: selectedStudent.class_id,
+      section_id: cls?.section_id ?? null,
+    };
+  }, [meta?.classes, selectedStudent]);
+
+  const matchingStructures = React.useMemo(() => {
+    const active = structures.filter((s) => s.is_active);
+    if (!selectedStudentContext) return active;
+    return active.filter((s) =>
+      structureMatchesStudent(s, selectedStudentContext),
+    );
+  }, [structures, selectedStudentContext]);
+
+  const bulkStructure = React.useMemo(
+    () => structures.find((s) => s.id === bulkStructureId) ?? null,
+    [structures, bulkStructureId],
+  );
+
+  React.useEffect(() => {
+    if (!structureId) return;
+    if (!matchingStructures.some((s) => s.id === structureId)) {
+      setStructureId("");
+    }
+  }, [matchingStructures, structureId]);
 
   const load = React.useCallback(async () => {
     const [metaRes, structRes, invRes] = await Promise.all([
@@ -201,7 +258,7 @@ export default function BillingPage() {
         return;
       }
       setSuccess(
-        `Bulk generate: ${res.data.created} created, ${res.data.skipped} skipped.`
+        `Bulk generate: ${res.data.created} created, ${res.data.skipped} skipped.`,
       );
       setBulkOpen(false);
       await load();
@@ -273,7 +330,7 @@ export default function BillingPage() {
                     <option key={s} value={s}>
                       {INVOICE_STATUS_LABELS[s]}
                     </option>
-                  )
+                  ),
                 )}
               </select>
             </FilterField>
@@ -323,7 +380,10 @@ export default function BillingPage() {
           <EmptyRow colSpan={11} message="No invoices found." />
         ) : (
           invoices.map((inv) => (
-            <tr key={inv.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+            <tr
+              key={inv.id}
+              className="border-t border-slate-100 hover:bg-slate-50/80"
+            >
               <td className="px-4 py-3">
                 <input
                   type="checkbox"
@@ -397,7 +457,7 @@ export default function BillingPage() {
       <FormModal
         open={genOpen}
         title="Generate invoice"
-        subtitle="Bill one student from a fee structure."
+        subtitle="Bill one student from a matching fee structure (department + day/boarding)."
         onClose={() => setGenOpen(false)}
         footer={
           <div className="flex gap-2">
@@ -418,12 +478,19 @@ export default function BillingPage() {
           </div>
         }
       >
-        <form id="gen-invoice-form" onSubmit={handleGenerate} className="space-y-3">
+        <form
+          id="gen-invoice-form"
+          onSubmit={handleGenerate}
+          className="space-y-3"
+        >
           <FormField label="Student" required>
             <select
               className={selectClass}
               value={studentId}
-              onChange={(e) => setStudentId(e.target.value)}
+              onChange={(e) => {
+                setStudentId(e.target.value);
+                setStructureId("");
+              }}
               required
             >
               <option value="">Select student</option>
@@ -432,6 +499,7 @@ export default function BillingPage() {
                   {s.name}
                   {s.student_code ? ` (${s.student_code})` : ""}
                   {s.class_name ? ` — ${s.class_name}` : ""}
+                  {` · ${residenceLabel(s.residence_type || "day")}`}
                 </option>
               ))}
             </select>
@@ -442,15 +510,36 @@ export default function BillingPage() {
               value={structureId}
               onChange={(e) => setStructureId(e.target.value)}
               required
+              disabled={!studentId}
             >
-              <option value="">Select structure</option>
-              {structures.map((s) => (
+              <option value="">
+                {studentId
+                  ? matchingStructures.length
+                    ? "Select structure"
+                    : "No matching day/boarding package"
+                  : "Select a student first"}
+              </option>
+              {matchingStructures.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} ({formatMoney(s.total, currency)})
+                  {s.name} — {structureScopeSuffix(s)} (
+                  {formatMoney(s.total, currency)})
                 </option>
               ))}
             </select>
           </FormField>
+          {selectedStudent ? (
+            <p className="text-xs text-slate-500">
+              Showing packages for{" "}
+              <span className="font-medium text-slate-700">
+                {residenceLabel(selectedStudent.residence_type || "day")}
+              </span>{" "}
+              students
+              {selectedStudent.class_name
+                ? ` in ${selectedStudent.class_name}`
+                : ""}
+              .
+            </p>
+          ) : null}
           <FormField label="Due date">
             <input
               type="date"
@@ -499,7 +588,7 @@ export default function BillingPage() {
       <FormModal
         open={bulkOpen}
         title="Bulk generate"
-        subtitle="Create invoices for a class (or structure scope)."
+        subtitle="Create invoices for matching students (class, department, and day/boarding)."
         onClose={() => setBulkOpen(false)}
         footer={
           <div className="flex gap-2">
@@ -520,7 +609,11 @@ export default function BillingPage() {
           </div>
         }
       >
-        <form id="bulk-invoice-form" onSubmit={handleBulk} className="space-y-3">
+        <form
+          id="bulk-invoice-form"
+          onSubmit={handleBulk}
+          className="space-y-3"
+        >
           <FormField label="Fee structure" required>
             <select
               className={selectClass}
@@ -529,13 +622,33 @@ export default function BillingPage() {
               required
             >
               <option value="">Select structure</option>
-              {structures.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
+              {structures
+                .filter((s) => s.is_active)
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {structureScopeSuffix(s)}
+                  </option>
+                ))}
             </select>
           </FormField>
+          {bulkStructure ? (
+            <p className="text-xs text-slate-500">
+              This package bills{" "}
+              <span className="font-medium text-slate-700">
+                {bulkStructure.applies_to_residence === "boarding"
+                  ? "boarding"
+                  : bulkStructure.applies_to_residence === "day"
+                    ? "day"
+                    : "day and boarding"}
+              </span>{" "}
+              students
+              {bulkStructure.section_name
+                ? ` in ${bulkStructure.section_name}`
+                : ""}
+              {bulkStructure.level_name ? ` · ${bulkStructure.level_name}` : ""}
+              .
+            </p>
+          ) : null}
           <FormField label="Class (optional)">
             <select
               className={selectClass}

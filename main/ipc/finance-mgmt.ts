@@ -37,7 +37,13 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
     payment_methods: string[]
     categories: Array<{ id: string; name: string; category_key: string }>
     levels: Array<{ id: string; name: string }>
-    classes: Array<{ id: string; name: string; academic_level_id: string | null }>
+    sections: Array<{ id: string; name: string }>
+    classes: Array<{
+      id: string
+      name: string
+      academic_level_id: string | null
+      section_id: string | null
+    }>
     years: Array<{ id: string; name: string; is_current: number }>
     terms: Array<{ id: string; name: string; academic_year_id: string }>
     students: Array<{
@@ -112,10 +118,15 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
           id: l.id,
           name: l.name,
         })),
+        sections: repos.sections.findBySchool(sid).map((s) => ({
+          id: s.id,
+          name: s.name,
+        })),
         classes: classes.map((c) => ({
           id: c.id,
           name: c.name,
           academic_level_id: c.academic_level_id,
+          section_id: c.section_id,
         })),
         years: years.map((y) => ({
           id: y.id,
@@ -144,6 +155,9 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
     const levels = new Map(
       repos.academicLevels.findBySchool(sid).map((l) => [l.id, l.name])
     )
+    const sections = new Map(
+      repos.sections.findBySchool(sid).map((s) => [s.id, s.name])
+    )
     const classes = new Map(
       repos.classes.findBySchool(sid).map((c) => [c.id, c.name])
     )
@@ -153,6 +167,7 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
       level_name: s.academic_level_id
         ? levels.get(s.academic_level_id) ?? null
         : null,
+      section_name: s.section_id ? sections.get(s.section_id) ?? null : null,
       class_name: s.class_id ? classes.get(s.class_id) ?? null : null,
       lines: fm().getStructureLines(s.id),
       total: fm()
@@ -171,6 +186,7 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         academic_year_id: string
         academic_term_id?: string | null
         academic_level_id?: string | null
+        section_id?: string | null
         class_id?: string | null
         notes?: string | null
         applies_to_residence?: 'all' | 'day' | 'boarding'
@@ -408,13 +424,33 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
       if (!structure) return { ok: false, error: 'Structure not found.' }
 
       let students = repos.students.findBySchool(sid, 'active')
+      const classById = new Map(
+        repos.classes.findBySchool(sid).map((c) => [c.id, c])
+      )
       if (input.class_id) {
         students = students.filter((s) => s.class_id === input.class_id)
       } else if (structure.class_id) {
         students = students.filter((s) => s.class_id === structure.class_id)
-      } else if (structure.academic_level_id) {
+      } else {
+        if (structure.section_id) {
+          students = students.filter((s) => {
+            const cls = classById.get(s.class_id)
+            return cls?.section_id === structure.section_id
+          })
+        }
+        if (structure.academic_level_id) {
+          students = students.filter((s) => {
+            const cls = classById.get(s.class_id)
+            const levelId = s.academic_level_id || cls?.academic_level_id
+            return levelId === structure.academic_level_id
+          })
+        }
+      }
+
+      const residenceScope = structure.applies_to_residence || 'all'
+      if (residenceScope === 'day' || residenceScope === 'boarding') {
         students = students.filter(
-          (s) => s.academic_level_id === structure.academic_level_id
+          (s) => (s.residence_type || 'day') === residenceScope
         )
       }
 

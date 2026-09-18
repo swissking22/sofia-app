@@ -2053,6 +2053,7 @@ function migrateFinanceManagementTables(db: Database.Database): void {
       academic_year_id TEXT NOT NULL,
       academic_term_id TEXT,
       academic_level_id TEXT,
+      section_id TEXT,
       class_id TEXT,
       is_active INTEGER NOT NULL DEFAULT 1,
       notes TEXT,
@@ -2457,6 +2458,9 @@ function migrateMvpFeatureTables(db: Database.Database): void {
     db.exec(
       `ALTER TABLE fee_structures ADD COLUMN applies_to_residence TEXT NOT NULL DEFAULT 'all'`
     )
+  }
+  if (!structCols.includes('section_id')) {
+    db.exec(`ALTER TABLE fee_structures ADD COLUMN section_id TEXT`)
   }
 
   const settingsCols = (

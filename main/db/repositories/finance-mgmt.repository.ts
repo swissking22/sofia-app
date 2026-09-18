@@ -27,7 +27,10 @@ import {
   round2,
   todayIso,
 } from '../../domain/finance'
-import { structureAppliesToStudent } from '../../domain/boarding'
+import {
+  feeStructureMismatch,
+  feeStructureMismatchMessage,
+} from '../../domain/fee-structure-scope'
 import { BaseRepository } from './base'
 
 export { round2 }
@@ -235,6 +238,7 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
     academic_year_id: string
     academic_term_id?: string | null
     academic_level_id?: string | null
+    section_id?: string | null
     class_id?: string | null
     notes?: string | null
     applies_to_residence?: ResidenceApplies
@@ -262,6 +266,7 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
       academic_year_id: input.academic_year_id,
       academic_term_id: input.academic_term_id ?? null,
       academic_level_id: input.academic_level_id ?? null,
+      section_id: input.section_id ?? null,
       class_id: input.class_id ?? null,
       is_active: 1,
       notes: input.notes?.trim() || null,
@@ -273,11 +278,11 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
         .prepare(
           `INSERT INTO fee_structures (
              id, school_id, name, academic_year_id, academic_term_id,
-             academic_level_id, class_id, is_active, notes, applies_to_residence,
+             academic_level_id, section_id, class_id, is_active, notes, applies_to_residence,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @school_id, @name, @academic_year_id, @academic_term_id,
-             @academic_level_id, @class_id, @is_active, @notes, @applies_to_residence,
+             @academic_level_id, @section_id, @class_id, @is_active, @notes, @applies_to_residence,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
            )`
         )
@@ -609,18 +614,39 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
 
     const student = this.db
       .prepare(
-        `SELECT residence_type FROM students WHERE id = ? AND deleted_at IS NULL`
+        `SELECT s.residence_type, s.academic_level_id, s.class_id,
+                c.section_id AS class_section_id,
+                c.academic_level_id AS class_level_id
+         FROM students s
+         LEFT JOIN classes c ON c.id = s.class_id AND c.deleted_at IS NULL
+         WHERE s.id = ? AND s.deleted_at IS NULL`
       )
-      .get(input.student_id) as { residence_type?: string } | undefined
-    if (
-      !structureAppliesToStudent(
-        structure.applies_to_residence,
-        student?.residence_type
-      )
-    ) {
-      throw new Error(
-        'This fee structure does not apply to the student residence type (day / boarding).'
-      )
+      .get(input.student_id) as
+      | {
+          residence_type?: string
+          academic_level_id?: string | null
+          class_id?: string | null
+          class_section_id?: string | null
+          class_level_id?: string | null
+        }
+      | undefined
+    const mismatch = feeStructureMismatch(
+      {
+        applies_to_residence: structure.applies_to_residence,
+        academic_level_id: structure.academic_level_id,
+        section_id: structure.section_id,
+        class_id: structure.class_id,
+      },
+      {
+        residence_type: student?.residence_type,
+        academic_level_id:
+          student?.academic_level_id || student?.class_level_id || null,
+        section_id: student?.class_section_id ?? null,
+        class_id: student?.class_id ?? null,
+      }
+    )
+    if (mismatch) {
+      throw new Error(feeStructureMismatchMessage(mismatch))
     }
 
     const lines = this.getStructureLines(structure.id).filter(
