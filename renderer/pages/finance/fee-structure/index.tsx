@@ -1,8 +1,10 @@
 import React from "react";
 import {
   Add01Icon,
+  Copy01Icon,
   Delete02Icon,
   PauseIcon,
+  PencilEdit01Icon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
@@ -34,6 +36,7 @@ import {
   fetchStructures,
   formatMoney,
   setStructureActive,
+  updateStructure,
   type FeeFrequency,
   type FeeStructureDto,
   type FinanceMeta,
@@ -50,6 +53,8 @@ type LineDraft = {
   late_fee_mode: LateFeeMode;
   late_fee_value: string;
 };
+
+type FormMode = "create" | "edit" | "duplicate";
 
 function emptyLine(): LineDraft {
   return {
@@ -71,7 +76,9 @@ export default function FeeStructurePage() {
   const [success, setSuccess] = React.useState("");
   const [meta, setMeta] = React.useState<FinanceMeta | null>(null);
   const [rows, setRows] = React.useState<FeeStructureDto[]>([]);
-  const [createOpen, setCreateOpen] = React.useState(false);
+  const [formOpen, setFormOpen] = React.useState(false);
+  const [formMode, setFormMode] = React.useState<FormMode>("create");
+  const [editingId, setEditingId] = React.useState<string | null>(null);
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
 
   const [name, setName] = React.useState("");
@@ -178,8 +185,38 @@ export default function FeeStructurePage() {
     setNotes("");
     setAppliesTo("all");
     setLines([emptyLine()]);
+    setEditingId(null);
+    setFormMode("create");
     const current = meta?.years.find((y) => y.is_current);
     setYearId(current?.id ?? meta?.years[0]?.id ?? "");
+  }
+
+  function fillFormFromRow(row: FeeStructureDto, mode: FormMode) {
+    setFormMode(mode);
+    setEditingId(mode === "edit" ? row.id : null);
+    setName(mode === "duplicate" ? `Copy of ${row.name}` : row.name);
+    setYearId(row.academic_year_id);
+    setTermId(row.academic_term_id || "");
+    setLevelId(row.academic_level_id || "");
+    setSectionId(row.section_id || "");
+    setClassId(row.class_id || "");
+    setNotes(row.notes || "");
+    setAppliesTo(row.applies_to_residence || "all");
+    setLines(
+      row.lines.length
+        ? row.lines.map((l) => ({
+            key: Math.random().toString(36).slice(2),
+            fee_category_id: l.fee_category_id || "",
+            name: l.name,
+            amount: String(l.amount),
+            frequency: l.frequency,
+            is_mandatory: l.is_mandatory === 1,
+            late_fee_mode: l.late_fee_mode,
+            late_fee_value: String(l.late_fee_value ?? 0),
+          }))
+        : [emptyLine()],
+    );
+    setFormOpen(true);
   }
 
   function updateLine(key: string, patch: Partial<LineDraft>) {
@@ -198,7 +235,7 @@ export default function FeeStructurePage() {
     );
   }
 
-  async function handleCreate(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setSuccess("");
@@ -224,25 +261,35 @@ export default function FeeStructurePage() {
       setError("Add at least one fee line with a positive amount.");
       return;
     }
+    const payload = {
+      name: name.trim(),
+      academic_year_id: yearId,
+      academic_term_id: termId || null,
+      academic_level_id: levelId || null,
+      section_id: sectionId || null,
+      class_id: classId || null,
+      notes: notes.trim() || null,
+      applies_to_residence: appliesTo,
+      lines: parsed,
+    };
     setBusy(true);
     try {
-      const res = await createStructure({
-        name: name.trim(),
-        academic_year_id: yearId,
-        academic_term_id: termId || null,
-        academic_level_id: levelId || null,
-        section_id: sectionId || null,
-        class_id: classId || null,
-        notes: notes.trim() || null,
-        applies_to_residence: appliesTo,
-        lines: parsed,
-      });
+      const res =
+        formMode === "edit" && editingId
+          ? await updateStructure({ id: editingId, ...payload })
+          : await createStructure(payload);
       if (!res.ok) {
         setError(res.error);
         return;
       }
-      setSuccess(`Fee structure “${res.data.name}” created.`);
-      setCreateOpen(false);
+      setSuccess(
+        formMode === "edit"
+          ? `Fee structure “${res.data.name}” updated.`
+          : formMode === "duplicate"
+            ? `Fee structure “${res.data.name}” duplicated.`
+            : `Fee structure “${res.data.name}” created.`,
+      );
+      setFormOpen(false);
       resetForm();
       await load();
     } finally {
@@ -312,7 +359,7 @@ export default function FeeStructurePage() {
             <PrimaryButton
               onClick={() => {
                 resetForm();
-                setCreateOpen(true);
+                setFormOpen(true);
               }}
             >
               <Icon icon={Add01Icon} size={16} />
@@ -392,6 +439,16 @@ export default function FeeStructurePage() {
                 {canManage ? (
                   <TableActionGroup>
                     <TableIconButton
+                      icon={PencilEdit01Icon}
+                      label="Edit"
+                      onClick={() => fillFormFromRow(row, "edit")}
+                    />
+                    <TableIconButton
+                      icon={Copy01Icon}
+                      label="Duplicate"
+                      onClick={() => fillFormFromRow(row, "duplicate")}
+                    />
+                    <TableIconButton
                       icon={row.is_active ? PauseIcon : Tick02Icon}
                       label={row.is_active ? "Deactivate" : "Activate"}
                       tone={row.is_active ? "warning" : "primary"}
@@ -431,14 +488,34 @@ export default function FeeStructurePage() {
       />
 
       <FormModal
-        open={createOpen}
-        title="New fee structure"
-        subtitle="Add named fee lines with amounts and frequency."
+        open={formOpen}
+        title={
+          formMode === "edit"
+            ? "Edit fee structure"
+            : formMode === "duplicate"
+              ? "Duplicate fee structure"
+              : "New fee structure"
+        }
+        subtitle={
+          formMode === "edit"
+            ? "Update package scope and fee lines. Existing invoices are not changed."
+            : formMode === "duplicate"
+              ? "Review the copy, adjust as needed, then save as a new structure."
+              : "Add named fee lines with amounts and frequency."
+        }
         size="xl"
-        onClose={() => setCreateOpen(false)}
+        onClose={() => {
+          setFormOpen(false);
+          resetForm();
+        }}
         footer={
           <div className="flex justify-end gap-2">
-            <SecondaryButton onClick={() => setCreateOpen(false)}>
+            <SecondaryButton
+              onClick={() => {
+                setFormOpen(false);
+                resetForm();
+              }}
+            >
               Cancel
             </SecondaryButton>
             <PrimaryButton
@@ -446,14 +523,20 @@ export default function FeeStructurePage() {
               form="fee-structure-form"
               disabled={busy}
             >
-              {busy ? "Saving…" : "Create structure"}
+              {busy
+                ? "Saving…"
+                : formMode === "edit"
+                  ? "Save changes"
+                  : formMode === "duplicate"
+                    ? "Create copy"
+                    : "Create structure"}
             </PrimaryButton>
           </div>
         }
       >
         <form
           id="fee-structure-form"
-          onSubmit={handleCreate}
+          onSubmit={(e) => void handleSubmit(e)}
           className="space-y-5"
         >
           <FormSection

@@ -19,7 +19,7 @@ export type LeaveRequestStatus =
   | 'rejected'
   | 'cancelled'
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+type Result<T> = { ok: true; data: T; warning?: string } | { ok: false; error: string }
 
 export interface StaffDto {
   id: string

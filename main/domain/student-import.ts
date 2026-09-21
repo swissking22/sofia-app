@@ -1,14 +1,21 @@
+import { normalizeCameroonPhone } from './phone'
+
 export type ResidenceType = 'day' | 'boarding'
 
 export type StudentImportCsvRow = {
   full_name: string
   date_of_birth?: string | null
+  place_of_birth?: string | null
   level_name?: string | null
   department_name?: string | null
   specialization_name?: string | null
   residence_type?: string | null
   class_name?: string | null
   gender?: string | null
+  guardian_name?: string | null
+  guardian_phone?: string | null
+  guardian_email?: string | null
+  guardian_relationship?: string | null
 }
 
 export type StudentImportSkipReason =
@@ -16,6 +23,7 @@ export type StudentImportSkipReason =
   | 'missing_residence'
   | 'invalid_residence'
   | 'invalid_date_of_birth'
+  | 'invalid_phone'
   | 'missing_level'
   | 'unknown_level'
   | 'missing_department'
@@ -30,6 +38,7 @@ export const STUDENT_IMPORT_SKIP_LABELS: Record<StudentImportSkipReason, string>
     missing_residence: 'missing residence type',
     invalid_residence: 'invalid residence type',
     invalid_date_of_birth: 'invalid date of birth',
+    invalid_phone: 'invalid phone (use Cameroon 9-digit, no +237)',
     missing_level: 'missing level',
     unknown_level: 'unknown level',
     missing_department: 'missing department',
@@ -73,7 +82,12 @@ export type StudentImportResolved = {
   class_id: string
   gender: string | null
   date_of_birth: string | null
+  place_of_birth: string | null
   residence_type: ResidenceType
+  guardian_name: string | null
+  guardian_phone: string | null
+  guardian_email: string | null
+  guardian_relationship: string | null
 }
 
 export type StudentImportResult =
@@ -231,6 +245,9 @@ export function resolveStudentImport(
   const dob = normalizeDateOfBirth(row.date_of_birth)
   if (dob === 'invalid') return { ok: false, reason: 'invalid_date_of_birth' }
 
+  const guardianPhone = normalizeCameroonPhone(row.guardian_phone)
+  if (guardianPhone === 'invalid') return { ok: false, reason: 'invalid_phone' }
+
   const classId = resolveImportClass(row, structure)
   if (!classId.ok) return classId
 
@@ -241,9 +258,24 @@ export function resolveStudentImport(
       class_id: classId.classId,
       gender: normalizeGender(row.gender),
       date_of_birth: dob,
+      place_of_birth: normalizeOptionalText(row.place_of_birth),
       residence_type: residence,
+      guardian_name: normalizeOptionalName(row.guardian_name),
+      guardian_phone: guardianPhone,
+      guardian_email: normalizeOptionalText(row.guardian_email),
+      guardian_relationship: normalizeOptionalText(row.guardian_relationship),
     },
   }
+}
+
+function normalizeOptionalText(value: string | null | undefined): string | null {
+  const collapsed = collapseSpaces(value ?? '')
+  return collapsed || null
+}
+
+function normalizeOptionalName(value: string | null | undefined): string | null {
+  const name = normalizeFullName(value)
+  return name || null
 }
 
 function resolveImportClass(
@@ -368,6 +400,13 @@ const DOB_HEADERS = [
   'birth date',
   'birthdate',
 ]
+const POB_HEADERS = [
+  'place of birth',
+  'place_of_birth',
+  'pob',
+  'birth place',
+  'birthplace',
+]
 const LEVEL_HEADERS = ['level', 'academic level', 'form']
 const DEPT_HEADERS = ['department', 'dept', 'section', 'stream']
 const SPEC_HEADERS = ['specialization', 'spec', 'option']
@@ -380,12 +419,43 @@ const RESIDENCE_HEADERS = [
 ]
 const CLASS_HEADERS = ['class', 'class name', 'class_name']
 const GENDER_HEADERS = ['gender', 'sex']
+const GUARDIAN_NAME_HEADERS = [
+  'guardian name',
+  'guardian_name',
+  'parent name',
+  'parent_name',
+  'parent',
+  'guardian',
+]
+const GUARDIAN_PHONE_HEADERS = [
+  'guardian phone',
+  'guardian_phone',
+  'parent phone',
+  'parent_phone',
+  'parent contact',
+  'parent_contact',
+  'guardian contact',
+  'guardian_contact',
+  'contact',
+]
+const GUARDIAN_EMAIL_HEADERS = [
+  'guardian email',
+  'guardian_email',
+  'parent email',
+  'parent_email',
+]
+const GUARDIAN_RELATIONSHIP_HEADERS = [
+  'guardian relationship',
+  'guardian_relationship',
+  'relationship',
+  'parent relationship',
+]
 
 export function buildStudentImportTemplateCsv(): string {
   return [
-    'Full Name,Date of Birth,Level,Department,Specialization,Residence Type,Gender',
-    'Ada Biya,2012-04-15,Form 1,General,,Day,Female',
-    'Jean Nkodo,15/04/2012,Form 4,Technical,Electrical,Boarding,Male',
+    'Full Name,Date of Birth,Place of Birth,Level,Department,Specialization,Residence Type,Gender,Parent Name,Parent Contact,Parent Email,Relationship',
+    'Ada Biya,2012-04-15,Yaoundé,Form 1,General,,Day,Female,Marie Biya,670000001,marie@example.com,Mother',
+    'Jean Nkodo,15/04/2012,Douala,Form 4,Technical,Electrical,Boarding,Male,Paul Nkodo,670000002,,Father',
   ].join('\n')
 }
 
@@ -401,24 +471,37 @@ export function parseStudentCsv(text: string): StudentImportCsvRow[] {
   if (nameIdx < 0) return []
 
   const dobIdx = firstHeader(headers, DOB_HEADERS)
+  const pobIdx = firstHeader(headers, POB_HEADERS)
   const levelIdx = firstHeader(headers, LEVEL_HEADERS)
   const deptIdx = firstHeader(headers, DEPT_HEADERS)
   const specIdx = firstHeader(headers, SPEC_HEADERS)
   const residenceIdx = firstHeader(headers, RESIDENCE_HEADERS)
   const classIdx = firstHeader(headers, CLASS_HEADERS)
   const genderIdx = firstHeader(headers, GENDER_HEADERS)
+  const guardianNameIdx = firstHeader(headers, GUARDIAN_NAME_HEADERS)
+  const guardianPhoneIdx = firstHeader(headers, GUARDIAN_PHONE_HEADERS)
+  const guardianEmailIdx = firstHeader(headers, GUARDIAN_EMAIL_HEADERS)
+  const guardianRelationshipIdx = firstHeader(
+    headers,
+    GUARDIAN_RELATIONSHIP_HEADERS
+  )
 
   return lines.slice(1).map((line) => {
     const cols = splitCsvLine(line)
     return {
       full_name: cols[nameIdx] ?? '',
       date_of_birth: cell(cols, dobIdx),
+      place_of_birth: cell(cols, pobIdx),
       level_name: cell(cols, levelIdx),
       department_name: cell(cols, deptIdx),
       specialization_name: cell(cols, specIdx),
       residence_type: cell(cols, residenceIdx),
       class_name: cell(cols, classIdx),
       gender: cell(cols, genderIdx),
+      guardian_name: cell(cols, guardianNameIdx),
+      guardian_phone: cell(cols, guardianPhoneIdx),
+      guardian_email: cell(cols, guardianEmailIdx),
+      guardian_relationship: cell(cols, guardianRelationshipIdx),
     }
   })
 }

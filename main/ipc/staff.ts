@@ -9,8 +9,12 @@ import {
   type UpsertTeacherInput,
 } from '../db/repositories/staff.repository'
 import type { StaffAdminRole, StaffGender, StaffStatus } from '../db/types'
+import {
+  tryProvisionStaffAuth,
+  type CloudAuthRole,
+} from '../services/cloud-auth'
 
-type Ok<T> = { ok: true; data: T }
+type Ok<T> = { ok: true; data: T; warning?: string }
 type Err = { ok: false; error: string }
 type Result<T> = Ok<T> | Err
 
@@ -54,6 +58,43 @@ async function userHelpers(repos: Repositories) {
   }
 }
 
+function schoolNameOf(repos: Repositories, schoolId: string): string | null {
+  return repos.schools.findById(schoolId)?.name ?? null
+}
+
+function adminRoleToCloudRole(adminRole: StaffAdminRole): CloudAuthRole {
+  if (adminRole === 'principal' || adminRole === 'vice_principal') {
+    return 'admin'
+  }
+  return 'secretary'
+}
+
+async function provisionForStaff(
+  repos: Repositories,
+  schoolId: string,
+  staff: {
+    id: string
+    email: string | null
+    full_name: string
+  },
+  role: CloudAuthRole,
+  userCreated: boolean
+): Promise<string | null> {
+  if (!staff.email?.trim()) return null
+  return tryProvisionStaffAuth({
+    email: staff.email,
+    password: STAFF_TEMP_PASSWORD,
+    role,
+    schoolId,
+    staffId: staff.id,
+    schoolName: schoolNameOf(repos, schoolId),
+    displayName: staff.full_name,
+    // New local accounts get the temp password pushed to Auth.
+    // Existing accounts only refresh metadata (keep their Auth password).
+    resetPassword: userCreated,
+  })
+}
+
 export function registerStaffIpc(repos: Repositories): void {
   ipcMain.handle('staff:get', (): Result<StaffSetupData> => {
     const schoolId = resolveSchoolId(repos)
@@ -75,8 +116,23 @@ export function registerStaffIpc(repos: Repositories): void {
         return { ok: false, error: 'Select a valid role.' }
       }
       try {
-        await repos.staff.upsertAdmin(schoolId, input, await userHelpers(repos))
-        return { ok: true, data: loadSetup(repos, schoolId) }
+        const { staff, userCreated } = await repos.staff.upsertAdmin(
+          schoolId,
+          input,
+          await userHelpers(repos)
+        )
+        const warning = await provisionForStaff(
+          repos,
+          schoolId,
+          staff,
+          adminRoleToCloudRole(input.admin_role),
+          userCreated
+        )
+        return {
+          ok: true,
+          data: loadSetup(repos, schoolId),
+          ...(warning ? { warning } : {}),
+        }
       } catch (err) {
         return {
           ok: false,
@@ -115,7 +171,7 @@ export function registerStaffIpc(repos: Repositories): void {
         return { ok: false, error: 'Full name is required.' }
       }
       try {
-        await repos.staff.upsertTeacher(
+        const { staff, userCreated } = await repos.staff.upsertTeacher(
           schoolId,
           {
             ...input,
@@ -124,7 +180,18 @@ export function registerStaffIpc(repos: Repositories): void {
           },
           await userHelpers(repos)
         )
-        return { ok: true, data: loadSetup(repos, schoolId) }
+        const warning = await provisionForStaff(
+          repos,
+          schoolId,
+          staff,
+          'teacher',
+          userCreated
+        )
+        return {
+          ok: true,
+          data: loadSetup(repos, schoolId),
+          ...(warning ? { warning } : {}),
+        }
       } catch (err) {
         return {
           ok: false,
@@ -162,7 +229,9 @@ export function registerStaffIpc(repos: Repositories): void {
           department_name?: string | null
         }>
       }
-    ): Promise<Result<StaffSetupData & { imported: number; skipped: number }>> => {
+    ): Promise<
+      Result<StaffSetupData & { imported: number; skipped: number }>
+    > => {
       const schoolId = resolveSchoolId(repos)
       if (!schoolId) return { ok: false, error: 'No school found.' }
       if (!input?.teachers?.length) {
@@ -173,6 +242,7 @@ export function registerStaffIpc(repos: Repositories): void {
       let imported = 0
       let skipped = 0
       const helpers = await userHelpers(repos)
+      const warnings: string[] = []
 
       try {
         for (const row of input.teachers) {
@@ -188,11 +258,13 @@ export function registerStaffIpc(repos: Repositories): void {
             : null
           const genderRaw = row.gender?.trim().toLowerCase()
           const gender =
-            genderRaw === 'male' || genderRaw === 'female' || genderRaw === 'other'
+            genderRaw === 'male' ||
+            genderRaw === 'female' ||
+            genderRaw === 'other'
               ? genderRaw
               : null
 
-          await repos.staff.upsertTeacher(
+          const { staff, userCreated } = await repos.staff.upsertTeacher(
             schoolId,
             {
               full_name,
@@ -206,11 +278,23 @@ export function registerStaffIpc(repos: Repositories): void {
             },
             helpers
           )
+          const warning = await provisionForStaff(
+            repos,
+            schoolId,
+            staff,
+            'teacher',
+            userCreated
+          )
+          if (warning) warnings.push(warning)
           imported += 1
         }
+
         return {
           ok: true,
           data: { ...loadSetup(repos, schoolId), imported, skipped },
+          ...(warnings.length
+            ? { warning: warnings[0] }
+            : {}),
         }
       } catch (err) {
         return {

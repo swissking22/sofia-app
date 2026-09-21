@@ -17,8 +17,36 @@ import {
   saveStudentPhoto,
 } from '../helpers/student-documents'
 import { compareClassesByStructure } from '../domain/class-order'
+import { normalizeCameroonPhone } from '../domain/phone'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+
+const PHONE_FORMAT_HINT =
+  'Use a Cameroon number without country code (9 digits, e.g. 670000001).'
+
+function resolveOptionalPhone(
+  value: string | null | undefined
+): { ok: true; phone: string | null } | { ok: false; error: string } {
+  const phone = normalizeCameroonPhone(value)
+  if (phone === 'invalid') {
+    return { ok: false, error: `Invalid phone. ${PHONE_FORMAT_HINT}` }
+  }
+  return { ok: true, phone }
+}
+
+function resolveRequiredPhone(
+  value: string | null | undefined,
+  label: string
+): { ok: true; phone: string } | { ok: false; error: string } {
+  const phone = normalizeCameroonPhone(value)
+  if (phone == null) {
+    return { ok: false, error: `${label} is required.` }
+  }
+  if (phone === 'invalid') {
+    return { ok: false, error: `Invalid ${label.toLowerCase()}. ${PHONE_FORMAT_HINT}` }
+  }
+  return { ok: true, phone }
+}
 
 export interface StudentDto {
   id: string
@@ -35,6 +63,7 @@ export interface StudentDto {
   sequence_number: number | null
   gender: string | null
   date_of_birth: string | null
+  place_of_birth: string | null
   phone: string | null
   email: string | null
   address: string | null
@@ -178,6 +207,7 @@ function enrichStudent(repos: Repositories, student: Student): StudentDto {
     sequence_number: student.sequence_number,
     gender: student.gender,
     date_of_birth: student.date_of_birth,
+    place_of_birth: student.place_of_birth ?? null,
     phone: student.phone,
     email: student.email,
     address: student.address,
@@ -567,6 +597,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         admission_year: number
         gender?: string | null
         date_of_birth?: string | null
+        place_of_birth?: string | null
         phone?: string | null
         email?: string | null
         address?: string | null
@@ -591,10 +622,13 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
       if (!guardianName) {
         return { ok: false, error: 'Guardian name is required.' }
       }
-      const guardianPhone = input?.guardian_phone?.trim()
-      if (!guardianPhone) {
-        return { ok: false, error: 'Guardian phone is required.' }
-      }
+      const guardianPhoneRes = resolveRequiredPhone(
+        input?.guardian_phone,
+        'Guardian phone'
+      )
+      if (!guardianPhoneRes.ok) return guardianPhoneRes
+      const phoneRes = resolveOptionalPhone(input?.phone)
+      if (!phoneRes.ok) return phoneRes
 
       const cls = repos.classes.findById(input.class_id)
       if (!cls || cls.school_id !== schoolId) {
@@ -624,12 +658,13 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           specialization_abbr: specialization?.abbreviation ?? null,
           gender: input.gender ?? null,
           date_of_birth: input.date_of_birth ?? null,
-          phone: input.phone ?? null,
+          place_of_birth: input.place_of_birth ?? null,
+          phone: phoneRes.phone,
           email: input.email ?? null,
           address: input.address ?? null,
           admission_type: input.admission_type ?? null,
           guardian_name: guardianName,
-          guardian_phone: guardianPhone,
+          guardian_phone: guardianPhoneRes.phone,
           guardian_email: input.guardian_email ?? null,
           guardian_relationship: input.guardian_relationship ?? null,
           status: 'active',
@@ -657,6 +692,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         class_id?: string
         gender?: string | null
         date_of_birth?: string | null
+        place_of_birth?: string | null
         phone?: string | null
         email?: string | null
         address?: string | null
@@ -692,19 +728,37 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           academic_level_id = cls.academic_level_id
         }
 
+        let phone: string | null | undefined
+        if (input.phone !== undefined) {
+          const phoneRes = resolveOptionalPhone(input.phone)
+          if (!phoneRes.ok) return phoneRes
+          phone = phoneRes.phone
+        }
+
+        let guardian_phone: string | null | undefined
+        if (input.guardian_phone !== undefined) {
+          const guardianPhoneRes = resolveRequiredPhone(
+            input.guardian_phone,
+            'Guardian phone'
+          )
+          if (!guardianPhoneRes.ok) return guardianPhoneRes
+          guardian_phone = guardianPhoneRes.phone
+        }
+
         const updated = repos.students.update(input.id, {
           name: input.name,
           class_id,
           academic_level_id,
           gender: input.gender,
           date_of_birth: input.date_of_birth,
-          phone: input.phone,
+          place_of_birth: input.place_of_birth,
+          phone,
           email: input.email,
           address: input.address,
           admission_type: input.admission_type,
           admission_year: input.admission_year,
           guardian_name: input.guardian_name,
-          guardian_phone: input.guardian_phone,
+          guardian_phone,
           guardian_email: input.guardian_email,
           guardian_relationship: input.guardian_relationship,
           status: input.status,
@@ -821,6 +875,11 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
       const full_name = input?.full_name?.trim()
       if (!full_name) return { ok: false, error: 'Full name is required.' }
 
+      const phoneRes = resolveOptionalPhone(input?.phone)
+      if (!phoneRes.ok) return phoneRes
+      const guardianPhoneRes = resolveOptionalPhone(input?.guardian_phone)
+      if (!guardianPhoneRes.ok) return guardianPhoneRes
+
       let photo_path: string | null = null
       if (input.photo_base64?.trim()) {
         const mime = input.photo_mime_type || 'image/jpeg'
@@ -844,14 +903,14 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           full_name,
           gender: input.gender ?? null,
           date_of_birth: input.date_of_birth ?? null,
-          phone: input.phone ?? null,
+          phone: phoneRes.phone,
           email: input.email ?? null,
           address: input.address ?? null,
           academic_level_id: input.academic_level_id ?? null,
           preferred_class_id: input.preferred_class_id ?? null,
           admission_year: input.admission_year ?? null,
           guardian_name: input.guardian_name ?? null,
-          guardian_phone: input.guardian_phone ?? null,
+          guardian_phone: guardianPhoneRes.phone,
           guardian_email: input.guardian_email ?? null,
           guardian_relationship: input.guardian_relationship ?? null,
           notes: input.notes ?? null,

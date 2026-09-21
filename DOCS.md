@@ -38,6 +38,16 @@ npm run seed        # writes data/sofia.seed.db
 | `admin@sunrise.demo` | `Sofia@Demo1` | Sunrise Academy |
 | `admin@lightworld.demo` | `Sofia@Demo1` | Light World Mission College |
 | `admin@iae.demo` | `Sofia@Demo1` | International Academy of Excellence |
+| `sofia.teacher.lwm@gmail.com` | `Sofia@Teacher1` | Light World Mission (teacher role — desktop) |
+
+**Sofia Teacher (Expo) mobile app** uses Supabase Auth, not the local desktop password store. After creating/updating the desktop teacher, provision the matching Auth user with:
+
+```bash
+# Add SUPABASE_SERVICE_ROLE_KEY to sofia/.env (never commit; never put in Expo)
+npx tsx scripts/provision-teacher-auth.ts
+```
+
+That sets `app_metadata.role = teacher` and `school_id` for LWM so the mobile app accepts the login.
 
 Restart the app after `seed:dev` so Electron picks up the new database. Seed data includes academics, staff, ~300 students, finance (paid / partial / unpaid invoices), expenses, and attendance. Light World Mission subjects are **level-scoped**: the same title (e.g. Mathematics) is one subject shared by General, Commercial, and Technical classes at that level. Re-running `npm run seed -- --dev --light-world-only` repairs LWM subjects without a full reset.
 
@@ -105,10 +115,10 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 | Academic Structure | `/setup/academic-structure` | Levels → sections → specializations → classes; **school day schedule** (start/close times, period duration, breaks) for the timetable |
 | Student ID Format | `/setup/student-id` | Pattern builder (default `{SCHOOL}-{SEQ}` e.g. `ABC-0001`), sequence scope (`school` continuous vs `year` / `year_level`), next sequence number counter. Student IDs are permanent school-wide identities and never change across academic years or class promotions. |
 | Grading System | `/setup/grading-system` | CA/exam weights + grade bands (A–F, etc.) |
-| Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments) |
+| Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments). Teachers/admins with an **email** get a local login and automatic **Supabase Auth** provisioning for Sofia Teacher (`Sofia@Staff1` temp password). |
 | Permissions | `/setup/permissions` | Roles & permissions |
 | Student ID | `/setup/student-id` | ID pattern (school code, year, sequence, …) |
-| Students | `/setup/students` | Required profile fields, admission types, and **CSV bulk import**. Template columns: Full Name, Date of Birth, Level, Department, Specialization, Residence Type, Gender. Sofia matches an **existing** class from level + department + specialization (never creates classes); residence is stored for day/boarding fee structures. |
+| Students | `/setup/students` | Required profile fields, admission types, and **CSV bulk import**. Template columns: Full Name, Date of Birth, Place of Birth, Level, Department, Specialization, Residence Type, Gender, Parent Name, Parent Contact, Parent Email, Relationship. Sofia matches an **existing** class from level + department + specialization (never creates classes); residence is stored for day/boarding fee structures. |
 | Finance | `/setup/finance` | Fee-related setup |
 | Documents | `/setup/documents` | Templates (report card, admission letter, receipt, certificate). **Report card** shows a live scaled preview of the official A4 bilingual layout in the aside as you edit header, footer, logo, stamp, and signature toggles. |
 | Communication | `/setup/communication` | SMS/channels + notification templates |
@@ -160,11 +170,16 @@ CSV only (Excel files must be saved as CSV). Download the template, then upload.
 |--------|----------|--------|
 | Full Name | Yes | Extra spaces collapsed; each word title-cased (`ADA BIYA` → `Ada Biya`) |
 | Date of Birth | No | `YYYY-MM-DD`, `DD/MM/YYYY`, or `DD-MM-YYYY` |
+| Place of Birth | No | Free text (city / region / country) |
 | Level | Yes* | Matches academic level name or short code (`Form 1` / `F1`) |
 | Department | Yes* | Matches Academic Structure **section** (shown as Department) |
 | Specialization | No | Matches name or abbreviation (`Electrical` / `EL`) |
 | Residence Type | Yes | Normalized to `day` or `boarding` (`Day`, `externe`, `Boarder`, `internat`, …). Unknown values are skipped so boarders are not stored as day students |
 | Gender | No | Normalized to Male/Female (`M` / `F` / `male` / `female`) |
+| Parent Name | No | Guardian / parent full name (aliases: Guardian Name, Parent, Guardian) |
+| Parent Contact | No | Guardian / parent phone in **Cameroon national format** (9 digits, no `+237`). Examples: `670000001`, `670 00 00 01`. Inputs with `+237` / `237` are stripped on import; invalid numbers skip the row. |
+| Parent Email | No | Optional guardian email |
+| Relationship | No | e.g. Mother / Father / Guardian |
 | Class | No | Disambiguator when several classrooms share the same level + department + specialization (e.g. `Form 1 A` vs `Form 1 B`) |
 
 \*Level and department can be omitted only when **Class** uniquely matches an existing classroom name.
@@ -178,16 +193,16 @@ IPC: `students:import` (`renderer/lib/students.ts` → `main/ipc/students.ts`; m
 Printable **A4 class list** (browser Print → Save as PDF). Chrome (sidebar, search, page title) is hidden when printing.
 
 1. Choose a **class**, or **All classes** (or open with `?class_id=` / `?class_id=all` / `?ids=` from the students list).
-2. Preview the document: school logo and details, **Class list** title, class name, academic year. The letterhead and column headers repeat on every printed page.
-3. Table columns: **Index**, **Name** (full width so names fit), **Sex** (M/F), plus an **empty** column for marks or signatures.
-4. **All classes** prints each class on its own page (same header on every page). Export CSV is named `All classes class list.csv` and includes a Class column.
+2. Choose **columns** to show besides full name. **Index** and **Name** are always included. Optional: Sex, Student ID, DOB, Age, Guardian name/phone, Residence, and an empty marks/signature column. Choices are remembered on this device.
+3. Preview the document: school logo and details, **Class list** title, class name, academic year. The letterhead and column headers repeat on every printed page. The **Name** column sizes to its content; the empty/notes column (when selected) takes the remaining table width.
+4. **All classes** prints each class on its own page (same header on every page). Export CSV follows the same column selection (named `All classes class list.csv` and includes a Class column when multiple classes).
 5. **Print / Save PDF** or **Export CSV**. Single-class files are named from the class (e.g. `Form 1 A class list.csv`; Save as PDF uses the same title).
 
 IPC: `students:class-list`.
 
 ### Add student — `/students/create`
 
-Sections: **Personal**, **Admission** (level → department → specialization if any → class, plus year + type + **Residence** day/boarding), **Guardian** (name and phone required).  
+Sections: **Personal** (name, gender, date of birth, **place of birth**, contact — phones in Cameroon 9-digit format without `+237`), **Admission** (level → department → specialization if any → class, plus year + type + **Residence** day/boarding), **Guardian** (name and phone required).  
 Student ID (`student_code`) is **permanently generated on save** (default `{SCHOOL}-{SEQ}` e.g. `ABC-0001`) inside a single atomic SQLite transaction with local UUID generation (`students.id`) and immediate offline outbox sync queue enqueue. The student code and internal UUID **never change** when academic years roll over, classes change, or students repeat/promote. Admission year is recorded separately in `students.admission_year`. Residence is used only to apply boarding/day fee structures.
 
 ### Student profile — `/students/:id`
@@ -196,12 +211,12 @@ Tabs:
 
 | Tab | Content |
 |-----|---------|
-| Overview | Personal, guardian, placement, day/boarding residence |
+| Overview | Personal (including place of birth), guardian, placement, day/boarding residence |
 | Academic History | Current placement (expands as promotions/transfers accumulate) |
 | Documents | Files for this student; link to upload |
 | Finance | Outstanding, invoices, and payments from Finance & Fees |
 
-Use the status drawer to set **Active / Alumni / Transferred**.
+**Edit details** opens a form for personal (including place of birth), placement (level → department → specialization → class), residence, admission, and guardian fields. Student ID (`student_code`) is immutable. Use the status drawer to set **Active / Alumni / Transferred**.
 
 ### Admissions
 
@@ -395,7 +410,7 @@ Shared list/filter UI mirrors Student Management (`renderer/components/staff/ui.
 | Screen | Path | How to use |
 |--------|------|------------|
 | List | `/staff/teachers` | Filter by search, status, department, job role. Actions drawer: view/edit or delete (managers). |
-| Add | `/staff/teachers/create` | Personal + role fields; per-class subject checkboxes (a teacher can teach many classes and many subjects); homeroom. Employee ID auto-generated if blank. |
+| Add | `/staff/teachers/create` | Personal + role fields; per-class subject checkboxes (a teacher can teach many classes and many subjects); homeroom. Employee ID auto-generated if blank. **Email required for login:** creates a local user and provisions Supabase Auth for Sofia Teacher (temp password `Sofia@Staff1`). |
 | Profile / edit | `/staff/teachers/:id` | Same fields. Teaching assignments are class × subject, not separate subject and class lists. |
 
 ### Staff directory
@@ -440,10 +455,10 @@ Fee categories and currency come from Setup → Finance. Receipt header/footer u
 
 | Screen | Path | How to use |
 |--------|------|------------|
-| Fee structure | `/finance/fee-structure` | List packages with total, year, **level / department / class**, active badge, and **day/boarding** applicability. Managers create structures with fee lines, **Department**, and **Applies to** (all / day / boarding). For mixed day+boarding schools, create separate Day and Boarding packages. Billing refuses a structure whose department, level, class, or residence does not match the student. |
+| Fee structure | `/finance/fee-structure` | List packages with total, year, **level / department / class**, active badge, and **day/boarding** applicability. Managers can **create**, **edit**, **duplicate** (opens a pre-filled copy to adjust), activate/deactivate, and delete. Structures include fee lines, **Department**, and **Applies to** (all / day / boarding). Editing updates the package for future billing; existing invoices are unchanged. Billing refuses a structure whose department, level, class, or residence does not match the student. |
 | Student billing | `/finance/billing` | Filter invoices by status/search. Generate for one student: fee structures are filtered to the student’s **day/boarding** residence plus department/level/class. Bulk generate only targets students matching the package’s residence scope. Generation is refused if scope does not match. |
 | Payments | `/finance/payments` | Payment history. Record against an outstanding invoice (amount, method, reference, optional use of credit). **Online payment** starts a request (`pending`/`processing`); Confirm/Fail/Cancel after the provider settles. A request is not a successful payment — student balance and receipt update only on verified success. |
-| Receipts | `/finance/receipts` | List + search. View/print drawer or full page `/finance/receipts/:id`. Managers can log a reprint. |
+| Receipts | `/finance/receipts` | List + search. View/print drawer or full page `/finance/receipts/:id`. Receipts show **Paid for** fee components (charged vs amount applied on this receipt, FIFO across invoice lines for partial payments). Managers can log a reprint. |
 | Outstanding | `/finance/outstanding` | Toggle student vs class grouping; aging columns (current / 1–30 / 60+). Select students and send in-app fee reminders. |
 | Expenses | `/finance/expenses` | List with date filters. Create: category, amount, date, vendor, description, method, optional recurring. Recording an expense updates matching **budgets** and may raise spending alerts. |
 | Budgeting | `/finance/budgeting` | Totals (allocated / spent / remaining / utilization) and per-category bars. Managers add configurable categories, allocate budgets by period (monthly / termly / annual / custom), and set alert / warning / critical thresholds. Spending is computed from existing Expenses. |
@@ -502,7 +517,7 @@ Print / PDF uses the same browser print-to-PDF path as receipts and ID cards (A4
 | Admission letters | `/documents/admission-letters` | Filter year/class/department/status/date. Generate or bulk-generate personalized letters from enrolled students. View / print / regenerate (previous copy is superseded, not deleted). Official bilingual letterhead is included automatically. |
 | Certificates | `/documents/certificates` | Tabs: issued certificates and certificate types. Create types (leaving, completion, achievement, participation, conduct, or custom). Each issued certificate gets a unique number from the school pattern (default `{SCHOOL_CODE}/{TYPE}/{YEAR}/{SEQUENCE}`). |
 | Transcripts | `/documents/transcripts` | Generate from **published or locked** result runs only. Draft terms show: “Results for {term} have not yet been finalized…”. Scope: current year, selected year/term, or full history. |
-| Receipt templates | `/documents/receipt-templates` | Appearance of **Finance & Fees → Receipts**. Set one default per school. Printed receipts show **Amount paid** (`{{receipt.amountPaid}}` / `{{payment.amount}}`) and **Balance remaining** (`{{receipt.balance}}`), plus invoice totals. Variables such as `{{receipt.number}}` and `{{payment.amountWords}}`. Do not record payments here. |
+| Receipt templates | `/documents/receipt-templates` | Appearance of **Finance & Fees → Receipts**. Set one default per school. Printed receipts show **Amount paid**, **Balance remaining**, and **Paid for** fee lines (`{{receipt.lines}}` — charged vs paid on this receipt). Variables such as `{{receipt.number}}` and `{{payment.amountWords}}`. Do not record payments here. |
 | Official documents | `/documents/official` | Enrollment, recommendation, confirmation, transfer, withdrawal, plus custom types. |
 | Print | `/documents/print/[id]` | Preview, print, or Save as PDF. Verification ID (`SOFIA-XXXXXX`) is on the footer. |
 
@@ -597,7 +612,7 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 - **Cloud Tables**:
   - `public.schools`: Tenant root (`id UUID PRIMARY KEY`, `name TEXT`, `school_code TEXT`, partial unique index on `school_code`).
   - `public.devices`: Registered desktop clients (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`).
-  - `public.students`: Complete cloud mirror of local student records (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`, `student_code TEXT`, `name TEXT NOT NULL`, `class_id TEXT NOT NULL`, `admission_year INTEGER`, `academic_level_id TEXT`, `sequence_number INTEGER`, `gender TEXT`, `date_of_birth DATE`, `phone TEXT`, `email TEXT`, `address TEXT`, `admission_type TEXT`, `guardian_*`, `status TEXT`, `photo_path TEXT`, `residence_type TEXT`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`, `deleted_at TIMESTAMPTZ`, `version BIGINT`). Local-only `sync_status` is excluded.
+  - `public.students`: Complete cloud mirror of local student records (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`, `student_code TEXT`, `name TEXT NOT NULL`, `class_id TEXT NOT NULL`, `admission_year INTEGER`, `academic_level_id TEXT`, `sequence_number INTEGER`, `gender TEXT`, `date_of_birth DATE`, `place_of_birth TEXT`, `phone TEXT`, `email TEXT`, `address TEXT`, `admission_type TEXT`, `guardian_*`, `status TEXT`, `photo_path TEXT`, `residence_type TEXT`, `created_at TIMESTAMPTZ`, `updated_at TIMESTAMPTZ`, `deleted_at TIMESTAMPTZ`, `version BIGINT`). Local-only `sync_status` is excluded.
   - `public.student_id_settings`: Cloud mirror of settings (`id UUID PRIMARY KEY`, `school_id UUID UNIQUE REFERENCES public.schools(id)`, `pattern TEXT`, `sequence_scope TEXT`, `next_sequence_number INTEGER`, `version BIGINT`). Local `sync_status` is excluded.
   - `public.synced_entities`: Generic JSONB mirror for multi-desk MVP tables (`PRIMARY KEY (school_id, table_name, record_id)`, `payload`, `version`).
   - `public.sync_operations`: Ingestion buffer for operations pushed from local `sync_queue` (`id UUID PRIMARY KEY`, `payload JSONB`, `operation TEXT`, `status TEXT`, `error_message TEXT`, `applied_at TIMESTAMPTZ`).
@@ -698,6 +713,7 @@ Key libs for built modules:
 - System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts`
 - Auto-update (Windows): `main/updater.ts` + `main/ipc/updater.ts` (`updater:*`); UI `UpdateNotifier` in `AppShell`. **`electron-updater` must stay a runtime dynamic import** (`loadAutoUpdater()` in `main/updater.ts`) — a static import is evaluated with the main chunk and breaks packaged Windows launch. Startup still pins `userData` first via `main/pin-user-data.ts`. Recovery evaluation does not load the updater module graph for native update checks until after the window is ready.
 - Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); table registry `main/sync/tables.ts`; generic apply `main/sync/apply-generic.ts`; PostgREST RPCs `process_sync_operation`, `process_synced_entity`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
+- Teacher / staff cloud Auth: `main/services/cloud-auth.ts` (`provisionStaffAuth`) calls Edge Function `supabase/functions/provision-staff-auth` (anon key); optional local fallback via `SUPABASE_SERVICE_ROLE_KEY`. Hooked from `staff:upsert-teacher`, `staff:upsert-admin`, `staff:import-teachers`, `staff-mgmt:create`, and `system-admin:users-create` / `users-reset-password`. Deploy with `npx supabase functions deploy provision-staff-auth`.
 
 ---
 
@@ -705,6 +721,14 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-21 | Student / guardian phones use **Cameroon national format** (9 digits, no country code). `+237` / `237` / leading `0` are stripped; invalid numbers are rejected on create/edit/import (`main/domain/phone.ts`). |
+| 2026-09-21 | Student CSV import also reads **Place of Birth**, **Parent Name**, **Parent Contact** (phone), Parent Email, and Relationship; stored on the student record. Template download updated. |
+| 2026-09-21 | Class list table: Name (and other data columns) size to content; the empty marks/signature column expands to fill remaining width. |
+| 2026-09-21 | Student profile stores **place of birth** (`students.place_of_birth`): add/edit forms, overview, local schema migration, pull sync, and cloud `process_sync_operation` (`20260921090000_students_place_of_birth.sql`). Setup already had a Place of Birth field toggle. |
+| 2026-09-21 | Class list print/CSV: choose optional columns beyond full name (sex, student ID, DOB, age, guardian, residence, blank notes column). Index + name always shown; selection is remembered locally. |
+| 2026-09-20 | Creating a teacher (or staff user with email) on desktop also provisions **Supabase Auth** for Sofia Teacher via Edge Function `provision-staff-auth` (`main/services/cloud-auth.ts`). Temp password remains `Sofia@Staff1`. Staff Mgmt → Add teacher now creates a local login when email is set. |
+| 2026-09-20 | Added desktop test teacher `sofia.teacher.lwm@gmail.com` / `Sofia@Teacher1` (LWM) and `scripts/provision-teacher-auth.ts` to create the matching Supabase Auth user for the Expo teacher app (needs `SUPABASE_SERVICE_ROLE_KEY`). |
+| 2026-09-20 | Fee structures support **edit** and **duplicate** (`finance-mgmt:structures-update`). Student profile **Edit details** updates personal, placement, residence, and guardian fields (student ID unchanged). Receipts show **Paid for** fee components with charged vs paid-this-receipt amounts via FIFO allocation (`allocatePaymentToLines`). |
 | 2026-09-18 | Student CSV import title-cases full names (`ADA BIYA` → `Ada Biya`, including hyphen/apostrophe tokens) and stores sex as Male/Female from `M`/`F`/`male`/`female`. |
 | 2026-09-18 | Receipt templates include **Amount paid** and **Balance remaining** (`{{receipt.amountPaid}}`, `{{receipt.balance}}`, plus invoice totals). Default body updated; existing receipt templates missing those fields are backfilled on catalog ensure. |
 | 2026-09-18 | Official documents (admission letters, receipts, certificates, transcripts) share the report-card Cameroon bilingual ministry letterhead (FR · logo · EN) via `wrapOfficialHtml` / `DOCUMENT_PRINT_CSS`; defaults from `DEFAULT_BILINGUAL_HEADER`. |

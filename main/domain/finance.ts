@@ -242,6 +242,33 @@ export function isValidFeeFrequency(value: string): value is FeeFrequency {
   return (FEE_FREQUENCIES as string[]).includes(value)
 }
 
+/**
+ * FIFO allocation of a receipt payment across invoice fee lines.
+ * Prior payments on the same invoice are applied first so partial receipts
+ * show which components this payment actually covered.
+ */
+export function allocatePaymentToLines(
+  lines: Array<{ description: string; amount: number }>,
+  paymentAmount: number,
+  priorPaidTowardInvoice = 0
+): Array<{ description: string; charged: number; paid: number }> {
+  let priorLeft = round2(Math.max(0, priorPaidTowardInvoice))
+  let payLeft = round2(Math.max(0, paymentAmount))
+  return lines.map((line) => {
+    const charged = round2(Number(line.amount) || 0)
+    const coveredByPrior = round2(Math.min(charged, priorLeft))
+    priorLeft = round2(priorLeft - coveredByPrior)
+    const remainingOnLine = round2(Math.max(0, charged - coveredByPrior))
+    const paid = round2(Math.min(remainingOnLine, payLeft))
+    payLeft = round2(payLeft - paid)
+    return {
+      description: line.description,
+      charged,
+      paid,
+    }
+  })
+}
+
 export function padNum(n: number): string {
   return String(Math.max(1, Math.floor(n))).padStart(5, '0')
 }

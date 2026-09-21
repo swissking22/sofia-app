@@ -15,6 +15,10 @@ import {
 } from "../../../lib/academic-structure";
 import { fetchAcademicYearSetup } from "../../../lib/academic-year";
 import { createAdmission, GENDER_OPTIONS } from "../../../lib/student-mgmt";
+import {
+  CAMEROON_PHONE_HINT,
+  normalizeCameroonPhone,
+} from "../../../lib/phone";
 
 export default function CreateAdmissionPage() {
   const router = useRouter();
@@ -169,13 +173,23 @@ export default function CreateAdmissionPage() {
       setError("Guardian phone is required.");
       return;
     }
+    const normalizedGuardianPhone = normalizeCameroonPhone(guardianPhone);
+    if (normalizedGuardianPhone === "invalid" || !normalizedGuardianPhone) {
+      setError(`Invalid guardian phone. ${CAMEROON_PHONE_HINT}`);
+      return;
+    }
+    const normalizedPhone = normalizeCameroonPhone(phone);
+    if (normalizedPhone === "invalid") {
+      setError(`Invalid phone. ${CAMEROON_PHONE_HINT}`);
+      return;
+    }
     setSaving(true);
     try {
       const res = await createAdmission({
         full_name: fullName.trim(),
         gender: gender || null,
         date_of_birth: dateOfBirth || null,
-        phone: phone || null,
+        phone: normalizedPhone,
         email: email || null,
         address: address || null,
         academic_level_id: levelId || null,
@@ -184,7 +198,7 @@ export default function CreateAdmissionPage() {
           ? Number(admissionYear)
           : defaultYear || null,
         guardian_name: guardianName.trim(),
-        guardian_phone: guardianPhone.trim(),
+        guardian_phone: normalizedGuardianPhone,
         guardian_email: guardianEmail || null,
         guardian_relationship: guardianRelationship || null,
         notes: notes || null,
@@ -258,6 +272,7 @@ export default function CreateAdmissionPage() {
                 label="Phone"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                placeholder="670000001"
               />
               <FormField
                 label="Email"
@@ -403,6 +418,7 @@ export default function CreateAdmissionPage() {
             required
             value={guardianPhone}
             onChange={(e) => setGuardianPhone(e.target.value)}
+            placeholder="670000001"
           />
           <FormField
             label="Guardian email"

@@ -884,16 +884,21 @@ export function resultsTableHtml(
 }
 
 export function receiptLinesHtml(
-  lines: Array<{ description: string; amount: string }>
+  lines: Array<{ description: string; amount: string; paid?: string }>
 ): string {
   if (!lines.length) return ''
+  const hasPaid = lines.some((l) => l.paid != null && l.paid !== '')
   const body = lines
-    .map(
-      (l) =>
-        `<tr><td>${escapeHtml(l.description)}</td><td>${escapeHtml(l.amount)}</td></tr>`
+    .map((l) =>
+      hasPaid
+        ? `<tr><td>${escapeHtml(l.description)}</td><td>${escapeHtml(l.amount)}</td><td>${escapeHtml(l.paid || '')}</td></tr>`
+        : `<tr><td>${escapeHtml(l.description)}</td><td>${escapeHtml(l.amount)}</td></tr>`
     )
     .join('')
-  return `<table><thead><tr><th>Fee component</th><th>Amount</th></tr></thead><tbody>${body}</tbody></table>`
+  const head = hasPaid
+    ? `<thead><tr><th>Fee component</th><th>Charged</th><th>Paid this receipt</th></tr></thead>`
+    : `<thead><tr><th>Fee component</th><th>Amount</th></tr></thead>`
+  return `<p><strong>Paid for</strong></p><table>${head}<tbody>${body}</tbody></table>`
 }
 
 export function gradingBandsHtml(

@@ -1,9 +1,11 @@
 import { ipcMain } from 'electron'
-import { getSession, type SessionData } from '../auth'
+import { getSession, hashPassword, type SessionData } from '../auth'
 import type { Repositories } from '../db/repositories'
 import type { StaffDto } from '../db/repositories/staff.repository'
+import { STAFF_TEMP_PASSWORD } from '../db/repositories/staff.repository'
 import { LEAVE_TYPES } from '../db/repositories/leave.repository'
 import { countLeaveDays } from '../domain/staff'
+import { tryProvisionStaffAuth } from '../services/cloud-auth'
 import type {
   LeaveRequestStatus,
   LeaveType,
@@ -13,7 +15,7 @@ import type {
   StaffType,
 } from '../db/types'
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+type Result<T> = { ok: true; data: T; warning?: string } | { ok: false; error: string }
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -267,7 +269,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
 
   ipcMain.handle(
     'staff-mgmt:create',
-    (
+    async (
       _e,
       input: {
         full_name: string
@@ -286,7 +288,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         teaching_assignments?: Array<{ class_id: string; subject_id: string }>
         staff_type?: StaffType
       }
-    ): Result<StaffDto> => {
+    ): Promise<Result<StaffDto>> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
       if (!isManager(session.role)) {
@@ -346,9 +348,39 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
           }
         }
 
+        let warning: string | null = null
+        const email = input.email?.trim()
+        if (email && staff_type === 'teaching') {
+          const passwordHash = await hashPassword(STAFF_TEMP_PASSWORD)
+          const account = await repos.staff.ensureUserAccount(
+            (u) => repos.users.create(u),
+            (e) => {
+              const found = repos.users.findByEmail(e)
+              return found ? { id: found.id, school_id: found.school_id } : undefined
+            },
+            repos.staff.findById(staff.id)!,
+            'teacher',
+            passwordHash
+          )
+          warning = await tryProvisionStaffAuth({
+            email,
+            password: STAFF_TEMP_PASSWORD,
+            role: 'teacher',
+            schoolId,
+            staffId: staff.id,
+            schoolName: repos.schools.findById(schoolId)?.name ?? null,
+            displayName: full_name,
+            resetPassword: account.created,
+          })
+        }
+
         const dto = enrichStaff(repos, schoolId, staff.id)
         if (!dto) return { ok: false, error: 'Could not load created staff.' }
-        return { ok: true, data: dto }
+        return {
+          ok: true,
+          data: dto,
+          ...(warning ? { warning } : {}),
+        }
       } catch (err) {
         return {
           ok: false,

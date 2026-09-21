@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { getSession, type SessionData } from '../auth'
 import type { Repositories } from '../db/repositories'
-import { daysPastDue } from '../domain/finance'
+import { daysPastDue, allocatePaymentToLines } from '../domain/finance'
 import type {
   ExpenseCategory,
   FeeFrequency,
@@ -217,6 +217,52 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         return {
           ok: false,
           error: err instanceof Error ? err.message : 'Could not create structure.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'finance-mgmt:structures-update',
+    (
+      _e,
+      input: {
+        id: string
+        name: string
+        academic_year_id: string
+        academic_term_id?: string | null
+        academic_level_id?: string | null
+        section_id?: string | null
+        class_id?: string | null
+        notes?: string | null
+        applies_to_residence?: 'all' | 'day' | 'boarding'
+        lines: Array<{
+          fee_category_id?: string | null
+          name: string
+          amount: number
+          frequency?: FeeFrequency
+          is_mandatory?: boolean
+          late_fee_mode?: LateFeeMode
+          late_fee_value?: number
+        }>
+      }
+    ): Result<unknown> => {
+      const session = requireSession()
+      if (!session || !canManage(session.role)) {
+        return { ok: false, error: 'Only finance officers can manage structures.' }
+      }
+      const sid = schoolId(repos, session)
+      try {
+        const s = fm().updateStructure({ ...input, school_id: sid })
+        fm().audit(sid, 'structure.update', 'fee_structure', s.id, session.userId)
+        return {
+          ok: true,
+          data: { ...s, lines: fm().getStructureLines(s.id) },
+        }
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Could not update structure.',
         }
       }
     }
@@ -601,6 +647,28 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         .listPayments(receipt.school_id)
         .find((p) => p.id === receipt.payment_id)
       const invoice = payment ? fm().getInvoice(payment.invoice_id) : null
+      const invoiceLines = invoice ? fm().getInvoiceLines(invoice.id) : []
+      const priorPaid = payment
+        ? fm()
+            .listPayments(receipt.school_id)
+            .filter(
+              (p) =>
+                p.invoice_id === payment.invoice_id &&
+                p.id !== payment.id &&
+                (p.paid_at < payment.paid_at ||
+                  (p.paid_at === payment.paid_at &&
+                    p.created_at < payment.created_at))
+            )
+            .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+        : 0
+      const lines = allocatePaymentToLines(
+        invoiceLines.map((l) => ({
+          description: l.description,
+          amount: l.amount,
+        })),
+        Number(receipt.amount) || 0,
+        priorPaid
+      )
       const school = repos.schools.findById(receipt.school_id)
       const template = repos.documentTemplates
         .listBySchool(receipt.school_id)
@@ -624,6 +692,7 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
           student,
           payment,
           invoice,
+          lines,
           school_name: school?.name ?? 'School',
           template,
           rendered_html,

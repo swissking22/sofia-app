@@ -68,7 +68,8 @@ function StaffAside() {
         <li className="flex items-start gap-2">
           <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-(--sofia-primary)" />
           Temporary password:{" "}
-          <span className="font-mono text-xs">Sofia@Staff1</span>
+          <span className="font-mono text-xs">Sofia@Staff1</span> (desktop +
+          Sofia Teacher mobile when email is set)
         </li>
       </ul>
     </div>
@@ -203,8 +204,17 @@ function StaffSetupForm() {
       }
       applyData(result.data);
       setTeacherModalOpen(false);
-      setSuccess(editingTeacher ? "Teacher updated." : "Teacher added.");
-      setError("");
+      if (result.warning) {
+        setSuccess(editingTeacher ? "Teacher updated." : "Teacher added.");
+        setError(result.warning);
+      } else {
+        setSuccess(
+          editingTeacher
+            ? "Teacher updated."
+            : "Teacher added. Desktop + mobile login use temporary password Sofia@Staff1 when an email is set.",
+        );
+        setError("");
+      }
     } finally {
       setModalBusy(false);
     }

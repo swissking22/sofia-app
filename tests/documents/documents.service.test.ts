@@ -209,5 +209,6 @@ describe('Admission / certificate / transcript rules', () => {
     expect(receipt?.body).toMatch(/receipt\.balance/)
     expect(receipt?.body).toMatch(/Amount paid/i)
     expect(receipt?.body).toMatch(/Balance remaining/i)
+    expect(receipt?.body).toMatch(/receipt\.lines/)
   })
 })

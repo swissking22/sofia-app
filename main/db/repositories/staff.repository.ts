@@ -376,8 +376,8 @@ export class StaffRepository extends BaseRepository<Staff> {
     staff: Staff,
     role: UserRole,
     passwordHash: string
-  ): Promise<string | null> {
-    if (!staff.email) return staff.user_id
+  ): Promise<{ userId: string | null; created: boolean }> {
+    if (!staff.email) return { userId: staff.user_id, created: false }
 
     const existingUser = findUserByEmail(staff.email)
     if (existingUser) {
@@ -389,7 +389,7 @@ export class StaffRepository extends BaseRepository<Staff> {
       if (staff.user_id !== existingUser.id) {
         this.update(staff.id, { user_id: existingUser.id })
       }
-      return existingUser.id
+      return { userId: existingUser.id, created: false }
     }
 
     const user = createUser({
@@ -399,7 +399,7 @@ export class StaffRepository extends BaseRepository<Staff> {
       role,
     })
     this.update(staff.id, { user_id: user.id })
-    return user.id
+    return { userId: user.id, created: true }
   }
 
   async upsertAdmin(
@@ -417,7 +417,7 @@ export class StaffRepository extends BaseRepository<Staff> {
       ) => { id: string; school_id: string } | undefined
       passwordHash: string
     }
-  ): Promise<Staff> {
+  ): Promise<{ staff: Staff; userCreated: boolean }> {
     const full_name = input.full_name.trim()
     if (!full_name) throw new Error('Full name is required.')
     if (!ADMIN_ROLES.includes(input.admin_role)) {
@@ -457,14 +457,17 @@ export class StaffRepository extends BaseRepository<Staff> {
       })
     }
 
-    await this.ensureUserAccount(
+    const account = await this.ensureUserAccount(
       userHelpers.createUser,
       userHelpers.findUserByEmail,
       staff,
       adminRoleToUserRole(input.admin_role),
       userHelpers.passwordHash
     )
-    return this.findById(staff.id)!
+    return {
+      staff: this.findById(staff.id)!,
+      userCreated: account.created,
+    }
   }
 
   async clearAdminRole(
@@ -490,7 +493,7 @@ export class StaffRepository extends BaseRepository<Staff> {
       ) => { id: string; school_id: string } | undefined
       passwordHash: string
     }
-  ): Promise<Staff> {
+  ): Promise<{ staff: Staff; userCreated: boolean }> {
     const full_name = input.full_name.trim()
     if (!full_name) throw new Error('Full name is required.')
 
@@ -533,14 +536,17 @@ export class StaffRepository extends BaseRepository<Staff> {
       class_ids: input.class_ids,
     })
 
-    await this.ensureUserAccount(
+    const account = await this.ensureUserAccount(
       userHelpers.createUser,
       userHelpers.findUserByEmail,
       this.findById(staff.id)!,
       'teacher',
       userHelpers.passwordHash
     )
-    return this.findById(staff.id)!
+    return {
+      staff: this.findById(staff.id)!,
+      userCreated: account.created,
+    }
   }
 
   setTeachingAssignments(

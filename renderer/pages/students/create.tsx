@@ -19,6 +19,7 @@ import {
   createStudent,
   GENDER_OPTIONS,
 } from "../../lib/student-mgmt";
+import { CAMEROON_PHONE_HINT, normalizeCameroonPhone } from "../../lib/phone";
 
 export default function CreateStudentPage() {
   const router = useRouter();
@@ -33,6 +34,7 @@ export default function CreateStudentPage() {
   const [name, setName] = React.useState("");
   const [gender, setGender] = React.useState("");
   const [dateOfBirth, setDateOfBirth] = React.useState("");
+  const [placeOfBirth, setPlaceOfBirth] = React.useState("");
   const [phone, setPhone] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [address, setAddress] = React.useState("");
@@ -160,6 +162,16 @@ export default function CreateStudentPage() {
       setError("Guardian phone is required.");
       return;
     }
+    const normalizedGuardianPhone = normalizeCameroonPhone(guardianPhone);
+    if (normalizedGuardianPhone === "invalid" || !normalizedGuardianPhone) {
+      setError(`Invalid guardian phone. ${CAMEROON_PHONE_HINT}`);
+      return;
+    }
+    const normalizedPhone = normalizeCameroonPhone(phone);
+    if (normalizedPhone === "invalid") {
+      setError(`Invalid student phone. ${CAMEROON_PHONE_HINT}`);
+      return;
+    }
     const year = Number(admissionYear || defaultYear);
     if (!year) {
       setError("Admission year is required.");
@@ -174,13 +186,14 @@ export default function CreateStudentPage() {
         admission_year: year,
         gender: gender || null,
         date_of_birth: dateOfBirth || null,
-        phone: phone || null,
+        place_of_birth: placeOfBirth.trim() || null,
+        phone: normalizedPhone,
         email: email || null,
         address: address || null,
         admission_type: admissionType || null,
         residence_type: residenceType === "boarding" ? "boarding" : "day",
         guardian_name: guardianName.trim(),
-        guardian_phone: guardianPhone.trim(),
+        guardian_phone: normalizedGuardianPhone,
         guardian_email: guardianEmail || null,
         guardian_relationship: guardianRelationship || null,
       });
@@ -242,10 +255,16 @@ export default function CreateStudentPage() {
             onChange={(e) => setDateOfBirth(e.target.value)}
           />
           <FormField
+            label="Place of birth"
+            value={placeOfBirth}
+            onChange={(e) => setPlaceOfBirth(e.target.value)}
+            placeholder="City, region, or country"
+          />
+          <FormField
             label="Phone"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            placeholder="Student phone"
+            placeholder="670000001"
           />
           <FormField
             label="Email"
@@ -420,6 +439,7 @@ export default function CreateStudentPage() {
             required
             value={guardianPhone}
             onChange={(e) => setGuardianPhone(e.target.value)}
+            placeholder="670000001"
           />
           <FormField
             label="Guardian email"

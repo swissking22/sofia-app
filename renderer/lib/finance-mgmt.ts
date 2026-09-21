@@ -225,6 +225,12 @@ export interface ReceiptDto {
   method?: PaymentMethod | null;
 }
 
+export interface ReceiptLineDto {
+  description: string;
+  charged: number;
+  paid: number;
+}
+
 export interface ReceiptDetailDto {
   receipt: ReceiptDto;
   student: {
@@ -234,6 +240,7 @@ export interface ReceiptDetailDto {
   } | null;
   payment: PaymentDto | null;
   invoice: InvoiceDto | null;
+  lines: ReceiptLineDto[];
   school_name: string;
   template: {
     header_text: string;
@@ -376,6 +383,32 @@ export async function createStructure(input: {
 }): Promise<Result<FeeStructureDto>> {
   return (await window.ipc.invoke(
     "finance-mgmt:structures-create",
+    input
+  )) as Result<FeeStructureDto>;
+}
+
+export async function updateStructure(input: {
+  id: string;
+  name: string;
+  academic_year_id: string;
+  academic_term_id?: string | null;
+  academic_level_id?: string | null;
+  section_id?: string | null;
+  class_id?: string | null;
+  notes?: string | null;
+  applies_to_residence?: "all" | "day" | "boarding";
+  lines: Array<{
+    fee_category_id?: string | null;
+    name: string;
+    amount: number;
+    frequency?: FeeFrequency;
+    is_mandatory?: boolean;
+    late_fee_mode?: LateFeeMode;
+    late_fee_value?: number;
+  }>;
+}): Promise<Result<FeeStructureDto>> {
+  return (await window.ipc.invoke(
+    "finance-mgmt:structures-update",
     input
   )) as Result<FeeStructureDto>;
 }

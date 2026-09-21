@@ -231,6 +231,7 @@ export interface Student extends BaseRecord {
   sequence_number: number | null
   gender: string | null
   date_of_birth: string | null
+  place_of_birth: string | null
   phone: string | null
   email: string | null
   address: string | null

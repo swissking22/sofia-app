@@ -106,6 +106,7 @@ export function createSchema(db: Database.Database): void {
       sequence_number INTEGER,
       gender TEXT,
       date_of_birth TEXT,
+      place_of_birth TEXT,
       phone TEXT,
       email TEXT,
       address TEXT,
@@ -1513,6 +1514,10 @@ function migrateStudentManagementTables(db: Database.Database): void {
     {
       name: 'date_of_birth',
       sql: `ALTER TABLE students ADD COLUMN date_of_birth TEXT`,
+    },
+    {
+      name: 'place_of_birth',
+      sql: `ALTER TABLE students ADD COLUMN place_of_birth TEXT`,
     },
     { name: 'phone', sql: `ALTER TABLE students ADD COLUMN phone TEXT` },
     { name: 'email', sql: `ALTER TABLE students ADD COLUMN email TEXT` },

@@ -186,6 +186,7 @@ export function applyPulledChangesTransaction(
                   academic_level_id = @academic_level_id,
                   gender = @gender,
                   date_of_birth = @date_of_birth,
+                  place_of_birth = @place_of_birth,
                   phone = @phone,
                   email = @email,
                   address = @address,
@@ -209,6 +210,7 @@ export function applyPulledChangesTransaction(
               academic_level_id: payload.academic_level_id !== undefined ? payload.academic_level_id : existingStudent.academic_level_id,
               gender: payload.gender !== undefined ? payload.gender : existingStudent.gender,
               date_of_birth: payload.date_of_birth !== undefined ? payload.date_of_birth : existingStudent.date_of_birth,
+              place_of_birth: payload.place_of_birth !== undefined ? payload.place_of_birth : existingStudent.place_of_birth,
               phone: payload.phone !== undefined ? payload.phone : existingStudent.phone,
               email: payload.email !== undefined ? payload.email : existingStudent.email,
               address: payload.address !== undefined ? payload.address : existingStudent.address,
@@ -239,14 +241,14 @@ export function applyPulledChangesTransaction(
             INSERT INTO students (
               id, name, class_id, school_id, student_code,
               admission_year, academic_level_id, sequence_number,
-              gender, date_of_birth, phone, email, address, admission_type,
+              gender, date_of_birth, place_of_birth, phone, email, address, admission_type,
               guardian_name, guardian_phone, guardian_email, guardian_relationship,
               status, photo_path, residence_type,
               created_at, updated_at, deleted_at, sync_status, version
             ) VALUES (
               @id, @name, @class_id, @school_id, @student_code,
               @admission_year, @academic_level_id, @sequence_number,
-              @gender, @date_of_birth, @phone, @email, @address, @admission_type,
+              @gender, @date_of_birth, @place_of_birth, @phone, @email, @address, @admission_type,
               @guardian_name, @guardian_phone, @guardian_email, @guardian_relationship,
               @status, @photo_path, @residence_type,
               @created_at, @updated_at, @deleted_at, 'synced', @version
@@ -262,6 +264,7 @@ export function applyPulledChangesTransaction(
             sequence_number: payload.sequence_number ?? null,
             gender: payload.gender ?? null,
             date_of_birth: payload.date_of_birth ?? null,
+            place_of_birth: payload.place_of_birth ?? null,
             phone: payload.phone ?? null,
             email: payload.email ?? null,
             address: payload.address ?? null,

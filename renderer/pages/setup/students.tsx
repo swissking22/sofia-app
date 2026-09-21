@@ -192,7 +192,7 @@ function StudentSetupForm() {
       const rows = parseStudentCsv(text);
       if (!rows.length) {
         setError(
-          "Could not parse the file. Use the template headers (Full Name, Date of Birth, Level, Department, Specialization, Residence Type).",
+          "Could not parse the file. Use the template headers (Full Name, Date of Birth, Place of Birth, Level, Department, Specialization, Residence Type, Parent Name, Parent Contact).",
         );
         return;
       }
@@ -280,7 +280,7 @@ function StudentSetupForm() {
 
       <FormSection
         title="Student Import"
-        description="Bulk-prepare the student database from a CSV of name, date of birth, level, department, specialization, and residence."
+        description="Bulk-prepare the student database from a CSV of name, date/place of birth, level, department, specialization, residence, and parent contact."
         layout="stack"
       >
         <input

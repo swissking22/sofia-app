@@ -54,7 +54,7 @@ export const ADMIN_ROLE_OPTIONS: Array<{
   { role: 'secretary', label: 'Secretary' },
 ]
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+type Result<T> = { ok: true; data: T; warning?: string } | { ok: false; error: string }
 
 export async function fetchStaffSetup(): Promise<Result<StaffSetupData>> {
   return (await window.ipc.invoke('staff:get')) as Result<StaffSetupData>

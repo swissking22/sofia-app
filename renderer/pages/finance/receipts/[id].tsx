@@ -183,6 +183,38 @@ export default function ReceiptPrintPage() {
             </div>
           </dl>
 
+          {(data.lines?.length ?? 0) > 0 ? (
+            <div className="mt-8">
+              <h2 className="mb-2 text-sm font-semibold text-slate-900">
+                Paid for
+              </h2>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
+                    <th className="pb-2 font-medium">Fee component</th>
+                    <th className="pb-2 text-right font-medium">Charged</th>
+                    <th className="pb-2 text-right font-medium">
+                      Paid this receipt
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.lines.map((line, idx) => (
+                    <tr key={`${line.description}-${idx}`} className="border-b border-slate-100">
+                      <td className="py-2 text-slate-800">{line.description}</td>
+                      <td className="py-2 text-right text-slate-600">
+                        {formatMoney(line.charged, currency)}
+                      </td>
+                      <td className="py-2 text-right font-medium text-slate-900">
+                        {formatMoney(line.paid, currency)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
           {data.template?.footer_text ? (
             <p className="mt-8 whitespace-pre-wrap border-t border-slate-100 pt-4 text-sm text-slate-600">
               {data.template.footer_text}

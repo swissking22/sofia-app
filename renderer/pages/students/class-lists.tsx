@@ -13,10 +13,15 @@ import {
 } from "../../components/students/ui";
 import { Icon } from "../../components/ui/Icon";
 import {
+  CLASS_LIST_OPTIONAL_COLUMNS,
+  DEFAULT_CLASS_LIST_OPTIONAL_COLUMNS,
+  classListCellValue,
+  classListColumnHeader,
   classListDocumentTitle,
   classListFilename,
   classListsToCsv,
-  sexAbbreviation,
+  normalizeClassListColumns,
+  type ClassListOptionalColumn,
 } from "../../lib/class-list";
 import {
   downloadCsv,
@@ -26,6 +31,22 @@ import {
 } from "../../lib/student-mgmt";
 
 const ALL_CLASSES = "all";
+const COLUMNS_STORAGE_KEY = "sofia.class-list.columns";
+
+function loadStoredColumns(): ClassListOptionalColumn[] {
+  if (typeof window === "undefined") return DEFAULT_CLASS_LIST_OPTIONAL_COLUMNS;
+  try {
+    const raw = window.localStorage.getItem(COLUMNS_STORAGE_KEY);
+    if (!raw) return DEFAULT_CLASS_LIST_OPTIONAL_COLUMNS;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return DEFAULT_CLASS_LIST_OPTIONAL_COLUMNS;
+    return normalizeClassListColumns(
+      parsed.filter((v): v is ClassListOptionalColumn => typeof v === "string"),
+    );
+  } catch {
+    return DEFAULT_CLASS_LIST_OPTIONAL_COLUMNS;
+  }
+}
 
 function schoolLines(school: ClassListDto["school"]): string[] {
   const lines: string[] = [];
@@ -40,15 +61,36 @@ function schoolLines(school: ClassListDto["school"]): string[] {
   return lines;
 }
 
+function colWidthClass(key: ClassListOptionalColumn): string {
+  switch (key) {
+    case "sex":
+    case "age":
+      return "class-list-col-narrow";
+    case "blank":
+      return "class-list-col-blank";
+    case "student_code":
+    case "date_of_birth":
+      return "class-list-col-mid";
+    case "guardian_phone":
+    case "residence":
+      return "class-list-col-mid";
+    default:
+      return "class-list-col-wide";
+  }
+}
+
 function ClassListSheet({
   list,
   group,
+  columns,
 }: {
   list: ClassListDto;
   group: ClassListDto["groups"][number];
+  columns: ClassListOptionalColumn[];
 }) {
   const className = group.class?.name ?? "Selected students";
   const lines = schoolLines(list.school);
+  const colCount = 2 + columns.length;
 
   return (
     <section className="class-list-sheet">
@@ -56,12 +98,13 @@ function ClassListSheet({
         <colgroup>
           <col className="class-list-col-index" />
           <col className="class-list-col-name" />
-          <col className="class-list-col-sex" />
-          <col className="class-list-col-blank" />
+          {columns.map((key) => (
+            <col key={key} className={colWidthClass(key)} />
+          ))}
         </colgroup>
         <thead>
           <tr>
-            <td colSpan={4} className="border-0 p-0">
+            <td colSpan={colCount} className="border-0 p-0">
               <header className="class-list-letterhead border-b-2 border-slate-900 pb-4 text-center">
                 {list.school.logo_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -100,17 +143,25 @@ function ClassListSheet({
             <th className="border border-slate-800 bg-slate-50 px-2 py-2 text-left text-xs font-semibold uppercase tracking-wide">
               Name
             </th>
-            <th className="border border-slate-800 bg-slate-50 px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide">
-              Sex
-            </th>
-            <th className="border border-slate-800 bg-slate-50 px-2 py-2" />
+            {columns.map((key) => (
+              <th
+                key={key}
+                className={`border border-slate-800 bg-slate-50 px-2 py-2 text-xs font-semibold uppercase tracking-wide ${
+                  key === "blank" || key === "sex" || key === "age"
+                    ? "text-center"
+                    : "text-left"
+                }`}
+              >
+                {classListColumnHeader(key) || "\u00a0"}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {group.students.length === 0 ? (
             <tr>
               <td
-                colSpan={4}
+                colSpan={colCount}
                 className="border border-slate-800 px-3 py-8 text-center text-slate-500"
               >
                 No active students in this class.{" "}
@@ -131,10 +182,21 @@ function ClassListSheet({
                 <td className="class-list-name border border-slate-800 px-3 py-1.5 leading-snug">
                   {s.name}
                 </td>
-                <td className="border border-slate-800 px-2 py-1.5 text-center">
-                  {sexAbbreviation(s.gender) || "—"}
-                </td>
-                <td className="border border-slate-800 px-2 py-1.5" />
+                {columns.map((key) => {
+                  const value = classListCellValue(s, key);
+                  const centered =
+                    key === "blank" || key === "sex" || key === "age";
+                  return (
+                    <td
+                      key={key}
+                      className={`border border-slate-800 px-2 py-1.5 ${
+                        centered ? "text-center" : "text-left"
+                      }`}
+                    >
+                      {value || (key === "blank" ? "" : "—")}
+                    </td>
+                  );
+                })}
               </tr>
             ))
           )}
@@ -174,6 +236,13 @@ export default function ClassListsPage() {
     }>
   >([]);
   const [list, setList] = React.useState<ClassListDto | null>(null);
+  const [columns, setColumns] = React.useState<ClassListOptionalColumn[]>(
+    DEFAULT_CLASS_LIST_OPTIONAL_COLUMNS,
+  );
+
+  React.useEffect(() => {
+    setColumns(loadStoredColumns());
+  }, []);
 
   React.useEffect(() => {
     void (async () => {
@@ -221,6 +290,28 @@ export default function ClassListsPage() {
     else setList(null);
   }, [router.isReady, classId, queryClass, queryIds, loadList]);
 
+  function toggleColumn(key: ClassListOptionalColumn) {
+    setColumns((prev) => {
+      const next = prev.includes(key)
+        ? prev.filter((k) => k !== key)
+        : [
+            ...CLASS_LIST_OPTIONAL_COLUMNS.map((c) => c.key).filter(
+              (k) => prev.includes(k) || k === key,
+            ),
+          ];
+      const normalized = normalizeClassListColumns(next);
+      try {
+        window.localStorage.setItem(
+          COLUMNS_STORAGE_KEY,
+          JSON.stringify(normalized),
+        );
+      } catch {
+        /* ignore */
+      }
+      return normalized;
+    });
+  }
+
   const groups = list?.groups?.length
     ? list.groups
     : list
@@ -242,6 +333,7 @@ export default function ClassListsPage() {
           class_name: g.class?.name ?? "Unassigned",
           students: g.students,
         })),
+        columns,
       ),
     );
   }
@@ -258,7 +350,7 @@ export default function ClassListsPage() {
       }
       breadcrumb={["Student Management", "Class Lists"]}
       heading="Class lists"
-      subtitle="Select a class — or all classes — then print an A4 class list or export CSV."
+      subtitle="Select a class — or all classes — choose columns, then print an A4 class list or export CSV."
     >
       {error ? (
         <div className="print:hidden">
@@ -325,6 +417,40 @@ export default function ClassListsPage() {
             ) : null
           }
         />
+
+        <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Columns
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Index and full name are always included. Choose extra columns for
+            print and CSV.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+            <label className="flex items-center gap-2 text-sm text-slate-400">
+              <input type="checkbox" checked disabled className="rounded" />
+              Index
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-400">
+              <input type="checkbox" checked disabled className="rounded" />
+              Full name
+            </label>
+            {CLASS_LIST_OPTIONAL_COLUMNS.map((col) => (
+              <label
+                key={col.key}
+                className="flex cursor-pointer items-center gap-2 text-sm text-slate-700"
+              >
+                <input
+                  type="checkbox"
+                  className="rounded border-slate-300 text-(--sofia-primary) focus:ring-(--sofia-primary)"
+                  checked={columns.includes(col.key)}
+                  onChange={() => toggleColumn(col.key)}
+                />
+                {col.label}
+              </label>
+            ))}
+          </div>
+        </div>
       </div>
 
       {loadingMeta || loadingList ? (
@@ -340,12 +466,13 @@ export default function ClassListsPage() {
           No class list to show.
         </p>
       ) : (
-        <div className="class-list-doc mx-auto bg-white px-10 py-8 shadow-sm print:mx-0 print:max-w-none print:px-0 print:py-0 print:shadow-none">
+        <div className="class-list-doc mx-auto mt-4 bg-white px-10 py-8 shadow-sm print:mx-0 print:mt-0 print:max-w-none print:px-0 print:py-0 print:shadow-none">
           {groups.map((group, index) => (
             <ClassListSheet
               key={group.class?.id ?? `group-${index}`}
               list={list}
               group={group}
+              columns={columns}
             />
           ))}
         </div>
@@ -353,24 +480,34 @@ export default function ClassListsPage() {
 
       <style jsx global>{`
         .class-list-table {
-          table-layout: fixed;
+          table-layout: auto;
+          width: 100%;
         }
         .class-list-col-index {
-          width: 3.25rem;
+          width: 1%;
+          white-space: nowrap;
         }
         .class-list-col-name {
-          width: auto;
+          width: 1%;
+          white-space: nowrap;
         }
-        .class-list-col-sex {
-          width: 3.25rem;
+        .class-list-col-narrow {
+          width: 1%;
+          white-space: nowrap;
+        }
+        .class-list-col-mid {
+          width: 1%;
+          white-space: nowrap;
+        }
+        .class-list-col-wide {
+          width: 1%;
+          white-space: nowrap;
         }
         .class-list-col-blank {
-          width: 5.5rem;
+          width: 99%;
         }
         .class-list-name {
-          white-space: normal;
-          overflow-wrap: anywhere;
-          word-break: break-word;
+          white-space: nowrap;
         }
         .class-list-table thead {
           display: table-header-group;

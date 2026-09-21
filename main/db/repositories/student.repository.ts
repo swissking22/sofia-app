@@ -21,6 +21,7 @@ export interface CreateStudentInput {
   specialization_abbr?: string | null
   gender?: string | null
   date_of_birth?: string | null
+  place_of_birth?: string | null
   phone?: string | null
   email?: string | null
   address?: string | null
@@ -287,6 +288,7 @@ export class StudentRepository extends BaseRepository<Student> {
         sequence_number,
         gender: input.gender ?? null,
         date_of_birth: input.date_of_birth ?? null,
+        place_of_birth: input.place_of_birth?.trim() || null,
         phone: input.phone ?? null,
         email: input.email ?? null,
         address: input.address ?? null,
@@ -306,14 +308,14 @@ export class StudentRepository extends BaseRepository<Student> {
           `INSERT INTO students (
              id, name, class_id, school_id, student_code,
              admission_year, academic_level_id, sequence_number,
-             gender, date_of_birth, phone, email, address, admission_type,
+             gender, date_of_birth, place_of_birth, phone, email, address, admission_type,
              guardian_name, guardian_phone, guardian_email, guardian_relationship,
              status, photo_path, residence_type,
              created_at, updated_at, deleted_at, sync_status, version
            ) VALUES (
              @id, @name, @class_id, @school_id, @student_code,
              @admission_year, @academic_level_id, @sequence_number,
-             @gender, @date_of_birth, @phone, @email, @address, @admission_type,
+             @gender, @date_of_birth, @place_of_birth, @phone, @email, @address, @admission_type,
              @guardian_name, @guardian_phone, @guardian_email, @guardian_relationship,
              @status, @photo_path, @residence_type,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
@@ -344,6 +346,10 @@ export class StudentRepository extends BaseRepository<Student> {
       ...existing,
       ...input,
       name: input.name !== undefined ? input.name.trim() : existing.name,
+      place_of_birth:
+        input.place_of_birth !== undefined
+          ? input.place_of_birth?.trim() || null
+          : existing.place_of_birth,
       // student_code is permanent and immutable after first assignment
       student_code: existing.student_code ?? input.student_code?.trim() ?? null,
       sequence_number:
@@ -366,6 +372,7 @@ export class StudentRepository extends BaseRepository<Student> {
                sequence_number = @sequence_number,
                gender = @gender,
                date_of_birth = @date_of_birth,
+               place_of_birth = @place_of_birth,
                phone = @phone,
                email = @email,
                address = @address,

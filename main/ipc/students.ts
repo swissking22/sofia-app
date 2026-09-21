@@ -94,7 +94,12 @@ export function registerStudentsIpc(repos: Repositories): void {
             admission_year: new Date().getFullYear(),
             gender: resolved.data.gender,
             date_of_birth: resolved.data.date_of_birth,
+            place_of_birth: resolved.data.place_of_birth,
             residence_type: resolved.data.residence_type,
+            guardian_name: resolved.data.guardian_name,
+            guardian_phone: resolved.data.guardian_phone,
+            guardian_email: resolved.data.guardian_email,
+            guardian_relationship: resolved.data.guardian_relationship,
           })
           imported += 1
         }

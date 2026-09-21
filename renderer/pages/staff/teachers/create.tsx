@@ -89,6 +89,10 @@ export default function CreateTeacherPage() {
         setError(res.error);
         return;
       }
+      if (res.warning) {
+        setError(res.warning);
+        return;
+      }
       await router.push("/staff/teachers");
     } catch {
       setError("Could not create teacher.");
@@ -102,7 +106,7 @@ export default function CreateTeacherPage() {
       title="Add teacher"
       breadcrumb={["Staff Management", "Teachers", "Add"]}
       heading="Add teacher"
-      subtitle="Personal details, role, and teaching assignments. Employee ID is auto-generated if left blank."
+      subtitle="Personal details, role, and teaching assignments. With an email, Sofia creates a desktop login and cloud Auth for the mobile teacher app (temporary password Sofia@Staff1)."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
 

@@ -4,12 +4,13 @@ import { getSession, type SessionData, hashPassword } from '../auth'
 import { getDatabasePath, queueDatabaseRestore } from '../db'
 import type { Repositories } from '../db/repositories'
 import { SystemAdminService } from '../services/system-admin'
+import { tryProvisionStaffAuth, type CloudAuthRole } from '../services/cloud-auth'
 import { buildPermissionMatrix, restoreWarning } from '../domain/system-admin'
 import { runSyncWorker } from '../sync/worker'
 import type { RoleWriteInput } from '../db/repositories/role.repository'
 import type { UserRole } from '../db/types'
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+type Result<T> = { ok: true; data: T; warning?: string } | { ok: false; error: string }
 
 function session(): SessionData | null {
   return getSession()
@@ -163,7 +164,27 @@ export function registerSystemAdminIpc(repos: Repositories): void {
           description: `Created user ${shaped.email}`,
           after: { email: shaped.email, role_id: input.role_id },
         })
-        return { ok: true, data: admin().getUser(schoolId, id) }
+        const cloudRole: CloudAuthRole =
+          shaped.role === 'teacher'
+            ? 'teacher'
+            : shaped.role === 'secretary'
+              ? 'secretary'
+              : 'admin'
+        const warning = await tryProvisionStaffAuth({
+          email: shaped.email,
+          password: input.password,
+          role: cloudRole,
+          schoolId,
+          staffId: input.staff_id || null,
+          schoolName: repos.schools.findById(schoolId)?.name ?? null,
+          displayName: `${input.first_name.trim()} ${input.last_name.trim()}`.trim(),
+          resetPassword: true,
+        })
+        return {
+          ok: true,
+          data: admin().getUser(schoolId, id),
+          ...(warning ? { warning } : {}),
+        }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Could not create user.' }
       }
@@ -263,7 +284,29 @@ export function registerSystemAdminIpc(repos: Repositories): void {
           entity_id: input.id,
           description: 'Password reset by administrator',
         })
-        return { ok: true, data: { id: input.id } }
+        const cloudRole: CloudAuthRole =
+          user.user.role === 'teacher'
+            ? 'teacher'
+            : user.user.role === 'secretary'
+              ? 'secretary'
+              : 'admin'
+        const warning = await tryProvisionStaffAuth({
+          email: user.user.email,
+          password: input.password,
+          role: cloudRole,
+          schoolId,
+          staffId: user.user.staff_id || null,
+          schoolName: repos.schools.findById(schoolId)?.name ?? null,
+          displayName:
+            `${user.user.first_name || ''} ${user.user.last_name || ''}`.trim() ||
+            null,
+          resetPassword: true,
+        })
+        return {
+          ok: true,
+          data: { id: input.id },
+          ...(warning ? { warning } : {}),
+        }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Could not reset password.' }
       }

@@ -22,6 +22,7 @@ import {
   wrapOfficialHtml,
 } from '../../domain/documents'
 import { assetToDataUrl } from '../../helpers/school-assets'
+import { allocatePaymentToLines } from '../../domain/finance'
 import type {
   DocumentSignatory,
   DocumentTemplate,
@@ -790,6 +791,7 @@ export class DocumentsRepository {
           reference: payment.reference || '',
           invoice_id: payment.invoice_id,
           balance: String(receipt.balance_remaining),
+          payment_id: payment.id,
         },
       }
     )
@@ -1068,6 +1070,7 @@ export class DocumentsRepository {
         reference: string
         invoice_id: string
         balance: string
+        payment_id?: string
       }
     }
   ) {
@@ -1183,6 +1186,63 @@ export class DocumentsRepository {
           .all(finance.invoice_id) as Array<{ description: string; amount: number }>)
       : []
 
+    const priorPaidTowardInvoice = finance
+      ? Number(
+          (
+            finance.payment_id
+              ? (this.db
+                  .prepare(
+                    `SELECT IFNULL(SUM(p.amount), 0) AS total
+                     FROM payments p
+                     WHERE p.invoice_id = ?
+                       AND p.deleted_at IS NULL
+                       AND p.id != ?
+                       AND (
+                         p.paid_at < (
+                           SELECT paid_at FROM payments WHERE id = ?
+                         )
+                         OR (
+                           p.paid_at = (
+                             SELECT paid_at FROM payments WHERE id = ?
+                           )
+                           AND p.created_at < (
+                             SELECT created_at FROM payments WHERE id = ?
+                           )
+                         )
+                       )`
+                  )
+                  .get(
+                    finance.invoice_id,
+                    finance.payment_id,
+                    finance.payment_id,
+                    finance.payment_id,
+                    finance.payment_id
+                  ) as { total: number })
+              : (this.db
+                  .prepare(
+                    `SELECT IFNULL(SUM(r.amount), 0) AS total
+                     FROM receipts r
+                     JOIN payments p ON p.id = r.payment_id
+                     WHERE p.invoice_id = ?
+                       AND r.deleted_at IS NULL
+                       AND p.deleted_at IS NULL
+                       AND r.receipt_number != ?`
+                  )
+                  .get(finance.invoice_id, finance.receipt_number) as {
+                    total: number
+                  })
+          )?.total || 0
+        )
+      : 0
+
+    const allocatedLines = finance
+      ? allocatePaymentToLines(
+          invoiceLines,
+          Number(finance.amount) || 0,
+          priorPaidTowardInvoice
+        )
+      : []
+
     const bands = this.db
       .prepare(
         `SELECT gb.grade, gb.min_score, gb.max_score
@@ -1281,9 +1341,10 @@ export class DocumentsRepository {
     const blocks = {
       'transcript.results': resultsTableHtml(resultRows),
       'receipt.lines': receiptLinesHtml(
-        invoiceLines.map((l) => ({
+        allocatedLines.map((l) => ({
           description: l.description,
-          amount: `${l.amount.toLocaleString()} ${currency}`,
+          amount: money(l.charged),
+          paid: money(l.paid),
         }))
       ),
       'grading.bands': gradingBandsHtml(bands),

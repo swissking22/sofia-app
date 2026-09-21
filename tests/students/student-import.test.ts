@@ -127,19 +127,28 @@ describe('student import CSV parse', () => {
     expect(rows[0]).toMatchObject({
       full_name: 'Ada Biya',
       date_of_birth: '2012-04-15',
+      place_of_birth: 'Yaoundé',
       level_name: 'Form 1',
       department_name: 'General',
       specialization_name: null,
       residence_type: 'Day',
       gender: 'Female',
+      guardian_name: 'Marie Biya',
+      guardian_phone: '670000001',
+      guardian_email: 'marie@example.com',
+      guardian_relationship: 'Mother',
     })
     expect(rows[1]).toMatchObject({
       full_name: 'Jean Nkodo',
       date_of_birth: '15/04/2012',
+      place_of_birth: 'Douala',
       level_name: 'Form 4',
       department_name: 'Technical',
       specialization_name: 'Electrical',
       residence_type: 'Boarding',
+      guardian_name: 'Paul Nkodo',
+      guardian_phone: '670000002',
+      guardian_relationship: 'Father',
     })
   })
 })
@@ -153,6 +162,9 @@ describe('student import class matching', () => {
         department_name: 'General',
         residence_type: 'Day',
         date_of_birth: '15/04/2012',
+        place_of_birth: 'Yaoundé',
+        guardian_name: 'marie biya',
+        guardian_phone: '+237 670 00 00 01',
       },
       uniqueStructure
     )
@@ -163,9 +175,28 @@ describe('student import class matching', () => {
         class_id: 'c-f1',
         gender: null,
         date_of_birth: '2012-04-15',
+        place_of_birth: 'Yaoundé',
         residence_type: 'day',
+        guardian_name: 'Marie Biya',
+        guardian_phone: '670000001',
+        guardian_email: null,
+        guardian_relationship: null,
       },
     })
+  })
+
+  it('skips invalid parent contact phone numbers', () => {
+    const res = resolveStudentImport(
+      {
+        full_name: 'Ada Biya',
+        level_name: 'Form 1',
+        department_name: 'General',
+        residence_type: 'Day',
+        guardian_phone: '12345',
+      },
+      uniqueStructure
+    )
+    expect(res).toEqual({ ok: false, reason: 'invalid_phone' })
   })
 
   it('selects a unique specialized class by abbreviation', () => {

@@ -335,6 +335,149 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
     return structure
   }
 
+  updateStructure(input: {
+    id: string
+    school_id: string
+    name: string
+    academic_year_id: string
+    academic_term_id?: string | null
+    academic_level_id?: string | null
+    section_id?: string | null
+    class_id?: string | null
+    notes?: string | null
+    applies_to_residence?: ResidenceApplies
+    lines: Array<{
+      fee_category_id?: string | null
+      name: string
+      amount: number
+      frequency?: FeeFrequency
+      is_mandatory?: boolean
+      late_fee_mode?: LateFeeMode
+      late_fee_value?: number
+    }>
+  }): FeeStructure {
+    const existing = this.db
+      .prepare(
+        `SELECT * FROM fee_structures
+         WHERE id = ? AND school_id = ? AND deleted_at IS NULL`
+      )
+      .get(input.id, input.school_id) as FeeStructure | undefined
+    if (!existing) throw new Error('Fee structure not found.')
+    if (!input.academic_year_id) {
+      throw new Error('Academic year is required for a fee structure.')
+    }
+    const name = input.name.trim()
+    if (!name) throw new Error('Structure name is required.')
+    if (!input.lines.length) throw new Error('Add at least one fee line.')
+
+    const record: FeeStructure = {
+      ...existing,
+      name,
+      academic_year_id: input.academic_year_id,
+      academic_term_id: input.academic_term_id ?? null,
+      academic_level_id: input.academic_level_id ?? null,
+      section_id: input.section_id ?? null,
+      class_id: input.class_id ?? null,
+      notes: input.notes?.trim() || null,
+      applies_to_residence: input.applies_to_residence ?? 'all',
+      ...this.applyUpdateMeta(existing),
+    }
+
+    const now = record.updated_at
+    const tx = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE fee_structures
+           SET name = @name,
+               academic_year_id = @academic_year_id,
+               academic_term_id = @academic_term_id,
+               academic_level_id = @academic_level_id,
+               section_id = @section_id,
+               class_id = @class_id,
+               notes = @notes,
+               applies_to_residence = @applies_to_residence,
+               updated_at = @updated_at,
+               version = @version,
+               sync_status = @sync_status
+           WHERE id = @id`
+        )
+        .run(record)
+      enqueueSync(
+        this.db,
+        'fee_structures',
+        record.id,
+        'UPDATE',
+        record as unknown as Record<string, unknown>
+      )
+
+      const oldLines = this.getStructureLines(record.id)
+      for (const line of oldLines) {
+        const soft = {
+          ...line,
+          deleted_at: now,
+          updated_at: now,
+          version: line.version + 1,
+          sync_status: 'pending' as const,
+        }
+        this.db
+          .prepare(
+            `UPDATE fee_structure_lines
+             SET deleted_at = @deleted_at,
+                 updated_at = @updated_at,
+                 version = @version,
+                 sync_status = @sync_status
+             WHERE id = @id`
+          )
+          .run(soft)
+        enqueueSync(
+          this.db,
+          'fee_structure_lines',
+          line.id,
+          'DELETE',
+          soft as unknown as Record<string, unknown>
+        )
+      }
+
+      input.lines.forEach((line, idx) => {
+        const row: FeeStructureLine = {
+          ...this.buildBaseFields(),
+          school_id: input.school_id,
+          fee_structure_id: record.id,
+          fee_category_id: line.fee_category_id ?? null,
+          name: line.name.trim(),
+          amount: round2(line.amount),
+          frequency: line.frequency ?? 'termly',
+          is_mandatory: line.is_mandatory === false ? 0 : 1,
+          late_fee_mode: line.late_fee_mode ?? 'none',
+          late_fee_value: round2(line.late_fee_value ?? 0),
+          sort_order: idx,
+        }
+        this.db
+          .prepare(
+            `INSERT INTO fee_structure_lines (
+               id, school_id, fee_structure_id, fee_category_id, name, amount,
+               frequency, is_mandatory, late_fee_mode, late_fee_value, sort_order,
+               created_at, updated_at, deleted_at, sync_status, version
+             ) VALUES (
+               @id, @school_id, @fee_structure_id, @fee_category_id, @name, @amount,
+               @frequency, @is_mandatory, @late_fee_mode, @late_fee_value, @sort_order,
+               @created_at, @updated_at, @deleted_at, @sync_status, @version
+             )`
+          )
+          .run(row)
+        enqueueSync(
+          this.db,
+          'fee_structure_lines',
+          row.id,
+          'INSERT',
+          row as unknown as Record<string, unknown>
+        )
+      })
+    })
+    tx()
+    return record
+  }
+
   setStructureActive(id: string, is_active: boolean): FeeStructure | undefined {
     const existing = this.db
       .prepare(

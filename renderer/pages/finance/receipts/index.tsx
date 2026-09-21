@@ -347,6 +347,28 @@ export default function ReceiptsPage() {
                 </dd>
               </div>
             </dl>
+            {(preview.lines?.length ?? 0) > 0 ? (
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-900">
+                  Paid for
+                </h3>
+                <ul className="space-y-1 text-sm">
+                  {preview.lines
+                    .filter((l) => l.paid > 0)
+                    .map((line, idx) => (
+                      <li
+                        key={`${line.description}-${idx}`}
+                        className="flex justify-between gap-3 border-b border-slate-50 py-1"
+                      >
+                        <span className="text-slate-700">{line.description}</span>
+                        <span className="font-medium text-slate-900">
+                          {formatMoney(line.paid, currency)}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ) : null}
             {preview.template?.footer_text ? (
               <p className="whitespace-pre-wrap border-t border-slate-100 pt-3 text-slate-600">
                 {preview.template.footer_text}
