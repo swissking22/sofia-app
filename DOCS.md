@@ -63,7 +63,7 @@ npm run build:mac    # macOS: SOFIA-1.0.0.dmg (Intel) + SOFIA-1.0.0-arm64.dmg (A
 npm run build:all    # both platforms
 ```
 
-**App icons (source of truth):** `renderer/assets/images/sofia-icon.png` (UI + packaging). Run `npm run icons` after changing that file — it writes a 1024² `resources/icon.png`, plus `resources/icon.icns` (macOS) and multi-size `resources/icon.ico` (Windows, includes 256px). `resources/logo.png` is synced from `sofia-logo.png`. electron-builder uses `mac.icon` / `win.icon`; packaged apps also ship `icon.png` as an extraResource for dock / window chrome (`main/main.ts`).
+**App icons (source of truth):** `renderer/assets/images/sofia-icon.png` (UI + packaging). Run `npm run icons` after changing that file — it writes a 1024² white `resources/icon.png` with **macOS-style corner radius** (~22%) and safe padding, `resources/icon.icns` (rounded), and a **square** multi-size `resources/icon.ico` for Windows. `resources/logo.png` is synced from `sofia-logo.png`. electron-builder uses `mac.icon` / `win.icon`; packaged apps also ship `icon.png` as an extraResource for dock / window chrome (`main/main.ts`).
 
 If packaging logs `cannot find path for dependency …@undefined`, `node_modules` is incomplete — run `npm install` and rebuild. A packaged app that was built that way crashes at launch with `ERR_MODULE_NOT_FOUND` for `@supabase/supabase-js` (pulled in via sync IPC → `main/sync/supabase-client.ts`).
 
@@ -728,6 +728,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | App icons: white background; **macOS .icns / icon.png** use baked corner radius; Windows `.ico` stays square (`npm run icons`). |
 | 2026-09-23 | Dashboard term filter includes **All terms** (full academic year period for fees, trends, and results). |
 | 2026-09-23 | Students list: **Incomplete only** profile filter (missing gender, DOB, or guardian phone). Dashboard Needs Attention links to `/students?incomplete=1` (`students:mgmt-list` + `main/domain/student-profile.ts`). |
 | 2026-09-23 | Redesigned **Dashboard** (`/home`): real SQLite KPIs (students, today’s attendance, fees collected/outstanding), attendance & fee **line charts**, student distribution & academic performance **bar charts**, optional department donut, Needs Attention + Recent Activity. Aggregation via `dashboard:summary`; charts via **recharts**. |
