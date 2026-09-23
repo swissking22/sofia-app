@@ -154,10 +154,6 @@ export default function CreateStudentPage() {
       setError("Class is required.");
       return;
     }
-    if (!guardianName.trim()) {
-      setError("Guardian name is required.");
-      return;
-    }
     if (!guardianPhone.trim()) {
       setError("Guardian phone is required.");
       return;
@@ -192,7 +188,7 @@ export default function CreateStudentPage() {
         address: address || null,
         admission_type: admissionType || null,
         residence_type: residenceType === "boarding" ? "boarding" : "day",
-        guardian_name: guardianName.trim(),
+        guardian_name: guardianName.trim() || null,
         guardian_phone: normalizedGuardianPhone,
         guardian_email: guardianEmail || null,
         guardian_relationship: guardianRelationship || null,
@@ -420,11 +416,10 @@ export default function CreateStudentPage() {
 
         <FormSection
           title="Guardian"
-          description="Primary contact for the student. Name and phone are required."
+          description="Primary contact for the student. Phone is required."
         >
           <FormField
             label="Guardian name"
-            required
             value={guardianName}
             onChange={(e) => setGuardianName(e.target.value)}
           />

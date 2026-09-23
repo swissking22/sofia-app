@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import { fetchCaScores, saveCaScores } from "../../../lib/academic-mgmt";
 import { handleScoreGridKeyDown } from "../../../lib/score-entry";
+import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 import { TableSelectionBar } from "../../../components/students/ui";
 
 const inputClass =
@@ -234,8 +235,8 @@ export default function CaEntryPage() {
         <p className="text-sm text-slate-500">Loading roster…</p>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <table className="min-w-full text-left text-sm">
+          <ClientPaginatedTable
+            head={
               <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">
@@ -256,56 +257,55 @@ export default function CaEntryPage() {
                   <th className="px-4 py-3">Score (max {maxScore})</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {scores.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
-                      No students in this class.
-                    </td>
-                  </tr>
-                ) : (
-                  scores.map((s, index) => (
-                    <tr key={s.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(s.id)}
-                          onChange={() => toggleRow(s.id)}
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                        {s.student_code || "—"}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        {s.name}
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          ref={(el) => {
-                            scoreInputRefs.current[index] = el;
-                          }}
-                          type="number"
-                          min={0}
-                          max={maxScore}
-                          step="0.01"
-                          className={inputClass}
-                          value={s.score ?? ""}
-                          onChange={(e) => updateScore(s.id, e.target.value)}
-                          onKeyDown={(e) =>
-                            handleScoreGridKeyDown(e, index, scoreInputRefs)
-                          }
-                          placeholder="—"
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+            }
+          >
+            {scores.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={4}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
+                  No students in this class.
+                </td>
+              </tr>
+            ) : (
+              scores.map((s, index) => (
+                <tr key={s.id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(s.id)}
+                      onChange={() => toggleRow(s.id)}
+                    />
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                    {s.student_code || "—"}
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    {s.name}
+                  </td>
+                  <td className="px-4 py-3">
+                    <input
+                      ref={(el) => {
+                        scoreInputRefs.current[index] = el;
+                      }}
+                      type="number"
+                      min={0}
+                      max={maxScore}
+                      step="0.01"
+                      className={inputClass}
+                      value={s.score ?? ""}
+                      onChange={(e) => updateScore(s.id, e.target.value)}
+                      onKeyDown={(e) =>
+                        handleScoreGridKeyDown(e, index, scoreInputRefs)
+                      }
+                      placeholder="—"
+                    />
+                  </td>
+                </tr>
+              ))
+            )}
+          </ClientPaginatedTable>
 
           <TableSelectionBar
             totalCount={scores.length}

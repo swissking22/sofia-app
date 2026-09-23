@@ -62,13 +62,15 @@ export function AppSidebar({
         }
       }
     }
-    if (Object.keys(next).length > 0) {
-      setOpenGroups((prev) => ({ ...prev, ...next }));
-    }
+    // Accordion: only the module that owns the current route stays open.
+    setOpenGroups(next);
   }, [router.pathname]);
 
   function toggleGroup(id: string) {
-    setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
+    setOpenGroups((prev) => {
+      if (prev[id]) return { ...prev, [id]: false };
+      return { [id]: true };
+    });
   }
 
   function isChildActive(item: NavItem): boolean {

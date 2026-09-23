@@ -5,6 +5,7 @@ import { Add01Icon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Icon } from "../../../components/ui/Icon";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 import {
   fetchAcademicMeta,
   fetchReportCards,
@@ -191,8 +192,8 @@ export default function ReportCardsIndexPage() {
         <p className="text-sm text-slate-500">Loading…</p>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <table className="min-w-full text-left text-sm">
+          <ClientPaginatedTable
+            head={
               <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">
@@ -215,63 +216,62 @@ export default function ReportCardsIndexPage() {
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {cards.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
-                      No report cards match these filters.
-                    </td>
-                  </tr>
-                ) : (
-                  cards.map((card) => (
-                    <tr key={card.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(card.id)}
-                          onChange={() => toggleRow(card.id)}
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-medium text-slate-900">
-                          {card.student_name ?? "—"}
-                        </span>
-                        {card.student_code ? (
-                          <span className="ml-2 font-mono text-xs text-slate-500">
-                            {card.student_code}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {card.class_name ?? "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={card.status} />
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {card.generated_at
-                          ? new Date(card.generated_at).toLocaleString()
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <TableActionGroup>
-                          <TableIconButton
-                            icon={ViewIcon}
-                            label="View report card"
-                            tone="primary"
-                            href={`/academic/report-cards/view/${card.id}`}
-                          />
-                        </TableActionGroup>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+            }
+          >
+            {cards.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
+                  No report cards match these filters.
+                </td>
+              </tr>
+            ) : (
+              cards.map((card) => (
+                <tr key={card.id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(card.id)}
+                      onChange={() => toggleRow(card.id)}
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="font-medium text-slate-900">
+                      {card.student_name ?? "—"}
+                    </span>
+                    {card.student_code ? (
+                      <span className="ml-2 font-mono text-xs text-slate-500">
+                        {card.student_code}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {card.class_name ?? "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={card.status} />
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {card.generated_at
+                      ? new Date(card.generated_at).toLocaleString()
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <TableActionGroup>
+                      <TableIconButton
+                        icon={ViewIcon}
+                        label="View report card"
+                        tone="primary"
+                        href={`/academic/report-cards/view/${card.id}`}
+                      />
+                    </TableActionGroup>
+                  </td>
+                </tr>
+              ))
+            )}
+          </ClientPaginatedTable>
 
           <TableSelectionBar
             totalCount={cards.length}

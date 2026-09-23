@@ -7,6 +7,11 @@ import {
 } from "@hugeicons/core-free-icons";
 import { Icon } from "../ui/Icon";
 import { TableActionGroup, TableIconButton } from "../ui/TableActions";
+import {
+  TABLE_PAGE_SIZE,
+  TablePaginationBar,
+  useTablePagination,
+} from "../ui/table-pagination";
 export { TableSelectionBar } from "../students/ui";
 
 interface SetupTabsProps {
@@ -94,7 +99,18 @@ export function DataTable({
   emptyMessage = "No records yet.",
   isEmpty,
   selectionBar,
-}: DataTableProps) {
+  pageSize = TABLE_PAGE_SIZE,
+}: DataTableProps & { pageSize?: number }) {
+  const {
+    page,
+    setPage,
+    pageCount,
+    total,
+    visible,
+    pageSize: size,
+    showControls,
+  } = useTablePagination(isEmpty ? null : children, pageSize);
+
   return (
     <>
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -124,12 +140,21 @@ export function DataTable({
                   </td>
                 </tr>
               ) : (
-                children
+                visible
               )}
             </tbody>
           </table>
         </div>
       </div>
+      {!isEmpty && showControls ? (
+        <TablePaginationBar
+          page={page}
+          pageCount={pageCount}
+          total={total}
+          pageSize={size}
+          onPageChange={setPage}
+        />
+      ) : null}
       {selectionBar}
     </>
   );

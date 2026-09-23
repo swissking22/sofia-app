@@ -4,6 +4,7 @@ import { AppShell } from "../../../components/layout/AppShell";
 import { FormField } from "../../../components/setup";
 import { Icon } from "../../../components/ui/Icon";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 import {
   createCaAssessment,
   fetchAcademicMeta,
@@ -255,8 +256,8 @@ export default function CaIndexPage() {
         <p className="text-sm text-slate-500">Loading assessments…</p>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <table className="min-w-full text-left text-sm">
+          <ClientPaginatedTable
+            head={
               <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">
@@ -281,58 +282,57 @@ export default function CaIndexPage() {
                   <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
-                      No assessments match these filters.
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map((a) => (
-                    <tr key={a.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(a.id)}
-                          onChange={() => toggleRow(a.id)}
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        {a.name}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {a.subject_name || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {a.class_name || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {a.weight_percent}%
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{a.max_score}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {formatDate(a.assessment_date)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <TableActionGroup>
-                          <TableIconButton
-                            icon={PencilEdit01Icon}
-                            label="Enter scores"
-                            tone="primary"
-                            href={`/academic/ca/entry?assessment_id=${a.id}`}
-                          />
-                        </TableActionGroup>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+            }
+          >
+            {filtered.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
+                  No assessments match these filters.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((a) => (
+                <tr key={a.id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(a.id)}
+                      onChange={() => toggleRow(a.id)}
+                    />
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    {a.name}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {a.subject_name || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {a.class_name || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {a.weight_percent}%
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{a.max_score}</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {formatDate(a.assessment_date)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <TableActionGroup>
+                      <TableIconButton
+                        icon={PencilEdit01Icon}
+                        label="Enter scores"
+                        tone="primary"
+                        href={`/academic/ca/entry?assessment_id=${a.id}`}
+                      />
+                    </TableActionGroup>
+                  </td>
+                </tr>
+              ))
+            )}
+          </ClientPaginatedTable>
 
           <TableSelectionBar
             totalCount={filtered.length}

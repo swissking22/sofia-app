@@ -250,8 +250,8 @@ export default function StudentDetailPage() {
       setError("Class is required.");
       return;
     }
-    if (!guardianName.trim() || !guardianPhone.trim()) {
-      setError("Guardian name and phone are required.");
+    if (!guardianPhone.trim()) {
+      setError("Guardian phone is required.");
       return;
     }
     const normalizedGuardianPhone = normalizeCameroonPhone(guardianPhone);
@@ -283,7 +283,7 @@ export default function StudentDetailPage() {
         address: address || null,
         admission_type: admissionType || null,
         admission_year: year,
-        guardian_name: guardianName.trim(),
+        guardian_name: guardianName.trim() || null,
         guardian_phone: normalizedGuardianPhone,
         guardian_email: guardianEmail || null,
         guardian_relationship: guardianRelationship || null,
@@ -898,11 +898,10 @@ export default function StudentDetailPage() {
 
           <FormSection
             title="Guardian"
-            description="Primary contact. Name and phone are required."
+            description="Primary contact. Phone is required."
           >
             <FormField
               label="Guardian name"
-              required
               value={guardianName}
               onChange={(e) => setGuardianName(e.target.value)}
             />

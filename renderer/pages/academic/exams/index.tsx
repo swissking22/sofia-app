@@ -4,6 +4,7 @@ import { Add01Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Icon } from "../../../components/ui/Icon";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 import {
   fetchExamSessions,
   type ExamSessionDto,
@@ -120,8 +121,8 @@ export default function ExamsIndexPage() {
         <p className="text-sm text-slate-500">Loading exam sessions…</p>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <table className="min-w-full text-left text-sm">
+          <ClientPaginatedTable
+            head={
               <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">
@@ -146,64 +147,63 @@ export default function ExamsIndexPage() {
                   <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {sessions.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-4 py-8 text-center text-slate-500"
+            }
+          >
+            {sessions.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="px-4 py-8 text-center text-slate-500"
+                >
+                  No exam sessions yet. Create one to get started.
+                </td>
+              </tr>
+            ) : (
+              sessions.map((s) => (
+                <tr key={s.id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(s.id)}
+                      onChange={() => toggleRow(s.id)}
+                    />
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    {s.name}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {s.term_name || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {formatDate(s.start_date)}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {formatDate(s.end_date)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClass(s.status)}`}
                     >
-                      No exam sessions yet. Create one to get started.
-                    </td>
-                  </tr>
-                ) : (
-                  sessions.map((s) => (
-                    <tr key={s.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(s.id)}
-                          onChange={() => toggleRow(s.id)}
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        {s.name}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {s.term_name || "—"}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {formatDate(s.start_date)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {formatDate(s.end_date)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClass(s.status)}`}
-                        >
-                          {statusLabel(s.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {s.paper_count}
-                      </td>
-                      <td className="px-4 py-3">
-                        <TableActionGroup>
-                          <TableIconButton
-                            icon={PencilEdit01Icon}
-                            label="Enter scores"
-                            tone="primary"
-                            href={`/academic/exams/scores?session_id=${s.id}`}
-                          />
-                        </TableActionGroup>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                      {statusLabel(s.status)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {s.paper_count}
+                  </td>
+                  <td className="px-4 py-3">
+                    <TableActionGroup>
+                      <TableIconButton
+                        icon={PencilEdit01Icon}
+                        label="Enter scores"
+                        tone="primary"
+                        href={`/academic/exams/scores?session_id=${s.id}`}
+                      />
+                    </TableActionGroup>
+                  </td>
+                </tr>
+              ))
+            )}
+          </ClientPaginatedTable>
 
           <TableSelectionBar
             totalCount={sessions.length}

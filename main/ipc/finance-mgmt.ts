@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { getSession, type SessionData } from '../auth'
 import type { Repositories } from '../db/repositories'
 import { daysPastDue, allocatePaymentToLines } from '../domain/finance'
+import { feeStructuresForBulkStudent } from '../domain/fee-structure-scope'
 import type {
   ExpenseCategory,
   FeeFrequency,
@@ -453,7 +454,9 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
     (
       _e,
       input: {
-        fee_structure_id: string
+        /** One structure (default) or auto-match per class for all students. */
+        mode?: 'structure' | 'all_classes'
+        fee_structure_id?: string | null
         class_id?: string | null
         due_date?: string | null
         carry_arrears?: boolean
@@ -464,15 +467,59 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         return { ok: false, error: 'Access denied.' }
       }
       const sid = schoolId(repos, session)
+      const mode = input.mode === 'all_classes' ? 'all_classes' : 'structure'
+      const classById = new Map(
+        repos.classes.findBySchool(sid).map((c) => [c.id, c])
+      )
+      let created = 0
+      let skipped = 0
+
+      if (mode === 'all_classes') {
+        const structures = fm()
+          .listStructures(sid)
+          .filter((s) => s.is_active)
+        const students = repos.students.findBySchool(sid, 'active')
+        for (const st of students) {
+          const cls = classById.get(st.class_id)
+          const targets = feeStructuresForBulkStudent(structures, {
+            residence_type: st.residence_type || 'day',
+            academic_level_id:
+              st.academic_level_id || cls?.academic_level_id || null,
+            section_id: cls?.section_id ?? null,
+            class_id: st.class_id,
+          })
+          if (targets.length === 0) {
+            skipped += 1
+            continue
+          }
+          for (const structure of targets) {
+            try {
+              fm().generateInvoice({
+                school_id: sid,
+                student_id: st.id,
+                fee_structure_id: structure.id,
+                due_date: input.due_date,
+                carry_arrears: input.carry_arrears,
+                userId: session.userId,
+              })
+              created += 1
+            } catch {
+              skipped += 1
+            }
+          }
+        }
+        return { ok: true, data: { created, skipped } }
+      }
+
+      if (!input.fee_structure_id) {
+        return { ok: false, error: 'Fee structure is required.' }
+      }
       const structure = fm()
         .listStructures(sid)
         .find((s) => s.id === input.fee_structure_id)
       if (!structure) return { ok: false, error: 'Structure not found.' }
 
       let students = repos.students.findBySchool(sid, 'active')
-      const classById = new Map(
-        repos.classes.findBySchool(sid).map((c) => [c.id, c])
-      )
       if (input.class_id) {
         students = students.filter((s) => s.class_id === input.class_id)
       } else if (structure.class_id) {
@@ -500,14 +547,12 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         )
       }
 
-      let created = 0
-      let skipped = 0
       for (const st of students) {
         try {
           fm().generateInvoice({
             school_id: sid,
             student_id: st.id,
-            fee_structure_id: input.fee_structure_id,
+            fee_structure_id: structure.id,
             due_date: input.due_date,
             carry_arrears: input.carry_arrears,
             userId: session.userId,
@@ -544,6 +589,29 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         return {
           ok: false,
           error: err instanceof Error ? err.message : 'Could not adjust invoice.',
+        }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'finance-mgmt:invoices-delete',
+    (_e, input: { id: string }): Result<{ id: string }> => {
+      const session = requireSession()
+      if (!session || !canManage(session.role)) {
+        return { ok: false, error: 'Access denied.' }
+      }
+      try {
+        const inv = fm().getInvoice(input.id)
+        if (!inv || inv.school_id !== schoolId(repos, session)) {
+          return { ok: false, error: 'Invoice not found.' }
+        }
+        fm().deletePendingInvoice(input.id, session.userId)
+        return { ok: true, data: { id: input.id } }
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Could not delete invoice.',
         }
       }
     }

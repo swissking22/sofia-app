@@ -8,6 +8,7 @@ import { AppShell } from "../../components/layout/AppShell";
 import { FormField, FormSection } from "../../components/setup";
 import { Icon } from "../../components/ui/Icon";
 import { TableActionGroup, TableIconButton } from "../../components/ui/TableActions";
+import { ClientPaginatedTable } from "../../components/ui/table-pagination";
 import {
   createDepartment,
   deleteDepartment,
@@ -150,8 +151,9 @@ export default function SchoolDepartmentsPage() {
             {departments.length === 0 ? (
               <p className="text-sm text-slate-500">No departments yet.</p>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-slate-200">
-                <table className="w-full text-left text-sm">
+              <ClientPaginatedTable
+                tableClassName="w-full text-left text-sm"
+                head={
                   <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-4 py-3">Name</th>
@@ -160,38 +162,35 @@ export default function SchoolDepartmentsPage() {
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {departments.map((d) => (
-                      <tr key={d.id}>
-                        <td className="px-4 py-3 font-medium text-slate-900">
-                          {d.name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {d.staff_count}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {d.subject_count}
-                        </td>
-                        <td className="px-4 py-3">
-                          <TableActionGroup>
-                            <TableIconButton
-                              icon={PencilEdit01Icon}
-                              label={`Edit ${d.name}`}
-                              onClick={() => startEdit(d)}
-                            />
-                            <TableIconButton
-                              icon={Delete02Icon}
-                              label={`Delete ${d.name}`}
-                              tone="danger"
-                              onClick={() => void handleDelete(d.id)}
-                            />
-                          </TableActionGroup>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                }
+              >
+                {departments.map((d) => (
+                  <tr key={d.id}>
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {d.name}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{d.staff_count}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {d.subject_count}
+                    </td>
+                    <td className="px-4 py-3">
+                      <TableActionGroup>
+                        <TableIconButton
+                          icon={PencilEdit01Icon}
+                          label={`Edit ${d.name}`}
+                          onClick={() => startEdit(d)}
+                        />
+                        <TableIconButton
+                          icon={Delete02Icon}
+                          label={`Delete ${d.name}`}
+                          tone="danger"
+                          onClick={() => void handleDelete(d.id)}
+                        />
+                      </TableActionGroup>
+                    </td>
+                  </tr>
+                ))}
+              </ClientPaginatedTable>
             )}
           </FormSection>
         </div>

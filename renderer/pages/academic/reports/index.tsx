@@ -8,10 +8,85 @@ import {
 } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { KpiCard } from "../../../components/dashboard/KpiCard";
+import {
+  TablePaginationBar,
+  useTablePagination,
+} from "../../../components/ui/table-pagination";
 import { fetchAcademicDashboard } from "../../../lib/academic-mgmt";
 
 function formatScore(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function ClassAveragesSection({
+  averages,
+}: {
+  averages: Array<{
+    class_id: string;
+    class_name: string;
+    average: number;
+    students: number;
+  }>;
+}) {
+  const rowNodes =
+    averages.length === 0 ? (
+      <tr>
+        <td colSpan={3} className="px-4 py-8 text-center text-slate-500">
+          No class averages yet. Process and publish results first.
+        </td>
+      </tr>
+    ) : (
+      averages.map((row) => (
+        <tr key={row.class_id} className="hover:bg-slate-50/80">
+          <td className="px-4 py-3 font-medium text-slate-900">
+            {row.class_name}
+          </td>
+          <td className="px-4 py-3 text-slate-600">{row.students}</td>
+          <td className="px-4 py-3 font-semibold text-slate-800">
+            {formatScore(row.average)}
+          </td>
+        </tr>
+      ))
+    );
+
+  const { page, setPage, pageCount, total, visible, pageSize, showControls } =
+    useTablePagination(rowNodes);
+
+  return (
+    <>
+      <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
+          <h2 className="text-sm font-semibold text-slate-900">
+            Class averages
+          </h2>
+          <p className="text-xs text-slate-500">
+            Mean student average per class from processed results.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-slate-100 bg-white text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Class</th>
+                <th className="px-4 py-3">Students</th>
+                <th className="px-4 py-3">Average</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">{visible}</tbody>
+          </table>
+        </div>
+      </div>
+      {showControls ? (
+        <TablePaginationBar
+          page={page}
+          pageCount={pageCount}
+          total={total}
+          pageSize={pageSize}
+          onPageChange={setPage}
+        />
+      ) : null}
+    </>
+  );
 }
 
 export default function AcademicReportsPage() {
@@ -93,51 +168,7 @@ export default function AcademicReportsPage() {
             />
           </div>
 
-          <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
-              <h2 className="text-sm font-semibold text-slate-900">
-                Class averages
-              </h2>
-              <p className="text-xs text-slate-500">
-                Mean student average per class from processed results.
-              </p>
-            </div>
-            <table className="min-w-full text-left text-sm">
-              <thead className="border-b border-slate-100 bg-white text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Class</th>
-                  <th className="px-4 py-3">Students</th>
-                  <th className="px-4 py-3">Average</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.class_averages.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={3}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
-                      No class averages yet. Process and publish results first.
-                    </td>
-                  </tr>
-                ) : (
-                  data.class_averages.map((row) => (
-                    <tr key={row.class_id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3 font-medium text-slate-900">
-                        {row.class_name}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {row.students}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-slate-800">
-                        {formatScore(row.average)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <ClassAveragesSection averages={data.class_averages} />
         </>
       ) : null}
     </AppShell>

@@ -288,6 +288,39 @@ describe('Permanent Student IDs & Atomic Creation', () => {
     expect(updated!.sync_status).toBe('pending')
   })
 
+  it('Edit details with undefined status/residence does not null NOT NULL columns', () => {
+    const { repos, school, class1 } = setupTestEnvironment()
+
+    const student = repos.students.create({
+      name: 'Status Guard',
+      class_id: class1.id,
+      school_id: school.id,
+      admission_year: 2026,
+      status: 'active',
+      residence_type: 'day',
+    })
+
+    // Mimic IPC edit-details payload: untouched fields arrive as undefined
+    const updated = repos.students.update(student.id, {
+      name: 'Status Guard Updated',
+      gender: 'Female',
+      place_of_birth: 'Yaoundé',
+      status: undefined,
+      residence_type: undefined,
+      phone: undefined,
+    } as any)
+
+    expect(updated).toBeDefined()
+    expect(updated!.name).toBe('Status Guard Updated')
+    expect(updated!.status).toBe('active')
+    expect(updated!.residence_type).toBe('day')
+    expect(updated!.place_of_birth).toBe('Yaoundé')
+
+    const reloaded = repos.students.findById(student.id)
+    expect(reloaded?.status).toBe('active')
+    expect(reloaded?.residence_type).toBe('day')
+  })
+
   it('Test 7 — Transaction rollback: failure after sequence retrieval rolls back sequence and student insertion', () => {
     const { db, repos, school, class1 } = setupTestEnvironment()
 

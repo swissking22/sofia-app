@@ -146,8 +146,8 @@ Day-to-day school configuration (mirrors much of setup, editable anytime).
 | Academic Year | `/school/academic-year` | Edit year + calendar |
 | Terms & Sessions | `/school/terms` | Term dates within the year |
 | Classes | `/school/classes` | Manage levels, sections, specs, classes, and the school day schedule (period times + breaks). Class lists and dropdowns follow **level → section** order (Form 1 General, Commercial, Technical, then Form 2…). |
-| Departments | `/school/departments` | Add/edit/delete departments |
-| Subjects | `/school/subjects` | Pick an **academic level**, then add subjects (classes in that level are selected by default). One subject row per level + name is linked to every class that offers it (e.g. Form 1 Mathematics for General, Commercial, and Technical). |
+| Departments | `/school/departments` | Add/edit/delete departments; department list paginates **10 rows** per page |
+| Subjects | `/school/subjects` | Pick an **academic level**, then add subjects (classes in that level are selected by default). One subject row per level + name is linked to every class that offers it (e.g. Form 1 Mathematics for General, Commercial, and Technical). Level subject list paginates **10 rows** per page. |
 
 ---
 
@@ -202,7 +202,7 @@ IPC: `students:class-list`.
 
 ### Add student — `/students/create`
 
-Sections: **Personal** (name, gender, date of birth, **place of birth**, contact — phones in Cameroon 9-digit format without `+237`), **Admission** (level → department → specialization if any → class, plus year + type + **Residence** day/boarding), **Guardian** (name and phone required).  
+Sections: **Personal** (name, gender, date of birth, **place of birth**, contact — phones in Cameroon 9-digit format without `+237`), **Admission** (level → department → specialization if any → class, plus year + type + **Residence** day/boarding), **Guardian** (phone required; name optional).  
 Student ID (`student_code`) is **permanently generated on save** (default `{SCHOOL}-{SEQ}` e.g. `ABC-0001`) inside a single atomic SQLite transaction with local UUID generation (`students.id`) and immediate offline outbox sync queue enqueue. The student code and internal UUID **never change** when academic years roll over, classes change, or students repeat/promote. Admission year is recorded separately in `students.admission_year`. Residence is used only to apply boarding/day fee structures.
 
 ### Student profile — `/students/:id`
@@ -311,6 +311,8 @@ Typical term workflow:
 5. **Process** results for class + term → **publish** (optionally lock).
 6. **Generate** report cards → view/print.
 7. Check **Academic Reports** for a summary dashboard.
+
+List-style HTML tables on academic screens (exams, CA, attendance, report cards, reports class averages, results overview/subject sheet, coefficients), **Staff → Workload** detail slots, and **School → Departments / Subjects** lists use **client pagination** (10 rows per page) via `ClientPaginatedTable` / `useTablePagination` in `renderer/components/ui/table-pagination.tsx`. Timetable period×day grids are not paginated.
 
 ### Timetable
 
@@ -422,7 +424,7 @@ Shared list/filter UI mirrors Student Management (`renderer/components/staff/ui.
 
 ### Teacher workload — `/staff/workload`
 
-Summary table of periods / subjects / classes from the timetable, with **Over max** and **Conflict** badges. Click a row for a drawer with weekly timetable slots.
+Summary table of periods / subjects / classes from the timetable, with **Over max** and **Conflict** badges. Click a row for a modal with weekly timetable slots (paginated **10 rows** per page via `ClientPaginatedTable`).
 
 ### Teacher attendance — `/staff/attendance`
 
@@ -456,8 +458,8 @@ Fee categories and currency come from Setup → Finance. Receipt header/footer u
 | Screen | Path | How to use |
 |--------|------|------------|
 | Fee structure | `/finance/fee-structure` | List packages with total, year, **level / department / class**, active badge, and **day/boarding** applicability. Managers can **create**, **edit**, **duplicate** (opens a pre-filled copy to adjust), activate/deactivate, and delete. Structures include fee lines, **Department**, and **Applies to** (all / day / boarding). Editing updates the package for future billing; existing invoices are unchanged. Billing refuses a structure whose department, level, class, or residence does not match the student. |
-| Student billing | `/finance/billing` | Filter invoices by status/search. Generate for one student: fee structures are filtered to the student’s **day/boarding** residence plus department/level/class. Bulk generate only targets students matching the package’s residence scope. Generation is refused if scope does not match. |
-| Payments | `/finance/payments` | Payment history. Record against an outstanding invoice (amount, method, reference, optional use of credit). **Online payment** starts a request (`pending`/`processing`); Confirm/Fail/Cancel after the provider settles. A request is not a successful payment — student balance and receipt update only on verified success. |
+| Student billing | `/finance/billing` | Filter invoices by status/search. Generate for one student: type to search by name/ID, pick from suggestions; fee structures are filtered to the student’s **day/boarding** residence plus department/level/class, and the matching **class fee structure is pre-selected**. **Bulk generate** can target **one fee structure** (optional class filter) or **all classes** (each active student is billed with their class fee package; falls back to level/department packages when no class-specific package applies; day/boarding still respected). Generation is refused if scope does not match. Managers can **delete pending** invoices (row action, detail drawer, or bulk on selected pending rows); soft-delete only — paid/partial/overdue invoices and those with payments or carried arrears cannot be deleted. |
+| Payments | `/finance/payments` | Payment history. **Record payment**: type to search a student with outstanding balance, pick from suggestions, then choose their invoice (auto-selected when only one). Amount, method, reference, optional use of credit. **Online payment** starts a request (`pending`/`processing`); Confirm/Fail/Cancel after the provider settles. A request is not a successful payment — student balance and receipt update only on verified success. |
 | Receipts | `/finance/receipts` | List + search. View/print drawer or full page `/finance/receipts/:id`. Receipts show **Paid for** fee components (charged vs amount applied on this receipt, FIFO across invoice lines for partial payments). Managers can log a reprint. |
 | Outstanding | `/finance/outstanding` | Toggle student vs class grouping; aging columns (current / 1–30 / 60+). Select students and send in-app fee reminders. |
 | Expenses | `/finance/expenses` | List with date filters. Create: category, amount, date, vendor, description, method, optional recurring. Recording an expense updates matching **budgets** and may raise spending alerts. |
@@ -721,6 +723,15 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Student billing: managers can **delete pending invoices** (row, detail, or bulk selected). Soft-delete via `finance-mgmt:invoices-delete`; refused if paid, partially paid, overdue, or linked payments/online requests/carried arrears. |
+| 2026-09-22 | Payments **Record payment**: student picker is a typeahead search (name/ID) among students with outstanding invoices; invoice list is filtered to that student (auto-selected when only one). |
+| 2026-09-22 | Student billing **Generate invoice**: student picker is a typeahead search (name/ID) with suggestion dropdown; selecting a student still auto-selects their class fee structure. |
+| 2026-09-22 | Student billing **Generate invoice**: selecting a student auto-selects their class fee structure (day/boarding), preferring class-specific packages. |
+| 2026-09-22 | List tables paginate **10 rows** per page: shared `StudentTable` / Setup `DataTable`, academic lists via `ClientPaginatedTable`, plus Staff Workload slots and School Departments/Subjects (`renderer/components/ui/table-pagination.tsx`). Timetable period×day grids are not paginated. |
+| 2026-09-22 | Bulk invoice generate supports **All classes**: each active student is billed with their class fee structure (day/boarding), falling back to level/department packages when needed (`feeStructuresForBulkStudent`). |
+| 2026-09-22 | Guardian **name** is optional on add student, edit details, and admissions; guardian **phone** remains required. |
+| 2026-09-22 | Sidebar module menus are accordion-style: opening one group closes the others (`AppSidebar`). |
+| 2026-09-22 | Fixed student edit failing with `NOT NULL constraint failed: students.status` (and residence): update no longer spreads IPC `undefined` fields over existing NOT NULL columns. |
 | 2026-09-21 | Student / guardian phones use **Cameroon national format** (9 digits, no country code). `+237` / `237` / leading `0` are stripped; invalid numbers are rejected on create/edit/import (`main/domain/phone.ts`). |
 | 2026-09-21 | Student CSV import also reads **Place of Birth**, **Parent Name**, **Parent Contact** (phone), Parent Email, and Relationship; stored on the student record. Template download updated. |
 | 2026-09-21 | Class list table: Name (and other data columns) size to content; the empty marks/signature column expands to fill remaining width. |

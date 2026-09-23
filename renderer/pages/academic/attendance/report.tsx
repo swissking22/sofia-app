@@ -7,6 +7,7 @@ import {
   fetchAttendanceReport,
   type AcademicMeta,
 } from "../../../lib/academic-mgmt";
+import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 
 const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -197,8 +198,8 @@ export default function AttendanceReportPage() {
       ) : !classId ? (
         <p className="text-sm text-slate-500">Select a class to view the report.</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm">
+        <ClientPaginatedTable
+          head={
             <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Student ID</th>
@@ -211,51 +212,50 @@ export default function AttendanceReportPage() {
                 <th className="px-4 py-3 text-center">Rate</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="px-4 py-8 text-center text-slate-500"
-                  >
-                    No attendance data for this range.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((r) => (
-                  <tr key={r.student_id} className="hover:bg-slate-50/80">
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                      {r.student_code || "—"}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-800">
-                      {r.student_name}
-                    </td>
-                    <td className="px-4 py-3 text-center text-emerald-600">
-                      {r.present}
-                    </td>
-                    <td className="px-4 py-3 text-center text-red-600">
-                      {r.absent}
-                    </td>
-                    <td className="px-4 py-3 text-center text-amber-600">
-                      {r.late}
-                    </td>
-                    <td className="px-4 py-3 text-center text-sky-600">
-                      {r.excused}
-                    </td>
-                    <td className="px-4 py-3 text-center text-slate-600">
-                      {r.total}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-center font-semibold ${rateColor(r.rate)}`}
-                    >
-                      {r.rate.toFixed(1)}%
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+          }
+        >
+          {rows.length === 0 ? (
+            <tr>
+              <td
+                colSpan={8}
+                className="px-4 py-8 text-center text-slate-500"
+              >
+                No attendance data for this range.
+              </td>
+            </tr>
+          ) : (
+            rows.map((r) => (
+              <tr key={r.student_id} className="hover:bg-slate-50/80">
+                <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                  {r.student_code || "—"}
+                </td>
+                <td className="px-4 py-3 font-medium text-slate-800">
+                  {r.student_name}
+                </td>
+                <td className="px-4 py-3 text-center text-emerald-600">
+                  {r.present}
+                </td>
+                <td className="px-4 py-3 text-center text-red-600">
+                  {r.absent}
+                </td>
+                <td className="px-4 py-3 text-center text-amber-600">
+                  {r.late}
+                </td>
+                <td className="px-4 py-3 text-center text-sky-600">
+                  {r.excused}
+                </td>
+                <td className="px-4 py-3 text-center text-slate-600">
+                  {r.total}
+                </td>
+                <td
+                  className={`px-4 py-3 text-center font-semibold ${rateColor(r.rate)}`}
+                >
+                  {r.rate.toFixed(1)}%
+                </td>
+              </tr>
+            ))
+          )}
+        </ClientPaginatedTable>
       )}
 
       <div className="mt-5">

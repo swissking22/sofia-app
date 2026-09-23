@@ -618,10 +618,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
       if (!input?.admission_year) {
         return { ok: false, error: 'Admission year is required.' }
       }
-      const guardianName = input?.guardian_name?.trim()
-      if (!guardianName) {
-        return { ok: false, error: 'Guardian name is required.' }
-      }
+      const guardianName = input?.guardian_name?.trim() || null
       const guardianPhoneRes = resolveRequiredPhone(
         input?.guardian_phone,
         'Guardian phone'
@@ -761,7 +758,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           guardian_phone,
           guardian_email: input.guardian_email,
           guardian_relationship: input.guardian_relationship,
-          status: input.status,
+          ...(input.status !== undefined ? { status: input.status } : {}),
           residence_type:
             input.residence_type === 'boarding'
               ? 'boarding'

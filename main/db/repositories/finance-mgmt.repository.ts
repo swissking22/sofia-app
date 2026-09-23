@@ -1063,6 +1063,127 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
     return this.getInvoice(invoiceId)!
   }
 
+  /**
+   * Soft-delete an unpaid pending invoice (and its lines).
+   * Refused if any payment exists, amount has been paid, status is not pending,
+   * or another invoice carries arrears from this one.
+   */
+  deletePendingInvoice(invoiceId: string, userId: string | null): void {
+    const invoice = this.getInvoice(invoiceId)
+    if (!invoice || invoice.deleted_at) {
+      throw new Error('Invoice not found.')
+    }
+    if (invoice.status !== 'pending') {
+      throw new Error('Only pending invoices can be deleted.')
+    }
+    if (invoice.amount_paid > 0) {
+      throw new Error('Cannot delete an invoice that has payments.')
+    }
+
+    const paymentCount = (
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM payments
+           WHERE invoice_id = ? AND deleted_at IS NULL`
+        )
+        .get(invoiceId) as { n: number }
+    ).n
+    if (paymentCount > 0) {
+      throw new Error('Cannot delete an invoice that has payments.')
+    }
+
+    const onlineCount = (
+      this.db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM online_payment_transactions
+           WHERE invoice_id = ? AND deleted_at IS NULL
+             AND status IN ('pending','processing','succeeded')`
+        )
+        .get(invoiceId) as { n: number }
+    ).n
+    if (onlineCount > 0) {
+      throw new Error(
+        'Cannot delete an invoice with an active online payment request.'
+      )
+    }
+
+    const dependent = this.db
+      .prepare(
+        `SELECT invoice_number FROM invoices
+         WHERE carried_from_invoice_id = ? AND deleted_at IS NULL
+         LIMIT 1`
+      )
+      .get(invoiceId) as { invoice_number: string } | undefined
+    if (dependent) {
+      throw new Error(
+        `Cannot delete: invoice ${dependent.invoice_number} carries arrears from this invoice.`
+      )
+    }
+
+    const now = new Date().toISOString()
+    const updated: Invoice = {
+      ...invoice,
+      deleted_at: now,
+      updated_at: now,
+      version: invoice.version + 1,
+      sync_status: 'pending',
+    }
+
+    const tx = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE invoices
+           SET deleted_at = @deleted_at, updated_at = @updated_at,
+               version = @version, sync_status = @sync_status
+           WHERE id = @id`
+        )
+        .run(updated)
+      enqueueSync(
+        this.db,
+        'invoices',
+        updated.id,
+        'DELETE',
+        updated as unknown as Record<string, unknown>
+      )
+
+      const lines = this.getInvoiceLines(invoiceId)
+      for (const line of lines) {
+        const lineUpdated: InvoiceLine = {
+          ...line,
+          deleted_at: now,
+          updated_at: now,
+          version: line.version + 1,
+          sync_status: 'pending',
+        }
+        this.db
+          .prepare(
+            `UPDATE invoice_lines
+             SET deleted_at = @deleted_at, updated_at = @updated_at,
+                 version = @version, sync_status = @sync_status
+             WHERE id = @id`
+          )
+          .run(lineUpdated)
+        enqueueSync(
+          this.db,
+          'invoice_lines',
+          lineUpdated.id,
+          'DELETE',
+          lineUpdated as unknown as Record<string, unknown>
+        )
+      }
+    })
+    tx()
+
+    this.audit(
+      invoice.school_id,
+      'invoice.delete',
+      'invoice',
+      invoiceId,
+      userId,
+      { invoice_number: invoice.invoice_number }
+    )
+  }
+
   refreshOverdue(schoolId: string): number {
     const rows = this.listInvoices(schoolId).filter(
       (i) =>

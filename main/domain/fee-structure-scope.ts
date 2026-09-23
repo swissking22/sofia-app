@@ -75,6 +75,26 @@ export function feeStructureAppliesToStudent(
   return feeStructureMismatch(structure, student) == null
 }
 
+/**
+ * Fee packages to bill a student during “all classes” bulk generation.
+ * Prefer class-specific packages when any apply; otherwise level/department/school packages.
+ */
+export function feeStructuresForBulkStudent<T extends FeeStructureScope>(
+  structures: T[],
+  student: StudentFeeContext
+): T[] {
+  const applicable = structures.filter((s) =>
+    feeStructureAppliesToStudent(s, student)
+  )
+  if (applicable.length === 0) return []
+  const classId = student.class_id ?? null
+  if (classId) {
+    const forClass = applicable.filter((s) => s.class_id === classId)
+    if (forClass.length > 0) return forClass
+  }
+  return applicable.filter((s) => !s.class_id)
+}
+
 export function feeStructureMismatchMessage(
   reason: FeeStructureMismatch
 ): string {

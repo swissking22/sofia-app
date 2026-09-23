@@ -8,6 +8,7 @@ import { AppShell } from "../../components/layout/AppShell";
 import { FormField, FormSection } from "../../components/setup";
 import { Icon } from "../../components/ui/Icon";
 import { TableActionGroup, TableIconButton } from "../../components/ui/TableActions";
+import { ClientPaginatedTable } from "../../components/ui/table-pagination";
 import {
   createSubject,
   deleteSubject,
@@ -376,8 +377,9 @@ export default function SchoolSubjectsPage() {
                     No subjects for {selectedLevelName} yet.
                   </p>
                 ) : (
-                  <div className="overflow-hidden rounded-xl border border-slate-200">
-                    <table className="w-full text-left text-sm">
+                  <ClientPaginatedTable
+                    tableClassName="w-full text-left text-sm"
+                    head={
                       <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                         <tr>
                           <th className="px-4 py-3">Subject</th>
@@ -387,41 +389,40 @@ export default function SchoolSubjectsPage() {
                           <th className="px-4 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {levelSubjects.map((s) => (
-                          <tr key={s.id}>
-                            <td className="px-4 py-3 font-medium text-slate-900">
-                              {s.name}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600">
-                              {s.department_name ?? "—"}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600">
-                              {s.coefficient}
-                            </td>
-                            <td className="max-w-xs truncate px-4 py-3 text-slate-600">
-                              {s.class_names.join(", ") || "—"}
-                            </td>
-                            <td className="px-4 py-3">
-                              <TableActionGroup>
-                                <TableIconButton
-                                  icon={PencilEdit01Icon}
-                                  label={`Edit ${s.name}`}
-                                  onClick={() => startEdit(s)}
-                                />
-                                <TableIconButton
-                                  icon={Delete02Icon}
-                                  label={`Delete ${s.name}`}
-                                  tone="danger"
-                                  onClick={() => void handleDelete(s.id)}
-                                />
-                              </TableActionGroup>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                    }
+                  >
+                    {levelSubjects.map((s) => (
+                      <tr key={s.id}>
+                        <td className="px-4 py-3 font-medium text-slate-900">
+                          {s.name}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {s.department_name ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {s.coefficient}
+                        </td>
+                        <td className="max-w-xs truncate px-4 py-3 text-slate-600">
+                          {s.class_names.join(", ") || "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <TableActionGroup>
+                            <TableIconButton
+                              icon={PencilEdit01Icon}
+                              label={`Edit ${s.name}`}
+                              onClick={() => startEdit(s)}
+                            />
+                            <TableIconButton
+                              icon={Delete02Icon}
+                              label={`Delete ${s.name}`}
+                              tone="danger"
+                              onClick={() => void handleDelete(s.id)}
+                            />
+                          </TableActionGroup>
+                        </td>
+                      </tr>
+                    ))}
+                  </ClientPaginatedTable>
                 )}
               </FormSection>
             </>

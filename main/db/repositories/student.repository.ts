@@ -342,20 +342,35 @@ export class StudentRepository extends BaseRepository<Student> {
     const existing = this.findById(id)
     if (!existing) return undefined
 
+    // IPC often passes explicit `undefined` for untouched fields; spreading those
+    // would overwrite NOT NULL columns (status, residence_type, sync_status) with NULL.
+    const patch = Object.fromEntries(
+      Object.entries(input).filter(([, value]) => value !== undefined)
+    ) as UpdateInput<Student>
+
     const record: Student = {
       ...existing,
-      ...input,
-      name: input.name !== undefined ? input.name.trim() : existing.name,
+      ...patch,
+      name: patch.name !== undefined ? patch.name.trim() : existing.name,
       place_of_birth:
-        input.place_of_birth !== undefined
-          ? input.place_of_birth?.trim() || null
-          : existing.place_of_birth,
+        patch.place_of_birth !== undefined
+          ? patch.place_of_birth?.trim() || null
+          : (existing.place_of_birth ?? null),
       // student_code is permanent and immutable after first assignment
-      student_code: existing.student_code ?? input.student_code?.trim() ?? null,
+      student_code: existing.student_code ?? patch.student_code?.trim() ?? null,
       sequence_number:
-        existing.sequence_number ?? input.sequence_number ?? null,
+        existing.sequence_number ?? patch.sequence_number ?? null,
       admission_year:
-        existing.admission_year ?? input.admission_year ?? null,
+        patch.admission_year !== undefined
+          ? patch.admission_year
+          : existing.admission_year,
+      status: patch.status ?? existing.status ?? 'active',
+      residence_type:
+        patch.residence_type === 'boarding'
+          ? 'boarding'
+          : patch.residence_type === 'day'
+            ? 'day'
+            : existing.residence_type || 'day',
       ...this.applyUpdateMeta(existing),
     }
 

@@ -2,6 +2,7 @@ import {
   feeStructureAppliesToStudent,
   feeStructureMismatch,
   feeStructureMismatchMessage,
+  feeStructuresForBulkStudent,
   type FeeStructureScope,
   type StudentFeeContext,
 } from '../../main/domain/fee-structure-scope'
@@ -84,5 +85,49 @@ describe('fee structure department / scope matching', () => {
         class_id: 'c-other-tech',
       })
     ).toBe('class')
+  })
+
+  it('bulk all-classes prefers class packages over level/school packages', () => {
+    const classDay: FeeStructureScope & { id: string } = {
+      id: 'fs-class-day',
+      applies_to_residence: 'day',
+      academic_level_id: 'l1',
+      section_id: 's-gen',
+      class_id: 'c-f1-gen',
+    }
+    const levelWide: FeeStructureScope & { id: string } = {
+      id: 'fs-level',
+      applies_to_residence: 'all',
+      academic_level_id: 'l1',
+      section_id: null,
+      class_id: null,
+    }
+    const picked = feeStructuresForBulkStudent(
+      [levelWide, classDay],
+      dayGeneral
+    )
+    expect(picked.map((s) => s.id)).toEqual(['fs-class-day'])
+  })
+
+  it('bulk all-classes falls back to level packages when no class package applies', () => {
+    const levelWide: FeeStructureScope & { id: string } = {
+      id: 'fs-level',
+      applies_to_residence: 'all',
+      academic_level_id: 'l1',
+      section_id: null,
+      class_id: null,
+    }
+    const otherClass: FeeStructureScope & { id: string } = {
+      id: 'fs-other',
+      applies_to_residence: 'day',
+      academic_level_id: 'l1',
+      section_id: 's-gen',
+      class_id: 'c-other',
+    }
+    const picked = feeStructuresForBulkStudent(
+      [levelWide, otherClass],
+      dayGeneral
+    )
+    expect(picked.map((s) => s.id)).toEqual(['fs-level'])
   })
 })

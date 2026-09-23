@@ -28,6 +28,7 @@ import {
   type CalculationValidationResponse,
 } from "../../../lib/results-calc";
 import { TableSelectionBar } from "../../../components/students/ui";
+import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 
 const selectClass =
   "rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -757,8 +758,9 @@ export default function ResultsIndexPage() {
           {/* VIEW 1: Class Results Overview Table */}
           {viewMode === "class_overview" ? (
             <>
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
-            <table className="min-w-full text-left text-sm">
+              <ClientPaginatedTable
+                wrapClassName="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs"
+                head={
               <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                       <th className="px-4 py-3.5 text-center">
@@ -784,7 +786,8 @@ export default function ResultsIndexPage() {
                       <th className="px-5 py-3.5 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+                }
+              >
                 {summaries.length === 0 ? (
                   <tr>
                         <td colSpan={9} className="px-5 py-12 text-center text-slate-500">
@@ -880,9 +883,7 @@ export default function ResultsIndexPage() {
                         );
                       })
                 )}
-              </tbody>
-            </table>
-          </div>
+              </ClientPaginatedTable>
               <TableSelectionBar
                 totalCount={summaries.length}
                 selectedCount={selectedSummaries.length}
@@ -903,8 +904,9 @@ export default function ResultsIndexPage() {
           ) : (
             /* VIEW 2: Subject Results Sheet Table with Sequence Columns */
             <>
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
-                <table className="min-w-full text-left text-sm">
+              <ClientPaginatedTable
+                wrapClassName="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs"
+                head={
                   <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-4 py-3.5 sticky left-0 bg-slate-50 z-20 text-center">
@@ -936,7 +938,8 @@ export default function ResultsIndexPage() {
                       <th className="px-5 py-3.5 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                }
+              >
                     {currentSubjectRows.length === 0 ? (
                       <tr>
                         <td
@@ -1038,9 +1041,7 @@ export default function ResultsIndexPage() {
                         );
                       })
                     )}
-                  </tbody>
-                </table>
-              </div>
+              </ClientPaginatedTable>
               <TableSelectionBar
                 totalCount={currentSubjectRows.length}
                 selectedCount={selectedSubjectRows.length}

@@ -153,6 +153,40 @@ export function structureMatchesStudent(
   return true;
 }
 
+/**
+ * Prefer class-specific packages for a student (same rule as bulk all-classes).
+ * Falls back to level/department/school packages that still match.
+ */
+export function preferredFeeStructuresForStudent<
+  T extends Pick<
+    FeeStructureDto,
+    | "applies_to_residence"
+    | "academic_level_id"
+    | "section_id"
+    | "class_id"
+    | "is_active"
+  >,
+>(
+  structures: T[],
+  student: {
+    residence_type?: string | null;
+    academic_level_id?: string | null;
+    class_id?: string | null;
+    section_id?: string | null;
+  }
+): T[] {
+  const applicable = structures.filter((s) =>
+    structureMatchesStudent(s, student)
+  );
+  if (applicable.length === 0) return [];
+  const classId = student.class_id ?? null;
+  if (classId) {
+    const forClass = applicable.filter((s) => s.class_id === classId);
+    if (forClass.length > 0) return forClass;
+  }
+  return applicable.filter((s) => !s.class_id);
+}
+
 export interface FeeDiscountDto {
   id: string;
   name: string;
@@ -487,7 +521,8 @@ export async function generateInvoice(input: {
 }
 
 export async function bulkGenerateInvoices(input: {
-  fee_structure_id: string;
+  mode?: "structure" | "all_classes";
+  fee_structure_id?: string | null;
   class_id?: string | null;
   due_date?: string | null;
   carry_arrears?: boolean;
@@ -506,6 +541,15 @@ export async function adjustInvoice(input: {
     "finance-mgmt:invoices-adjust",
     input
   )) as Result<InvoiceDetailDto>;
+}
+
+/** Soft-delete a pending (unpaid) invoice. */
+export async function deleteInvoice(
+  id: string
+): Promise<Result<{ id: string }>> {
+  return (await window.ipc.invoke("finance-mgmt:invoices-delete", {
+    id,
+  })) as Result<{ id: string }>;
 }
 
 export async function fetchPayments(filters?: {

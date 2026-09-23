@@ -7,6 +7,7 @@ import {
   type SubjectCoefficientItem,
 } from "../../../../lib/results-calc";
 import { fetchAcademicMeta } from "../../../../lib/academic-mgmt";
+import { ClientPaginatedTable } from "../../../../components/ui/table-pagination";
 import { TableSelectionBar } from "../../../../components/students/ui";
 
 export default function SubjectCoefficientsPage() {
@@ -268,8 +269,9 @@ export default function SubjectCoefficientsPage() {
         <p className="text-sm text-slate-500">Loading coefficients…</p>
       ) : (
         <>
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
-            <table className="min-w-full text-left text-sm">
+          <ClientPaginatedTable
+            wrapClassName="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs"
+            head={
               <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3.5 text-center">
@@ -293,83 +295,82 @@ export default function SubjectCoefficientsPage() {
                   <th className="px-5 py-3.5 text-right">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {coefficients.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-slate-500">
-                      No subjects found.
+            }
+          >
+            {coefficients.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-5 py-8 text-center text-slate-500">
+                  No subjects found.
+                </td>
+              </tr>
+            ) : (
+              coefficients.map((item) => {
+                const currentVal = editingValues[item.subject_id] ?? item.effective_coefficient;
+                const isOverridden = item.override_scope === "class";
+
+                return (
+                  <tr
+                    key={item.subject_id}
+                    className={editMode ? "bg-amber-50/20" : "hover:bg-slate-50/60"}
+                  >
+                    <td className="px-4 py-3.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(item.subject_id)}
+                        onChange={() => toggleRow(item.subject_id)}
+                      />
+                    </td>
+                    <td className="px-5 py-3.5 font-semibold text-slate-900">
+                      {item.subject_name}
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-xs text-slate-600">
+                      {item.subject_code || "—"}
+                    </td>
+                    <td className="px-4 py-3.5 text-slate-600">
+                      {item.department_name || "General"}
+                    </td>
+                    <td className="px-4 py-3.5 text-xs text-slate-600">
+                      {selectedClassId ? (
+                        <span className="font-medium text-indigo-700">Class Override</span>
+                      ) : (
+                        <span className="text-slate-500">Global Default</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3.5 text-center">
+                      {editMode ? (
+                        <input
+                          type="number"
+                          step={0.5}
+                          min={0.1}
+                          max={20}
+                          className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center font-mono text-sm font-semibold text-slate-900 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15"
+                          value={currentVal}
+                          onChange={(e) =>
+                            handleCoefficientChange(item.subject_id, e.target.value)
+                          }
+                        />
+                      ) : (
+                        <span className="inline-block rounded-lg bg-slate-100 px-3 py-1 font-mono text-sm font-bold text-slate-800">
+                          {item.effective_coefficient}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          isOverridden
+                            ? "border border-purple-200 bg-purple-50 text-purple-700"
+                            : "border border-slate-200 bg-slate-50 text-slate-600"
+                        }`}
+                      >
+                        {isOverridden ? "Class Override" : "School Default"}
+                      </span>
                     </td>
                   </tr>
-                ) : (
-                  coefficients.map((item) => {
-                    const currentVal = editingValues[item.subject_id] ?? item.effective_coefficient;
-                    const isOverridden = item.override_scope === "class";
-
-                    return (
-                      <tr
-                        key={item.subject_id}
-                        className={editMode ? "bg-amber-50/20" : "hover:bg-slate-50/60"}
-                      >
-                        <td className="px-4 py-3.5 text-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.includes(item.subject_id)}
-                            onChange={() => toggleRow(item.subject_id)}
-                          />
-                        </td>
-                        <td className="px-5 py-3.5 font-semibold text-slate-900">
-                          {item.subject_name}
-                        </td>
-                        <td className="px-4 py-3.5 font-mono text-xs text-slate-600">
-                          {item.subject_code || "—"}
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-600">
-                          {item.department_name || "General"}
-                        </td>
-                        <td className="px-4 py-3.5 text-xs text-slate-600">
-                          {selectedClassId ? (
-                            <span className="font-medium text-indigo-700">Class Override</span>
-                          ) : (
-                            <span className="text-slate-500">Global Default</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          {editMode ? (
-                            <input
-                              type="number"
-                              step={0.5}
-                              min={0.1}
-                              max={20}
-                              className="w-20 rounded-lg border border-slate-300 bg-white px-2 py-1 text-center font-mono text-sm font-semibold text-slate-900 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15"
-                              value={currentVal}
-                              onChange={(e) =>
-                                handleCoefficientChange(item.subject_id, e.target.value)
-                              }
-                            />
-                          ) : (
-                            <span className="inline-block rounded-lg bg-slate-100 px-3 py-1 font-mono text-sm font-bold text-slate-800">
-                              {item.effective_coefficient}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 text-right">
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                              isOverridden
-                                ? "border border-purple-200 bg-purple-50 text-purple-700"
-                                : "border border-slate-200 bg-slate-50 text-slate-600"
-                            }`}
-                          >
-                            {isOverridden ? "Class Override" : "School Default"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                );
+              })
+            )}
+          </ClientPaginatedTable>
 
           <TableSelectionBar
             totalCount={coefficients.length}

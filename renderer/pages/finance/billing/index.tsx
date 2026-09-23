@@ -1,9 +1,10 @@
 import React from "react";
-import { Add01Icon, ViewIcon } from "@hugeicons/core-free-icons";
+import { Add01Icon, Delete02Icon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
 import {
   FormModal,
+  ConfirmModal,
   EmptyRow,
   FilterBar,
   FilterField,
@@ -26,6 +27,7 @@ import {
   INVOICE_STATUS_LABELS,
   adjustInvoice,
   bulkGenerateInvoices,
+  deleteInvoice,
   fetchFinanceMeta,
   fetchInvoice,
   fetchInvoices,
@@ -34,6 +36,7 @@ import {
   generateInvoice,
   residenceLabel,
   structureMatchesStudent,
+  preferredFeeStructuresForStudent,
   structureScopeSuffix,
   type DiscountMode,
   type FinanceMeta,
@@ -60,12 +63,18 @@ export default function BillingPage() {
   const [detail, setDetail] = React.useState<InvoiceDetailDto | null>(null);
 
   const [studentId, setStudentId] = React.useState("");
+  const [studentQuery, setStudentQuery] = React.useState("");
+  const [studentMenuOpen, setStudentMenuOpen] = React.useState(false);
   const [structureId, setStructureId] = React.useState("");
   const [dueDate, setDueDate] = React.useState("");
   const [carryArrears, setCarryArrears] = React.useState(true);
   const [discountMode, setDiscountMode] = React.useState<DiscountMode | "">("");
   const [discountValue, setDiscountValue] = React.useState("");
+  const studentSearchRef = React.useRef<HTMLDivElement | null>(null);
 
+  const [bulkMode, setBulkMode] = React.useState<"structure" | "all_classes">(
+    "structure",
+  );
   const [bulkStructureId, setBulkStructureId] = React.useState("");
   const [bulkClassId, setBulkClassId] = React.useState("");
   const [bulkDueDate, setBulkDueDate] = React.useState("");
@@ -74,6 +83,7 @@ export default function BillingPage() {
   const [adjDesc, setAdjDesc] = React.useState("");
   const [adjAmount, setAdjAmount] = React.useState("");
   const [selected, setSelected] = React.useState<string[]>([]);
+  const [deleteIds, setDeleteIds] = React.useState<string[] | null>(null);
 
   const allSelected =
     invoices.length > 0 && selected.length === invoices.length;
@@ -134,6 +144,64 @@ export default function BillingPage() {
     [meta?.students, studentId],
   );
 
+  const studentSuggestions = React.useMemo(() => {
+    const q = studentQuery.trim().toLowerCase();
+    if (!q) return [];
+    return (meta?.students ?? [])
+      .filter((s) => {
+        const hay = [s.name, s.student_code ?? "", s.class_name ?? ""]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 12);
+  }, [meta?.students, studentQuery]);
+
+  function studentOptionLabel(s: {
+    name: string;
+    student_code?: string | null;
+    class_name?: string | null;
+    residence_type?: string;
+  }): string {
+    return [
+      s.name,
+      s.student_code ? `(${s.student_code})` : null,
+      s.class_name ? `— ${s.class_name}` : null,
+      `· ${residenceLabel(s.residence_type || "day")}`,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function pickStudent(s: {
+    id: string;
+    name: string;
+    student_code?: string | null;
+    class_name?: string | null;
+    residence_type?: string;
+  }) {
+    setStudentId(s.id);
+    setStudentQuery(studentOptionLabel(s));
+    setStudentMenuOpen(false);
+  }
+
+  function clearStudentSelection() {
+    setStudentId("");
+    setStudentQuery("");
+    setStructureId("");
+  }
+
+  React.useEffect(() => {
+    if (!genOpen) return;
+    function onDocMouseDown(e: MouseEvent) {
+      if (!studentSearchRef.current?.contains(e.target as Node)) {
+        setStudentMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [genOpen]);
+
   const selectedStudentContext = React.useMemo(() => {
     if (!selectedStudent) return null;
     const cls = (meta?.classes ?? []).find(
@@ -162,11 +230,20 @@ export default function BillingPage() {
   );
 
   React.useEffect(() => {
-    if (!structureId) return;
-    if (!matchingStructures.some((s) => s.id === structureId)) {
+    if (!selectedStudentContext) {
       setStructureId("");
+      return;
     }
-  }, [matchingStructures, structureId]);
+    const preferred = preferredFeeStructuresForStudent(
+      matchingStructures,
+      selectedStudentContext,
+    );
+    if (preferred.length > 0) {
+      setStructureId(preferred[0].id);
+      return;
+    }
+    setStructureId("");
+  }, [selectedStudentContext, matchingStructures]);
 
   const load = React.useCallback(async () => {
     const [metaRes, structRes, invRes] = await Promise.all([
@@ -207,7 +284,11 @@ export default function BillingPage() {
     setError("");
     setSuccess("");
     if (!studentId || !structureId) {
-      setError("Student and fee structure are required.");
+      setError(
+        !studentId
+          ? "Select a student from the search suggestions."
+          : "Student and fee structure are required.",
+      );
       return;
     }
     setBusy(true);
@@ -226,8 +307,7 @@ export default function BillingPage() {
       }
       setSuccess(`Invoice ${res.data.invoice_number} generated.`);
       setGenOpen(false);
-      setStudentId("");
-      setStructureId("");
+      clearStudentSelection();
       setDueDate("");
       setDiscountMode("");
       setDiscountValue("");
@@ -241,15 +321,16 @@ export default function BillingPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
-    if (!bulkStructureId) {
+    if (bulkMode === "structure" && !bulkStructureId) {
       setError("Fee structure is required.");
       return;
     }
     setBusy(true);
     try {
       const res = await bulkGenerateInvoices({
-        fee_structure_id: bulkStructureId,
-        class_id: bulkClassId || null,
+        mode: bulkMode,
+        fee_structure_id: bulkMode === "structure" ? bulkStructureId : null,
+        class_id: bulkMode === "structure" ? bulkClassId || null : null,
         due_date: bulkDueDate || null,
         carry_arrears: bulkCarry,
       });
@@ -289,6 +370,44 @@ export default function BillingPage() {
       setAdjDesc("");
       setAdjAmount("");
       setSuccess("Invoice adjusted.");
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const selectedPending = React.useMemo(
+    () =>
+      invoices.filter(
+        (inv) => selected.includes(inv.id) && inv.status === "pending",
+      ),
+    [invoices, selected],
+  );
+
+  async function confirmDelete() {
+    if (!deleteIds?.length) return;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      let deleted = 0;
+      const errors: string[] = [];
+      for (const id of deleteIds) {
+        const res = await deleteInvoice(id);
+        if (res.ok) deleted += 1;
+        else errors.push(res.error);
+      }
+      if (deleted > 0) {
+        setSuccess(
+          deleted === 1 ? "Invoice deleted." : `${deleted} invoices deleted.`,
+        );
+      }
+      if (errors.length) {
+        setError(errors[0]);
+      }
+      setDeleteIds(null);
+      setSelected((prev) => prev.filter((id) => !deleteIds.includes(id)));
+      if (detail && deleteIds.includes(detail.id)) setDetail(null);
       await load();
     } finally {
       setBusy(false);
@@ -342,7 +461,13 @@ export default function BillingPage() {
               <SecondaryButton onClick={() => setBulkOpen(true)}>
                 Bulk generate
               </SecondaryButton>
-              <PrimaryButton onClick={() => setGenOpen(true)}>
+              <PrimaryButton
+                onClick={() => {
+                  clearStudentSelection();
+                  setStudentMenuOpen(false);
+                  setGenOpen(true);
+                }}
+              >
                 <Icon icon={Add01Icon} size={16} />
                 Generate invoice
               </PrimaryButton>
@@ -430,6 +555,14 @@ export default function BillingPage() {
                     tone="primary"
                     onClick={() => void openDetail(inv.id)}
                   />
+                  {canManage && inv.status === "pending" ? (
+                    <TableIconButton
+                      icon={Delete02Icon}
+                      label="Delete invoice"
+                      tone="danger"
+                      onClick={() => setDeleteIds([inv.id])}
+                    />
+                  ) : null}
                 </TableActionGroup>
               </td>
             </tr>
@@ -444,13 +577,26 @@ export default function BillingPage() {
         onToggleAll={toggleAll}
         onClear={() => setSelected([])}
         actions={
-          <button
-            type="button"
-            onClick={exportSelected}
-            className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
-          >
-            Export selected ({selected.length})
-          </button>
+          <>
+            {canManage && selectedPending.length > 0 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setDeleteIds(selectedPending.map((inv) => inv.id))
+                }
+                className="cursor-pointer rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Delete pending ({selectedPending.length})
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={exportSelected}
+              className="cursor-pointer rounded-lg bg-(--sofia-primary) px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
+            >
+              Export selected ({selected.length})
+            </button>
+          </>
         }
       />
 
@@ -484,25 +630,76 @@ export default function BillingPage() {
           className="space-y-3"
         >
           <FormField label="Student" required>
-            <select
-              className={selectClass}
-              value={studentId}
-              onChange={(e) => {
-                setStudentId(e.target.value);
-                setStructureId("");
-              }}
-              required
-            >
-              <option value="">Select student</option>
-              {(meta?.students ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {s.student_code ? ` (${s.student_code})` : ""}
-                  {s.class_name ? ` — ${s.class_name}` : ""}
-                  {` · ${residenceLabel(s.residence_type || "day")}`}
-                </option>
-              ))}
-            </select>
+            <div ref={studentSearchRef} className="relative">
+              <input
+                type="search"
+                className={fieldClass}
+                value={studentQuery}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setStudentQuery(next);
+                  setStudentMenuOpen(true);
+                  if (studentId) {
+                    const current = (meta?.students ?? []).find(
+                      (s) => s.id === studentId,
+                    );
+                    if (
+                      !current ||
+                      next.trim() !== studentOptionLabel(current)
+                    ) {
+                      setStudentId("");
+                      setStructureId("");
+                    }
+                  }
+                }}
+                onFocus={() => {
+                  if (studentQuery.trim()) setStudentMenuOpen(true);
+                }}
+                placeholder="Type a student name or ID…"
+                autoComplete="off"
+              />
+              {studentMenuOpen && studentQuery.trim() ? (
+                <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                  {studentSuggestions.length === 0 ? (
+                    <li className="px-3 py-2 text-sm text-slate-500">
+                      No students match.
+                    </li>
+                  ) : (
+                    studentSuggestions.map((s) => (
+                      <li key={s.id}>
+                        <button
+                          type="button"
+                          className="w-full cursor-pointer px-3 py-2 text-left text-sm text-slate-800 transition hover:bg-slate-50"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => pickStudent(s)}
+                        >
+                          <span className="font-medium text-slate-900">
+                            {s.name}
+                          </span>
+                          {s.student_code ? (
+                            <span className="text-slate-500">
+                              {" "}
+                              ({s.student_code})
+                            </span>
+                          ) : null}
+                          {s.class_name ? (
+                            <span className="block text-xs text-slate-500">
+                              {s.class_name} ·{" "}
+                              {residenceLabel(s.residence_type || "day")}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              ) : null}
+            </div>
+            {!studentId && studentQuery.trim() ? (
+              <p className="mt-1.5 text-xs text-amber-700">
+                Select a student from the suggestions.
+              </p>
+            ) : null}
           </FormField>
           <FormField label="Fee structure" required>
             <select
@@ -588,7 +785,7 @@ export default function BillingPage() {
       <FormModal
         open={bulkOpen}
         title="Bulk generate"
-        subtitle="Create invoices for matching students (class, department, and day/boarding)."
+        subtitle="Create invoices for one fee package, or for every class using each class’s matching fee structure."
         onClose={() => setBulkOpen(false)}
         footer={
           <div className="flex gap-2">
@@ -614,55 +811,85 @@ export default function BillingPage() {
           onSubmit={handleBulk}
           className="space-y-3"
         >
-          <FormField label="Fee structure" required>
+          <FormField label="Scope" required>
             <select
               className={selectClass}
-              value={bulkStructureId}
-              onChange={(e) => setBulkStructureId(e.target.value)}
-              required
+              value={bulkMode}
+              onChange={(e) =>
+                setBulkMode(
+                  e.target.value === "all_classes"
+                    ? "all_classes"
+                    : "structure",
+                )
+              }
             >
-              <option value="">Select structure</option>
-              {structures
-                .filter((s) => s.is_active)
-                .map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} — {structureScopeSuffix(s)}
-                  </option>
-                ))}
+              <option value="structure">One fee structure</option>
+              <option value="all_classes">
+                All classes (match each class fee structure)
+              </option>
             </select>
           </FormField>
-          {bulkStructure ? (
+          {bulkMode === "all_classes" ? (
             <p className="text-xs text-slate-500">
-              This package bills{" "}
-              <span className="font-medium text-slate-700">
-                {bulkStructure.applies_to_residence === "boarding"
-                  ? "boarding"
-                  : bulkStructure.applies_to_residence === "day"
-                    ? "day"
-                    : "day and boarding"}
-              </span>{" "}
-              students
-              {bulkStructure.section_name
-                ? ` in ${bulkStructure.section_name}`
-                : ""}
-              {bulkStructure.level_name ? ` · ${bulkStructure.level_name}` : ""}
-              .
+              Bills every active student using the fee package for their class
+              (day/boarding). If a class has no class-specific package, level or
+              department packages are used.
             </p>
-          ) : null}
-          <FormField label="Class (optional)">
-            <select
-              className={selectClass}
-              value={bulkClassId}
-              onChange={(e) => setBulkClassId(e.target.value)}
-            >
-              <option value="">Structure scope / all matching</option>
-              {(meta?.classes ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </FormField>
+          ) : (
+            <>
+              <FormField label="Fee structure" required>
+                <select
+                  className={selectClass}
+                  value={bulkStructureId}
+                  onChange={(e) => setBulkStructureId(e.target.value)}
+                  required
+                >
+                  <option value="">Select structure</option>
+                  {structures
+                    .filter((s) => s.is_active)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} — {structureScopeSuffix(s)}
+                      </option>
+                    ))}
+                </select>
+              </FormField>
+              {bulkStructure ? (
+                <p className="text-xs text-slate-500">
+                  This package bills{" "}
+                  <span className="font-medium text-slate-700">
+                    {bulkStructure.applies_to_residence === "boarding"
+                      ? "boarding"
+                      : bulkStructure.applies_to_residence === "day"
+                        ? "day"
+                        : "day and boarding"}
+                  </span>{" "}
+                  students
+                  {bulkStructure.section_name
+                    ? ` in ${bulkStructure.section_name}`
+                    : ""}
+                  {bulkStructure.level_name
+                    ? ` · ${bulkStructure.level_name}`
+                    : ""}
+                  .
+                </p>
+              ) : null}
+              <FormField label="Class (optional)">
+                <select
+                  className={selectClass}
+                  value={bulkClassId}
+                  onChange={(e) => setBulkClassId(e.target.value)}
+                >
+                  <option value="">Structure scope / all matching</option>
+                  {(meta?.classes ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            </>
+          )}
           <FormField label="Due date">
             <input
               type="date"
@@ -776,9 +1003,37 @@ export default function BillingPage() {
                 </FormSection>
               </form>
             ) : null}
+
+            {canManage && detail.status === "pending" ? (
+              <div className="border-t border-slate-100 pt-3">
+                <SecondaryButton
+                  type="button"
+                  className="text-red-700"
+                  disabled={busy}
+                  onClick={() => setDeleteIds([detail.id])}
+                >
+                  Delete pending invoice
+                </SecondaryButton>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </FormModal>
+
+      <ConfirmModal
+        open={!!deleteIds?.length}
+        title={
+          deleteIds && deleteIds.length > 1
+            ? `Delete ${deleteIds.length} pending invoices?`
+            : "Delete pending invoice?"
+        }
+        description="This soft-deletes the invoice. Paid or partially paid invoices cannot be deleted."
+        confirmLabel="Delete"
+        danger
+        busy={busy}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setDeleteIds(null)}
+      />
     </AppShell>
   );
 }

@@ -10,6 +10,7 @@ import {
   type AcademicMeta,
   type AttendanceMark,
 } from "../../../lib/academic-mgmt";
+import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 import { TableSelectionBar } from "../../../components/students/ui";
 
 const selectClass =
@@ -288,8 +289,8 @@ export default function AttendanceTakePage() {
         <p className="text-sm text-slate-500">No students in this class.</p>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <table className="min-w-full text-left text-sm">
+          <ClientPaginatedTable
+            head={
               <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">
@@ -310,51 +311,50 @@ export default function AttendanceTakePage() {
                   <th className="px-4 py-3">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {students.map((s) => {
-                  const current = marks[s.id];
-                  return (
-                    <tr key={s.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(s.id)}
-                          onChange={() => toggleRow(s.id)}
-                        />
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                        {s.student_code || "—"}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-800">
-                        {s.name}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          {ATTENDANCE_MARKS.map((m) => {
-                            const selected = current === m.key;
-                            return (
-                              <button
-                                key={m.key}
-                                type="button"
-                                onClick={() => setMark(s.id, m.key)}
-                                className={`cursor-pointer rounded-lg border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 ${
-                                  selected
-                                    ? `${markButtonClass[m.key]} ring-2`
-                                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                                }`}
-                              >
-                                {m.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+            }
+          >
+            {students.map((s) => {
+              const current = marks[s.id];
+              return (
+                <tr key={s.id} className="hover:bg-slate-50/80">
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(s.id)}
+                      onChange={() => toggleRow(s.id)}
+                    />
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                    {s.student_code || "—"}
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-800">
+                    {s.name}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      {ATTENDANCE_MARKS.map((m) => {
+                        const selected = current === m.key;
+                        return (
+                          <button
+                            key={m.key}
+                            type="button"
+                            onClick={() => setMark(s.id, m.key)}
+                            className={`cursor-pointer rounded-lg border px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 ${
+                              selected
+                                ? `${markButtonClass[m.key]} ring-2`
+                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </ClientPaginatedTable>
 
           <TableSelectionBar
             totalCount={students.length}

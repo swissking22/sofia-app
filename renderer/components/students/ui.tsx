@@ -2,6 +2,11 @@ import React from "react";
 import Link from "next/link";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Icon } from "../ui/Icon";
+import {
+  TABLE_PAGE_SIZE,
+  TablePaginationBar,
+  useTablePagination,
+} from "../ui/table-pagination";
 
 export const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400";
@@ -115,12 +120,25 @@ export function StudentTable({
   loading,
   children,
   selectionBar,
+  pageSize = TABLE_PAGE_SIZE,
 }: {
   columns: (string | React.ReactNode)[];
   loading?: boolean;
   children: React.ReactNode;
   selectionBar?: React.ReactNode;
+  /** Rows per page (default 10). */
+  pageSize?: number;
 }) {
+  const {
+    page,
+    setPage,
+    pageCount,
+    total,
+    visible,
+    pageSize: size,
+    showControls,
+  } = useTablePagination(children, pageSize);
+
   if (loading) {
     return <p className="text-sm text-slate-500">Loading…</p>;
   }
@@ -134,7 +152,11 @@ export function StudentTable({
               <tr>
                 {columns.map((col, i) => (
                   <th
-                    key={typeof col === "string" ? `${col || "col"}-${i}` : `col-${i}`}
+                    key={
+                      typeof col === "string"
+                        ? `${col || "col"}-${i}`
+                        : `col-${i}`
+                    }
                     className="whitespace-nowrap px-4 py-3"
                   >
                     {col}
@@ -142,10 +164,19 @@ export function StudentTable({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">{children}</tbody>
+            <tbody className="divide-y divide-slate-100">{visible}</tbody>
           </table>
         </div>
       </div>
+      {showControls ? (
+        <TablePaginationBar
+          page={page}
+          pageCount={pageCount}
+          total={total}
+          pageSize={size}
+          onPageChange={setPage}
+        />
+      ) : null}
       {selectionBar}
     </>
   );

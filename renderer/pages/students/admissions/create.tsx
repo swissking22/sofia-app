@@ -165,10 +165,6 @@ export default function CreateAdmissionPage() {
       setError("Full name is required.");
       return;
     }
-    if (!guardianName.trim()) {
-      setError("Guardian name is required.");
-      return;
-    }
     if (!guardianPhone.trim()) {
       setError("Guardian phone is required.");
       return;
@@ -197,7 +193,7 @@ export default function CreateAdmissionPage() {
         admission_year: admissionYear
           ? Number(admissionYear)
           : defaultYear || null,
-        guardian_name: guardianName.trim(),
+        guardian_name: guardianName.trim() || null,
         guardian_phone: normalizedGuardianPhone,
         guardian_email: guardianEmail || null,
         guardian_relationship: guardianRelationship || null,
@@ -399,11 +395,10 @@ export default function CreateAdmissionPage() {
 
         <FormSection
           title="Guardian"
-          description="Primary contact for the applicant. Name and phone are required."
+          description="Primary contact for the applicant. Phone is required."
         >
           <FormField
             label="Guardian name"
-            required
             value={guardianName}
             onChange={(e) => setGuardianName(e.target.value)}
           />

@@ -11,6 +11,7 @@ import {
   TableSelectionBar,
 } from "../../../components/staff/ui";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 import {
   fetchWorkloadDetail,
   fetchWorkloadSummary,
@@ -261,8 +262,8 @@ export default function TeacherWorkloadPage() {
                 <StatusBadge status="pending" label="Has conflicts" />
               ) : null}
             </div>
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <table className="min-w-full text-left text-sm">
+            <ClientPaginatedTable
+              head={
                 <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-3 py-2">Day</th>
@@ -272,34 +273,29 @@ export default function TeacherWorkloadPage() {
                     <th className="px-3 py-2">Room</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {detail.slots.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="px-3 py-6 text-center text-slate-500"
-                      >
-                        No timetable slots assigned.
-                      </td>
-                    </tr>
-                  ) : (
-                    detail.slots.map((slot) => (
-                      <tr key={slot.id}>
-                        <td className="px-3 py-2">{slot.day_name}</td>
-                        <td className="px-3 py-2">{slot.period_number}</td>
-                        <td className="px-3 py-2">
-                          {slot.class_name || "—"}
-                        </td>
-                        <td className="px-3 py-2">
-                          {slot.subject_name || "—"}
-                        </td>
-                        <td className="px-3 py-2">{slot.room || "—"}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+              }
+            >
+              {detail.slots.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-6 text-center text-slate-500"
+                  >
+                    No timetable slots assigned.
+                  </td>
+                </tr>
+              ) : (
+                detail.slots.map((slot) => (
+                  <tr key={slot.id}>
+                    <td className="px-3 py-2">{slot.day_name}</td>
+                    <td className="px-3 py-2">{slot.period_number}</td>
+                    <td className="px-3 py-2">{slot.class_name || "—"}</td>
+                    <td className="px-3 py-2">{slot.subject_name || "—"}</td>
+                    <td className="px-3 py-2">{slot.room || "—"}</td>
+                  </tr>
+                ))
+              )}
+            </ClientPaginatedTable>
           </div>
         ) : (
           <p className="text-sm text-slate-500">No detail available.</p>

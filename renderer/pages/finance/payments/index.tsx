@@ -1,6 +1,11 @@
 import React from "react";
 import Link from "next/link";
-import { Add01Icon, Cancel01Icon, Tick02Icon, UnavailableIcon } from "@hugeicons/core-free-icons";
+import {
+  Add01Icon,
+  Cancel01Icon,
+  Tick02Icon,
+  UnavailableIcon,
+} from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField } from "../../../components/setup";
 import {
@@ -17,7 +22,10 @@ import {
   selectClass,
 } from "../../../components/finance/ui";
 import { Icon } from "../../../components/ui/Icon";
-import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import {
   PAYMENT_METHOD_LABELS,
   fetchFinanceMeta,
@@ -50,11 +58,15 @@ export default function PaymentsPage() {
   const [onlineTxns, setOnlineTxns] = React.useState<OnlineTxn[]>([]);
 
   const [invoiceId, setInvoiceId] = React.useState("");
+  const [studentId, setStudentId] = React.useState("");
+  const [studentQuery, setStudentQuery] = React.useState("");
+  const [studentMenuOpen, setStudentMenuOpen] = React.useState(false);
   const [amount, setAmount] = React.useState("");
   const [method, setMethod] = React.useState<PaymentMethod>("cash");
   const [reference, setReference] = React.useState("");
   const [useCredit, setUseCredit] = React.useState(false);
   const [lastReceiptId, setLastReceiptId] = React.useState<string | null>(null);
+  const studentSearchRef = React.useRef<HTMLDivElement | null>(null);
 
   const canManage = meta?.can_manage ?? false;
   const currency = meta?.currency ?? "";
@@ -72,6 +84,109 @@ export default function PaymentsPage() {
   );
 
   const selectedInvoice = outstanding.find((i) => i.id === invoiceId);
+
+  const studentsWithBalance = React.useMemo(() => {
+    const byId = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        student_code: string | null;
+        class_name: string | null;
+        invoice_count: number;
+        total_due: number;
+      }
+    >();
+    for (const inv of outstanding) {
+      const existing = byId.get(inv.student_id);
+      if (existing) {
+        existing.invoice_count += 1;
+        existing.total_due += inv.balance;
+      } else {
+        byId.set(inv.student_id, {
+          id: inv.student_id,
+          name: inv.student_name || "Unknown student",
+          student_code: inv.student_code ?? null,
+          class_name: inv.class_name ?? null,
+          invoice_count: 1,
+          total_due: inv.balance,
+        });
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
+  }, [outstanding]);
+
+  const studentSuggestions = React.useMemo(() => {
+    const q = studentQuery.trim().toLowerCase();
+    if (!q) return [];
+    return studentsWithBalance
+      .filter((s) => {
+        const hay = [s.name, s.student_code ?? "", s.class_name ?? ""]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 12);
+  }, [studentsWithBalance, studentQuery]);
+
+  const studentInvoices = React.useMemo(() => {
+    if (!studentId) return [];
+    return outstanding.filter((i) => i.student_id === studentId);
+  }, [outstanding, studentId]);
+
+  function studentOptionLabel(s: {
+    name: string;
+    student_code?: string | null;
+    class_name?: string | null;
+  }): string {
+    return [
+      s.name,
+      s.student_code ? `(${s.student_code})` : null,
+      s.class_name ? `— ${s.class_name}` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function pickStudent(s: {
+    id: string;
+    name: string;
+    student_code?: string | null;
+    class_name?: string | null;
+  }) {
+    setStudentId(s.id);
+    setStudentQuery(studentOptionLabel(s));
+    setStudentMenuOpen(false);
+    setInvoiceId("");
+    setAmount("");
+  }
+
+  function clearStudentSelection() {
+    setStudentId("");
+    setStudentQuery("");
+    setInvoiceId("");
+    setAmount("");
+  }
+
+  React.useEffect(() => {
+    if (!open && !onlineOpen) return;
+    function onDocMouseDown(e: MouseEvent) {
+      if (!studentSearchRef.current?.contains(e.target as Node)) {
+        setStudentMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [open, onlineOpen]);
+
+  React.useEffect(() => {
+    if (!studentId) return;
+    if (studentInvoices.length === 1) {
+      setInvoiceId(studentInvoices[0].id);
+    }
+  }, [studentId, studentInvoices]);
 
   const allOnlineSelected =
     openOnline.length > 0 && selectedOnline.length === openOnline.length;
@@ -114,7 +229,15 @@ export default function PaymentsPage() {
     const target = payments.filter((p) => selectedPayments.includes(p.id));
     if (!target.length) return;
     const csv = [
-      ["Payment #", "Student", "Invoice #", "Amount", "Method", "Date", "Reference"].join(","),
+      [
+        "Payment #",
+        "Student",
+        "Invoice #",
+        "Amount",
+        "Method",
+        "Date",
+        "Reference",
+      ].join(","),
       ...target.map((p) =>
         [
           `"${p.payment_number}"`,
@@ -183,7 +306,11 @@ export default function PaymentsPage() {
     setSuccess("");
     setLastReceiptId(null);
     if (!invoiceId || !amount || Number(amount) <= 0) {
-      setError("Select an invoice and enter a positive amount.");
+      setError(
+        !studentId
+          ? "Select a student from the search suggestions."
+          : "Select an invoice and enter a positive amount.",
+      );
       return;
     }
     setBusy(true);
@@ -204,8 +331,7 @@ export default function PaymentsPage() {
       );
       setLastReceiptId(res.data.receipt.id);
       setOpen(false);
-      setInvoiceId("");
-      setAmount("");
+      clearStudentSelection();
       setReference("");
       setUseCredit(false);
       await load();
@@ -304,7 +430,15 @@ export default function PaymentsPage() {
               <SecondaryButton onClick={() => setOnlineOpen(true)}>
                 Online payment
               </SecondaryButton>
-              <PrimaryButton onClick={() => setOpen(true)}>
+              <PrimaryButton
+                onClick={() => {
+                  clearStudentSelection();
+                  setStudentMenuOpen(false);
+                  setReference("");
+                  setUseCredit(false);
+                  setOpen(true);
+                }}
+              >
                 <Icon icon={Add01Icon} size={16} />
                 Record payment
               </PrimaryButton>
@@ -341,7 +475,10 @@ export default function PaymentsPage() {
             ]}
           >
             {openOnline.map((t) => (
-              <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+              <tr
+                key={t.id}
+                className="border-t border-slate-100 hover:bg-slate-50/80"
+              >
                 <td className="px-4 py-3">
                   <input
                     type="checkbox"
@@ -368,21 +505,27 @@ export default function PaymentsPage() {
                         label="Confirm"
                         tone="primary"
                         disabled={busy}
-                        onClick={() => void handleOnlineComplete(t.id, "successful")}
+                        onClick={() =>
+                          void handleOnlineComplete(t.id, "successful")
+                        }
                       />
                       <TableIconButton
                         icon={UnavailableIcon}
                         label="Fail"
                         tone="warning"
                         disabled={busy}
-                        onClick={() => void handleOnlineComplete(t.id, "failed")}
+                        onClick={() =>
+                          void handleOnlineComplete(t.id, "failed")
+                        }
                       />
                       <TableIconButton
                         icon={Cancel01Icon}
                         label="Cancel"
                         tone="danger"
                         disabled={busy}
-                        onClick={() => void handleOnlineComplete(t.id, "cancelled")}
+                        onClick={() =>
+                          void handleOnlineComplete(t.id, "cancelled")
+                        }
                       />
                     </TableActionGroup>
                   ) : null}
@@ -440,7 +583,10 @@ export default function PaymentsPage() {
           <EmptyRow colSpan={8} message="No payments recorded." />
         ) : (
           payments.map((p) => (
-            <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50/80">
+            <tr
+              key={p.id}
+              className="border-t border-slate-100 hover:bg-slate-50/80"
+            >
               <td className="px-4 py-3">
                 <input
                   type="checkbox"
@@ -513,6 +659,82 @@ export default function PaymentsPage() {
           onSubmit={handleRecord}
           className="space-y-3"
         >
+          <FormField label="Student" required>
+            <div ref={studentSearchRef} className="relative">
+              <input
+                type="search"
+                className={fieldClass}
+                value={studentQuery}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setStudentQuery(next);
+                  setStudentMenuOpen(true);
+                  if (studentId) {
+                    const current = studentsWithBalance.find(
+                      (s) => s.id === studentId,
+                    );
+                    if (
+                      !current ||
+                      next.trim() !== studentOptionLabel(current)
+                    ) {
+                      setStudentId("");
+                      setInvoiceId("");
+                      setAmount("");
+                    }
+                  }
+                }}
+                onFocus={() => {
+                  if (studentQuery.trim()) setStudentMenuOpen(true);
+                }}
+                placeholder="Type a student name or ID…"
+                autoComplete="off"
+              />
+              {studentMenuOpen && studentQuery.trim() ? (
+                <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                  {studentSuggestions.length === 0 ? (
+                    <li className="px-3 py-2 text-sm text-slate-500">
+                      No students with outstanding invoices match.
+                    </li>
+                  ) : (
+                    studentSuggestions.map((s) => (
+                      <li key={s.id}>
+                        <button
+                          type="button"
+                          className="w-full cursor-pointer px-3 py-2 text-left text-sm text-slate-800 transition hover:bg-slate-50"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => pickStudent(s)}
+                        >
+                          <span className="font-medium text-slate-900">
+                            {s.name}
+                          </span>
+                          {s.student_code ? (
+                            <span className="text-slate-500">
+                              {" "}
+                              ({s.student_code})
+                            </span>
+                          ) : null}
+                          <span className="block text-xs text-slate-500">
+                            {[
+                              s.class_name,
+                              `${s.invoice_count} invoice${s.invoice_count === 1 ? "" : "s"}`,
+                              formatMoney(s.total_due, currency) + " due",
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              ) : null}
+            </div>
+            {!studentId && studentQuery.trim() ? (
+              <p className="mt-1.5 text-xs text-amber-700">
+                Select a student from the suggestions.
+              </p>
+            ) : null}
+          </FormField>
           <FormField label="Outstanding invoice" required>
             <select
               className={selectClass}
@@ -522,12 +744,19 @@ export default function PaymentsPage() {
                 setAmount("");
               }}
               required
+              disabled={!studentId}
             >
-              <option value="">Select invoice</option>
-              {outstanding.map((inv) => (
+              <option value="">
+                {studentId
+                  ? studentInvoices.length
+                    ? "Select invoice"
+                    : "No outstanding invoices"
+                  : "Select a student first"}
+              </option>
+              {studentInvoices.map((inv) => (
                 <option key={inv.id} value={inv.id}>
-                  {inv.invoice_number} — {inv.student_name} (
-                  {formatMoney(inv.balance, currency)} due)
+                  {inv.invoice_number} ({formatMoney(inv.balance, currency)}{" "}
+                  due)
                 </option>
               ))}
             </select>
