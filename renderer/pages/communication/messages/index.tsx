@@ -26,6 +26,7 @@ import {
   type ThreadMessage,
   type ThreadRow,
 } from "../../../lib/communication-mgmt";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 
 export default function ParentMessagesPage() {
   const [loading, setLoading] = React.useState(true);
@@ -196,7 +197,7 @@ export default function ParentMessagesPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-600">
-                  {new Date(t.last_message_at).toLocaleString()}
+                  {formatDisplayDateTime(t.last_message_at)}
                   {t.last_message_preview ? (
                     <div className="mt-1 line-clamp-1 text-xs text-slate-500">
                       {t.last_message_preview}
@@ -245,7 +246,7 @@ export default function ParentMessagesPage() {
                           status="draft"
                           label={CHANNEL_LABELS[m.channel]}
                         />
-                        {new Date(m.created_at).toLocaleString()}
+                        {formatDisplayDateTime(m.created_at)}
                       </div>
                       <p className="whitespace-pre-wrap">{m.body}</p>
                     </div>

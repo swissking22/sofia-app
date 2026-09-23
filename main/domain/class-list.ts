@@ -1,5 +1,7 @@
 /** Class list CSV + display helpers for print/export. */
 
+import { formatDisplayDate } from './date-format'
+
 export type ClassListRow = {
   student_code: string | null
   name: string
@@ -134,7 +136,7 @@ export function classListCellValue(
     case 'student_code':
       return row.student_code?.trim() || ''
     case 'date_of_birth':
-      return row.date_of_birth?.trim() || ''
+      return formatDisplayDate(row.date_of_birth, '')
     case 'age': {
       const age = ageFromDob(row.date_of_birth, asOf)
       return age == null ? '' : String(age)

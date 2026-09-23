@@ -12,6 +12,7 @@ import {
   type AcademicMeta,
 } from "../../../lib/academic-mgmt";
 import { TableSelectionBar } from "../../../components/students/ui";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 
 const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -254,9 +255,7 @@ export default function ReportCardsIndexPage() {
                     <StatusBadge status={card.status} />
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {card.generated_at
-                      ? new Date(card.generated_at).toLocaleString()
-                      : "—"}
+                    {formatDisplayDateTime(card.generated_at)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <TableActionGroup>

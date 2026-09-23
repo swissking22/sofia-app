@@ -21,6 +21,10 @@ import {
 } from "../../../components/staff/ui";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
+  formatDisplayDate,
+  formatDisplayMonthYear,
+} from "../../../lib/date-format";
+import {
   LEAVE_TYPE_LABELS,
   applyLeave,
   decideLeave,
@@ -95,7 +99,7 @@ function monthRange(d = new Date()) {
   const m = d.getMonth();
   const from = new Date(y, m, 1).toISOString().slice(0, 10);
   const to = new Date(y, m + 1, 0).toISOString().slice(0, 10);
-  return { from, to, label: d.toLocaleString(undefined, { month: "long", year: "numeric" }) };
+  return { from, to, label: formatDisplayMonthYear(d) };
 }
 
 export default function LeaveManagementPage() {
@@ -169,8 +173,8 @@ export default function LeaveManagementPage() {
         [
           `"${r.staff_name}"`,
           `"${LEAVE_TYPE_LABELS[r.leave_type] ?? r.leave_type}"`,
-          `"${r.start_date}"`,
-          `"${r.end_date}"`,
+          `"${formatDisplayDate(r.start_date, "")}"`,
+          `"${formatDisplayDate(r.end_date, "")}"`,
           r.days,
           `"${r.status}"`,
           `"${r.reason || ""}"`,
@@ -472,7 +476,8 @@ export default function LeaveManagementPage() {
                       {LEAVE_TYPE_LABELS[r.leave_type]}
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600">
-                      {r.start_date} → {r.end_date}
+                      {formatDisplayDate(r.start_date)} →{" "}
+                      {formatDisplayDate(r.end_date)}
                     </td>
                     <td className="px-4 py-3 text-slate-600">{r.days}</td>
                     <td className="px-4 py-3">
@@ -645,10 +650,10 @@ export default function LeaveManagementPage() {
                     {LEAVE_TYPE_LABELS[e.leave_type]}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                    {e.start_date}
+                    {formatDisplayDate(e.start_date)}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                    {e.end_date}
+                    {formatDisplayDate(e.end_date)}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{e.days}</td>
                 </tr>

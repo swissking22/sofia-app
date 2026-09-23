@@ -23,6 +23,7 @@ import {
   TableActionGroup,
   TableIconButton,
 } from "../../../components/ui/TableActions";
+import { formatDisplayDate } from "../../../lib/date-format";
 import {
   INVOICE_STATUS_LABELS,
   adjustInvoice,
@@ -118,8 +119,8 @@ export default function BillingPage() {
           `"${inv.student_name}"`,
           `"${inv.student_code || ""}"`,
           `"${inv.class_name || ""}"`,
-          `"${inv.issue_date}"`,
-          `"${inv.due_date || ""}"`,
+          `"${formatDisplayDate(inv.issue_date, "")}"`,
+          `"${formatDisplayDate(inv.due_date, "")}"`,
           inv.net_payable,
           inv.amount_paid,
           inv.balance,
@@ -528,9 +529,11 @@ export default function BillingPage() {
               <td className="px-4 py-3 text-slate-600">
                 {inv.class_name ?? "—"}
               </td>
-              <td className="px-4 py-3 text-slate-600">{inv.issue_date}</td>
               <td className="px-4 py-3 text-slate-600">
-                {inv.due_date ?? "—"}
+                {formatDisplayDate(inv.issue_date)}
+              </td>
+              <td className="px-4 py-3 text-slate-600">
+                {formatDisplayDate(inv.due_date)}
               </td>
               <td className="px-4 py-3">
                 {formatMoney(inv.net_payable, currency)}
@@ -946,7 +949,7 @@ export default function BillingPage() {
               </div>
               <div>
                 <div className="text-xs text-slate-500">Due</div>
-                {detail.due_date ?? "—"}
+                {formatDisplayDate(detail.due_date)}
               </div>
               <div>
                 <div className="text-xs text-slate-500">Credit balance</div>

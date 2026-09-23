@@ -22,6 +22,7 @@ import {
   type CommunicationMeta,
   type DeliveryRow,
 } from "../../../lib/communication-mgmt";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 
 function deliveryStatusKey(status: DeliveryRow["status"]): string {
   if (status === "sent") return "completed";
@@ -150,7 +151,7 @@ export default function SmsNotificationsPage() {
           rows.map((row) => (
             <tr key={row.id} className="border-t border-slate-100">
               <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                {new Date(row.created_at).toLocaleString()}
+                {formatDisplayDateTime(row.created_at)}
               </td>
               <td className="px-4 py-3">
                 <StatusBadge

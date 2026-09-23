@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AppShell } from "../../../components/layout/AppShell";
 import { IdCardModuleNav } from "../../../components/id-cards/ModuleNav";
 import { PageAlert, PrimaryButton, SecondaryButton } from "../../../components/students/ui";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 import { fetchIdCardDashboard, fetchIdCardMeta } from "../../../lib/student-id-cards";
 
 export default function IdCardDashboardPage() {
@@ -69,7 +70,8 @@ export default function IdCardDashboardPage() {
                     {job.job_number} · {job.successful}/{job.total} cards · {job.template_name || "Template"}
                   </p>
                   <p className="text-slate-500">
-                    {job.created_by_email || "Staff"} · {new Date(job.created_at).toLocaleString()}
+                    {job.created_by_email || "Staff"} ·{" "}
+                    {formatDisplayDateTime(job.created_at)}
                   </p>
                 </div>
                 <span className="capitalize text-slate-500">{job.status}</span>

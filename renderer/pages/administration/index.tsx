@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { AppShell } from "../../components/layout/AppShell";
 import { PageAlert } from "../../components/students/ui";
+import { formatDisplayDateTime } from "../../lib/date-format";
 import { fetchAdminOverview } from "../../lib/system-admin";
 
 export default function SystemAdminOverviewPage() {
@@ -55,8 +56,7 @@ export default function SystemAdminOverviewPage() {
 }
 
 function fmt(iso?: string | null) {
-  if (!iso) return "Never";
-  return new Date(iso).toLocaleString();
+  return formatDisplayDateTime(iso, "Never");
 }
 
 function Card({ label, value, href }: { label: string; value: string; href: string }) {

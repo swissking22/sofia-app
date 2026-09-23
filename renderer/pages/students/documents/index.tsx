@@ -15,6 +15,7 @@ import {
 } from "../../../components/students/ui";
 import { Icon } from "../../../components/ui/Icon";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 import {
   DOCUMENT_TYPE_OPTIONS,
   downloadCsv,
@@ -77,7 +78,7 @@ export default function StudentDocumentsPage() {
           `"${d.title}"`,
           `"${d.student_name || ""}"`,
           `"${docTypeLabel(d.document_type)}"`,
-          `"${d.created_at?.slice(0, 10) || ""}"`,
+          `"${formatDisplayDateTime(d.created_at, "")}"`,
           `"${d.file_url || ""}"`,
         ].join(","),
       ),
@@ -178,7 +179,7 @@ export default function StudentDocumentsPage() {
                 {docTypeLabel(d.document_type)}
               </td>
               <td className="px-4 py-3 text-slate-500">
-                {d.created_at?.slice(0, 10) || "—"}
+                {formatDisplayDateTime(d.created_at)}
               </td>
               <td className="px-4 py-3 text-right">
                 {d.file_url ? (

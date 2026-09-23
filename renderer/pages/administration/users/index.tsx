@@ -21,6 +21,7 @@ import {
   TableActionGroup,
   TableIconButton,
 } from "../../../components/ui/TableActions";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 import {
   createAdminUser,
   fetchAdminMeta,
@@ -92,8 +93,8 @@ export default function AdminUsersPage() {
           `"${String(u.email)}"`,
           `"${String(u.role_name || u.role || "")}"`,
           `"${String(u.status)}"`,
-          `"${u.last_login_at ? String(u.last_login_at) : "Never"}"`,
-          `"${String(u.created_at || "")}"`,
+          `"${u.last_login_at ? formatDisplayDateTime(u.last_login_at as string, "") : "Never"}"`,
+          `"${formatDisplayDateTime(u.created_at as string, "")}"`,
         ].join(","),
       ),
     ].join("\n");
@@ -232,11 +233,11 @@ export default function AdminUsersPage() {
               </td>
               <td className="px-4 py-3 text-xs">
                 {u.last_login_at
-                  ? String(u.last_login_at).slice(0, 16)
+                  ? formatDisplayDateTime(u.last_login_at as string)
                   : "Never"}
               </td>
               <td className="px-4 py-3 text-xs">
-                {String(u.created_at).slice(0, 10)}
+                {formatDisplayDateTime(u.created_at as string)}
               </td>
               <td className="px-4 py-3">
                 <TableActionGroup>

@@ -26,6 +26,10 @@ import {
   type StaffDto,
   type StaffMeta,
 } from "../../../lib/staff-mgmt";
+import {
+  formatDisplayDate,
+  SOFIA_DATE_LOCALE,
+} from "../../../lib/date-format";
 
 type TabKey = "daily" | "monthly" | "history";
 
@@ -214,7 +218,7 @@ export default function TeacherAttendancePage() {
   }
 
   const canManage = meta?.can_manage ?? false;
-  const monthName = new Date(year, month - 1).toLocaleString(undefined, {
+  const monthName = new Date(year, month - 1).toLocaleString(SOFIA_DATE_LOCALE, {
     month: "long",
   });
 
@@ -481,7 +485,7 @@ export default function TeacherAttendancePage() {
                   >
                     {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                       <option key={m} value={m}>
-                        {new Date(2000, m - 1).toLocaleString(undefined, {
+                        {new Date(2000, m - 1).toLocaleString(SOFIA_DATE_LOCALE, {
                           month: "long",
                         })}
                       </option>
@@ -612,7 +616,7 @@ export default function TeacherAttendancePage() {
               historyRecords.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-50/80">
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                    {r.date}
+                    {formatDisplayDate(r.date)}
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge

@@ -1,3 +1,4 @@
+import { formatDisplayDateTime } from "../../lib/date-format";
 import {
   formatDisplayDate,
   formatReportScore,
@@ -322,7 +323,7 @@ export function OfficialReportCard({ payload, generatedAt }: Props) {
         {payload.document.footer ? <p>{payload.document.footer}</p> : null}
         {generatedAt ? (
           <p className="rc-generated">
-            Generated {new Date(generatedAt).toLocaleString()} · Template v
+            Generated {formatDisplayDateTime(generatedAt)} · Template v
             {t.version}
           </p>
         ) : null}

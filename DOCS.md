@@ -699,6 +699,8 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 
 **Patterns:** Soft deletes (`deleted_at`), sync fields on every table, repositories enqueue sync, renderer talks to main via `window.ipc.invoke` only (no REST).
 
+**Date display:** Human-facing dates use **Day → Month → Year** (`en-GB`) via `main/domain/date-format.ts` and `renderer/lib/date-format.ts` (`formatDisplayDate`, `formatDisplayDateTime`, etc.). Do not call `toLocaleDateString()` with the system locale in UI. HTML `<input type="date">` and DB storage remain ISO `YYYY-MM-DD`.
+
 **After schema/IPC changes:** restart the Nextron process so migrations and handlers reload.
 
 Key libs for built modules:
@@ -728,6 +730,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | **Display dates** are Day → Month → Year everywhere (e.g. `23 Sept 2026`, `23/09/2026`). Shared helpers: `main/domain/date-format.ts` + `renderer/lib/date-format.ts`. Storage and date inputs stay ISO `YYYY-MM-DD`. |
 | 2026-09-23 | App icons: white background; **macOS .icns / icon.png** use baked corner radius; Windows `.ico` stays square (`npm run icons`). |
 | 2026-09-23 | Dashboard term filter includes **All terms** (full academic year period for fees, trends, and results). |
 | 2026-09-23 | Students list: **Incomplete only** profile filter (missing gender, DOB, or guardian phone). Dashboard Needs Attention links to `/students?incomplete=1` (`students:mgmt-list` + `main/domain/student-profile.ts`). |

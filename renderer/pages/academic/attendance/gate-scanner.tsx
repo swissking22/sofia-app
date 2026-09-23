@@ -10,6 +10,7 @@ import {
   type GateTodaySummaryDto,
 } from "../../../lib/gate-attendance";
 import { playScannerFeedback } from "../../../lib/scanner-feedback";
+import { formatDisplayDateWithWeekday } from "../../../lib/date-format";
 
 type UiPhase = "ready" | "processing" | GateScanOutcome;
 
@@ -23,16 +24,7 @@ function formatClock(d: Date) {
 }
 
 function formatDay(iso: string) {
-  try {
-    return new Date(iso + "T12:00:00").toLocaleDateString(undefined, {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+  return formatDisplayDateWithWeekday(iso, iso);
 }
 
 function outcomeTitle(outcome: GateScanOutcome): string {

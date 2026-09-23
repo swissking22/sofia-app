@@ -11,6 +11,7 @@ import {
   fetchStaff,
   type StaffDto,
 } from "../../../lib/staff-mgmt";
+import { formatDisplayDate } from "../../../lib/date-format";
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -90,7 +91,10 @@ export default function StaffDirectoryDetailPage() {
             <InfoRow label="Full name" value={staff.full_name} />
             <InfoRow label="Gender" value={staff.gender} />
             <InfoRow label="Address" value={staff.address} />
-            <InfoRow label="Joining date" value={staff.joining_date} />
+            <InfoRow
+              label="Joining date"
+              value={formatDisplayDate(staff.joining_date)}
+            />
           </dl>
         </section>
 

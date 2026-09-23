@@ -2,6 +2,8 @@
  * Report card presentation helpers (mirrors main/domain/report-card.ts for the renderer).
  */
 
+import { formatDisplayDate as formatDisplayDateShared } from './date-format'
+
 export type ReportCardBilingualHeader = {
   fr_lines: string[]
   en_lines: string[]
@@ -245,18 +247,7 @@ export function ordinalPosition(n: number | null | undefined): string {
 }
 
 export function formatDisplayDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    const d = new Date(iso.includes('T') ? iso : `${iso}T12:00:00`)
-    if (Number.isNaN(d.getTime())) return iso
-    return d.toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
-  } catch {
-    return iso
-  }
+  return formatDisplayDateShared(iso, '—')
 }
 
 export type ReportCardSetupPreviewInput = {

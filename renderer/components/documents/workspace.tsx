@@ -29,6 +29,7 @@ import {
   selectClass,
 } from "./ui";
 import { TableActionGroup, TableIconButton } from "../ui/TableActions";
+import { formatDisplayDate } from "../../lib/date-format";
 import {
   duplicateDocumentTemplate,
   fetchDocumentTemplates,
@@ -96,8 +97,7 @@ const COPY: Record<
 };
 
 function fmtDate(value?: string | null) {
-  if (!value) return "—";
-  return value.slice(0, 10);
+  return formatDisplayDate(value);
 }
 
 export function DocumentsWorkspace({ family }: { family: DocumentFamily }) {

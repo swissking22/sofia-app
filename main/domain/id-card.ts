@@ -392,16 +392,7 @@ export function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-export function formatDisplayDate(iso: string | null | undefined): string {
-  if (!iso) return ''
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-}
+export { formatDisplayDate } from './date-format'
 
 export function toMm(value: number, unit: LengthUnit): number {
   if (unit === 'cm') return value * 10

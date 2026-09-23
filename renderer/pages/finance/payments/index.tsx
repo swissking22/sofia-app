@@ -26,6 +26,7 @@ import {
   TableActionGroup,
   TableIconButton,
 } from "../../../components/ui/TableActions";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 import {
   PAYMENT_METHOD_LABELS,
   fetchFinanceMeta,
@@ -245,7 +246,7 @@ export default function PaymentsPage() {
           `"${p.invoice_number || ""}"`,
           p.amount,
           `"${PAYMENT_METHOD_LABELS[p.method] ?? p.method}"`,
-          `"${p.paid_at}"`,
+          `"${formatDisplayDateTime(p.paid_at, "")}"`,
           `"${p.reference || ""}"`,
         ].join(","),
       ),
@@ -496,7 +497,9 @@ export default function PaymentsPage() {
                 <td className="px-4 py-3">
                   <StatusBadge status="pending" label={t.status} />
                 </td>
-                <td className="px-4 py-3 text-slate-500">{t.created_at}</td>
+                <td className="px-4 py-3 text-slate-500">
+                  {formatDisplayDateTime(t.created_at)}
+                </td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
                   {canManage ? (
                     <TableActionGroup>
@@ -609,7 +612,9 @@ export default function PaymentsPage() {
               <td className="px-4 py-3 text-slate-600">
                 {PAYMENT_METHOD_LABELS[p.method] ?? p.method}
               </td>
-              <td className="px-4 py-3 text-slate-600">{p.paid_at}</td>
+              <td className="px-4 py-3 text-slate-600">
+                {formatDisplayDateTime(p.paid_at)}
+              </td>
               <td className="px-4 py-3 text-slate-600">{p.reference || "—"}</td>
             </tr>
           ))

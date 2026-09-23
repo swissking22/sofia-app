@@ -20,6 +20,7 @@ import {
 } from "../../../components/students/ui";
 import { Icon } from "../../../components/ui/Icon";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 import { fetchAcademicStructure } from "../../../lib/academic-structure";
 import {
   ADMISSION_STATUS_LABELS,
@@ -76,7 +77,7 @@ export default function AdmissionsIndexPage() {
           r.admission_year ?? "",
           `"${r.guardian_name || ""}"`,
           `"${r.status}"`,
-          `"${r.created_at?.slice(0, 10) || ""}"`,
+          `"${formatDisplayDateTime(r.created_at, "")}"`,
         ].join(","),
       ),
     ].join("\n");
@@ -350,7 +351,7 @@ export default function AdmissionsIndexPage() {
                 />
               </td>
               <td className="px-4 py-3 text-slate-500">
-                {r.created_at?.slice(0, 10) || "—"}
+                {formatDisplayDateTime(r.created_at)}
               </td>
               <td className="px-4 py-3 text-right">
                 {r.status === "pending" ? (

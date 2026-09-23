@@ -85,6 +85,20 @@ describe('class list helpers', () => {
           guardian_phone: null,
           residence_type: 'day',
         },
+        'date_of_birth'
+      )
+    ).toBe('1 Jun 2012')
+    expect(
+      classListCellValue(
+        {
+          student_code: null,
+          name: 'A',
+          gender: null,
+          date_of_birth: '2012-06-01',
+          guardian_name: null,
+          guardian_phone: null,
+          residence_type: 'day',
+        },
         'age',
         new Date('2026-09-21')
       )

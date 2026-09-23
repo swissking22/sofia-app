@@ -21,6 +21,7 @@ import {
   toCsv,
   type ReportFilters,
 } from "../../../lib/reports";
+import { formatDisplayDate } from "../../../lib/date-format";
 
 export default function AttendanceAnalyticsPage() {
   const router = useRouter();
@@ -302,7 +303,7 @@ export default function AttendanceAnalyticsPage() {
             <StudentTable columns={["Date", "Rate"]} loading={false}>
               {(overall.daily ?? []).slice(-14).map((d) => (
                 <tr key={d.date} className="border-t border-slate-100">
-                  <td className="px-4 py-3">{d.date}</td>
+                  <td className="px-4 py-3">{formatDisplayDate(d.date)}</td>
                   <td className="px-4 py-3">{d.rate}%</td>
                 </tr>
               ))}

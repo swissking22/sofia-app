@@ -4,6 +4,7 @@
 
 import { attendanceRate, collectionRate, mean } from './reports'
 import { round2, todayIso } from './finance'
+import { formatDisplayDateDayMonth } from './date-format'
 
 export { isIncompleteStudentProfile } from './student-profile'
 
@@ -379,9 +380,7 @@ export function addDaysIso(date: string, days: number): string {
 }
 
 export function formatShortDate(iso: string): string {
-  const d = new Date(`${iso}T00:00:00`)
-  if (!Number.isFinite(d.getTime())) return iso
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return formatDisplayDateDayMonth(iso, iso)
 }
 
 export function isoWeekKey(isoDate: string): string {

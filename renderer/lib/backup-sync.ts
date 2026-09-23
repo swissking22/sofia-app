@@ -1,5 +1,7 @@
 /** Backup & sync setup types + IPC helpers. */
 
+import { formatDisplayDateTime } from './date-format'
+
 export const BACKUP_FREQUENCY_OPTIONS = [
   { key: 'daily', label: 'Daily' },
   { key: 'weekly', label: 'Weekly' },
@@ -93,10 +95,7 @@ export function formatSyncTime(iso: string | null): string {
   try {
     const d = new Date(iso)
     if (Number.isNaN(d.getTime())) return 'Never'
-    return d.toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
+    return formatDisplayDateTime(d, 'Never')
   } catch {
     return 'Never'
   }

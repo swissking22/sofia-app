@@ -24,6 +24,10 @@ import {
   type NoticePriority,
   type NoticeRow,
 } from "../../../lib/communication-mgmt";
+import {
+  formatDisplayDate,
+  formatDisplayDateTime,
+} from "../../../lib/date-format";
 
 export default function InternalNoticesPage() {
   const [loading, setLoading] = React.useState(true);
@@ -152,12 +156,10 @@ export default function InternalNoticesPage() {
               </td>
               <td className="px-4 py-3">{row.recipient_count}</td>
               <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                {row.sent_at ? new Date(row.sent_at).toLocaleString() : "—"}
+                {formatDisplayDateTime(row.sent_at)}
               </td>
               <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                {row.expires_at
-                  ? new Date(row.expires_at).toLocaleDateString()
-                  : "—"}
+                {formatDisplayDate(row.expires_at)}
               </td>
             </tr>
           ))

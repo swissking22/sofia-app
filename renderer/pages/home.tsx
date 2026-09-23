@@ -24,6 +24,7 @@ import {
   type DashboardDistributionMode,
   type DashboardSummary,
 } from "../lib/dashboard";
+import { formatDisplayDateWithWeekday, SOFIA_DATE_LOCALE } from "../lib/date-format";
 
 const selectClass =
   "cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -36,21 +37,12 @@ const chipClass = (active: boolean) =>
   }`;
 
 function formatDay(iso: string): string {
-  try {
-    return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+  return formatDisplayDateWithWeekday(iso, iso);
 }
 
 function formatTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleTimeString(undefined, {
+    return new Date(iso).toLocaleTimeString(SOFIA_DATE_LOCALE, {
       hour: "2-digit",
       minute: "2-digit",
     });

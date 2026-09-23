@@ -19,6 +19,7 @@ import {
   TableActionGroup,
   TableIconButton,
 } from "../../../components/ui/TableActions";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 import {
   PAYMENT_METHOD_LABELS,
   fetchFinanceMeta,
@@ -97,7 +98,7 @@ export default function ReceiptsPage() {
           r.amount,
           `"${r.method ? (PAYMENT_METHOD_LABELS[r.method] ?? r.method) : ""}"`,
           r.balance_remaining,
-          `"${r.issued_at}"`,
+          `"${formatDisplayDateTime(r.issued_at, "")}"`,
           r.reprint_count,
         ].join(","),
       ),
@@ -220,7 +221,9 @@ export default function ReceiptsPage() {
               <td className="px-4 py-3">
                 {formatMoney(r.balance_remaining, currency)}
               </td>
-              <td className="px-4 py-3 text-slate-600">{r.issued_at}</td>
+              <td className="px-4 py-3 text-slate-600">
+                {formatDisplayDateTime(r.issued_at)}
+              </td>
               <td className="px-4 py-3 text-slate-600">{r.reprint_count}</td>
               <td className="px-4 py-3">
                 <TableActionGroup>
@@ -314,7 +317,7 @@ export default function ReceiptsPage() {
               </div>
               <div>
                 <dt className="text-xs text-slate-500">Date</dt>
-                <dd>{preview.receipt.issued_at}</dd>
+                <dd>{formatDisplayDateTime(preview.receipt.issued_at)}</dd>
               </div>
               <div>
                 <dt className="text-xs text-slate-500">Student</dt>

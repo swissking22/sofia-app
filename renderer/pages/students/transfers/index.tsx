@@ -14,6 +14,7 @@ import {
   selectClass,
 } from "../../../components/students/ui";
 import { Icon } from "../../../components/ui/Icon";
+import { formatDisplayDate } from "../../../lib/date-format";
 import { downloadCsv, fetchTransfers, type TransferDto } from "../../../lib/student-mgmt";
 
 type StatusFilter = "all" | string;
@@ -77,7 +78,7 @@ export default function TransfersIndexPage() {
           `"${r.student_name || ""}"`,
           `"${r.student_code || ""}"`,
           `"${r.to_school_name}"`,
-          `"${r.transfer_date}"`,
+          `"${formatDisplayDate(r.transfer_date, "")}"`,
           `"${r.status}"`,
           `"${r.reason || ""}"`,
         ].join(","),
@@ -187,7 +188,9 @@ export default function TransfersIndexPage() {
                 {r.student_code || "—"}
               </td>
               <td className="px-4 py-3 text-slate-700">{r.to_school_name}</td>
-              <td className="px-4 py-3 text-slate-600">{r.transfer_date}</td>
+              <td className="px-4 py-3 text-slate-600">
+                {formatDisplayDate(r.transfer_date)}
+              </td>
               <td className="px-4 py-3">
                 <StatusBadge status={r.status} />
               </td>

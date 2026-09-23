@@ -16,6 +16,7 @@ import {
   selectClass,
 } from "../../../components/communication/ui";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 import {
   AUDIENCE_LABELS,
   CHANNEL_LABELS,
@@ -218,7 +219,7 @@ export default function AnnouncementsPage() {
               </td>
               <td className="px-4 py-3">{row.recipient_count || "—"}</td>
               <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                {new Date(row.created_at).toLocaleDateString()}
+                {formatDisplayDateTime(row.created_at)}
               </td>
               {canManage ? (
                 <td className="px-4 py-3 text-right">
@@ -242,7 +243,7 @@ export default function AnnouncementsPage() {
                   ) : (
                     <span className="text-xs text-slate-400">
                       {row.sent_at
-                        ? new Date(row.sent_at).toLocaleString()
+                        ? formatDisplayDateTime(row.sent_at)
                         : ""}
                     </span>
                   )}

@@ -43,6 +43,10 @@ import {
 } from "../../lib/student-mgmt";
 import { CAMEROON_PHONE_HINT, normalizeCameroonPhone } from "../../lib/phone";
 import {
+  formatDisplayDate,
+  formatDisplayDateTime,
+} from "../../lib/date-format";
+import {
   INVOICE_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
   fetchFinanceMeta,
@@ -402,7 +406,10 @@ export default function StudentDetailPage() {
             <dl>
               <InfoRow label="Student ID" value={student.student_code} />
               <InfoRow label="Gender" value={student.gender} />
-              <InfoRow label="Date of birth" value={student.date_of_birth} />
+              <InfoRow
+                label="Date of birth"
+                value={formatDisplayDate(student.date_of_birth)}
+              />
               <InfoRow label="Place of birth" value={student.place_of_birth} />
               <InfoRow label="Phone" value={student.phone} />
               <InfoRow label="Email" value={student.email} />
@@ -492,7 +499,7 @@ export default function StudentDetailPage() {
                       {t.to_school_name}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      {t.transfer_date?.slice(0, 10) || "—"}
+                      {formatDisplayDate(t.transfer_date)}
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={t.status} />
@@ -542,7 +549,7 @@ export default function StudentDetailPage() {
                     {docTypeLabel(d.document_type)}
                   </td>
                   <td className="px-4 py-3 text-slate-500">
-                    {d.created_at?.slice(0, 10) || "—"}
+                    {formatDisplayDateTime(d.created_at)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {d.file_url ? (
@@ -609,10 +616,10 @@ export default function StudentDetailPage() {
                       {inv.invoice_number}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      {inv.issue_date}
+                      {formatDisplayDate(inv.issue_date)}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      {inv.due_date ?? "—"}
+                      {formatDisplayDate(inv.due_date)}
                     </td>
                     <td className="px-4 py-3">
                       {formatMoney(inv.net_payable, currency)}
@@ -647,7 +654,9 @@ export default function StudentDetailPage() {
                     <td className="px-4 py-3 font-medium text-slate-900">
                       {p.payment_number}
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{p.paid_at}</td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {formatDisplayDateTime(p.paid_at)}
+                    </td>
                     <td className="px-4 py-3 font-medium">
                       {formatMoney(p.amount, currency)}
                     </td>

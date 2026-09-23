@@ -32,6 +32,7 @@ import {
   useIdCardTemplate,
   type CardDesign,
 } from "../../../../lib/student-id-cards";
+import { formatDisplayDateTime } from "../../../../lib/date-format";
 
 type TemplateItem = {
   id: string;
@@ -489,7 +490,7 @@ export default function IdCardTemplatesPage() {
                       {t.updated_by_email
                         ? ` · by ${t.updated_by_email}`
                         : ""}{" "}
-                      · Updated {new Date(t.updated_at).toLocaleDateString()}
+                      · Updated {formatDisplayDateTime(t.updated_at)}
                     </p>
                   </div>
                 </div>

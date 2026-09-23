@@ -34,6 +34,10 @@ import {
   type BankDepositRow,
 } from "../../../lib/finance-ext";
 import {
+  formatDisplayDate,
+  formatDisplayDateTime,
+} from "../../../lib/date-format";
+import {
   fetchFinanceMeta,
   formatMoney,
   type FinanceMeta,
@@ -105,7 +109,7 @@ export default function BankDepositsPage() {
           r.amount,
           `"${r.bank_name}"`,
           `"${r.bank_account || ""}"`,
-          `"${r.deposit_date}"`,
+          `"${formatDisplayDate(r.deposit_date, "")}"`,
           `"${r.deposited_by || ""}"`,
           `"${r.status}"`,
           r.reconciled,
@@ -332,7 +336,9 @@ export default function BankDepositsPage() {
                 {r.bank_name}
                 {r.bank_account ? ` · ${r.bank_account}` : ""}
               </td>
-              <td className="px-4 py-3 text-slate-600">{r.deposit_date}</td>
+              <td className="px-4 py-3 text-slate-600">
+                {formatDisplayDate(r.deposit_date)}
+              </td>
               <td className="px-4 py-3 text-slate-600">
                 {r.deposited_by || "—"}
               </td>
@@ -578,7 +584,8 @@ export default function BankDepositsPage() {
                   />
                   <span className="font-medium">{p.payment_number}</span>
                   <span className="text-slate-500">
-                    {p.student_name || "—"} · {p.paid_at}
+                    {p.student_name || "—"} ·{" "}
+                    {formatDisplayDateTime(p.paid_at)}
                   </span>
                   <span className="ml-auto font-medium">
                     {formatMoney(p.amount, currency)}

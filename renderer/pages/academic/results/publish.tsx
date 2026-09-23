@@ -9,6 +9,7 @@ import {
   publishResults,
   type AcademicMeta,
 } from "../../../lib/academic-mgmt";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 
 const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -233,7 +234,7 @@ export default function ResultsPublishPage() {
                   </span>
                   {run.computed_at ? (
                     <span className="text-slate-500">
-                      Computed {new Date(run.computed_at).toLocaleString()}
+                      Computed {formatDisplayDateTime(run.computed_at)}
                     </span>
                   ) : null}
                 </>

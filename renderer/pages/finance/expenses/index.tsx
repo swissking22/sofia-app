@@ -16,6 +16,7 @@ import {
   selectClass,
 } from "../../../components/finance/ui";
 import { Icon } from "../../../components/ui/Icon";
+import { formatDisplayDate } from "../../../lib/date-format";
 import {
   EXPENSE_CATEGORIES,
   EXPENSE_CATEGORY_LABELS,
@@ -71,7 +72,7 @@ export default function ExpensesPage() {
       ...target.map((r) =>
         [
           `"${r.expense_number}"`,
-          `"${r.expense_date}"`,
+          `"${formatDisplayDate(r.expense_date, "")}"`,
           `"${EXPENSE_CATEGORY_LABELS[r.category] ?? r.category}"`,
           r.amount,
           `"${r.vendor || ""}"`,
@@ -239,7 +240,9 @@ export default function ExpensesPage() {
               <td className="px-4 py-3 font-medium text-slate-900">
                 {r.expense_number}
               </td>
-              <td className="px-4 py-3 text-slate-600">{r.expense_date}</td>
+              <td className="px-4 py-3 text-slate-600">
+                {formatDisplayDate(r.expense_date)}
+              </td>
               <td className="px-4 py-3 text-slate-700">
                 {EXPENSE_CATEGORY_LABELS[r.category] ?? r.category}
               </td>

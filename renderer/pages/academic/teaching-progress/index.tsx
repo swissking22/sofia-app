@@ -23,6 +23,7 @@ import {
   fetchTeachingMeta,
   recordTeachingLog,
 } from "../../../lib/teaching-progress";
+import { formatDisplayDate } from "../../../lib/date-format";
 
 type TopicDraft = { title: string; objectives: string; subtopics: string };
 
@@ -93,7 +94,7 @@ export default function TeachingProgressPage() {
       ["Date", "Class", "Subject", "Topic", "Status", "Teacher"].join(","),
       ...target.map((l) =>
         [
-          `"${l.lesson_date}"`,
+          `"${formatDisplayDate(l.lesson_date, "")}"`,
           `"${l.class_name || ""}"`,
           `"${l.subject_name || ""}"`,
           `"${l.topic_title || ""}"`,
@@ -532,7 +533,9 @@ export default function TeachingProgressPage() {
                       onChange={() => toggleLog(l.id)}
                     />
                   </td>
-                  <td className="px-4 py-3">{l.lesson_date}</td>
+                  <td className="px-4 py-3">
+                    {formatDisplayDate(l.lesson_date)}
+                  </td>
                   <td className="px-4 py-3">{l.class_name || "—"}</td>
                   <td className="px-4 py-3">{l.subject_name || "—"}</td>
                   <td className="px-4 py-3">{l.topic_title || "—"}</td>

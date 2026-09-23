@@ -7,6 +7,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from "../../../components/finance/ui";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 import {
   PAYMENT_METHOD_LABELS,
   fetchFinanceMeta,
@@ -123,7 +124,9 @@ export default function ReceiptPrintPage() {
               <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">
                 Date
               </dt>
-              <dd className="mt-1 text-slate-800">{data.receipt.issued_at}</dd>
+              <dd className="mt-1 text-slate-800">
+                {formatDisplayDateTime(data.receipt.issued_at)}
+              </dd>
             </div>
             <div>
               <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">

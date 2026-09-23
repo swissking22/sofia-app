@@ -2,6 +2,7 @@ import React from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { IdCardModuleNav } from "../../../components/id-cards/ModuleNav";
 import { PageAlert, TableSelectionBar } from "../../../components/students/ui";
+import { formatDisplayDateTime } from "../../../lib/date-format";
 import { fetchIdCardPrintHistory } from "../../../lib/student-id-cards";
 
 export default function PrintHistoryPage() {
@@ -41,7 +42,7 @@ export default function PrintHistoryPage() {
       ["Date", "Cards", "Paper", "By"].join(","),
       ...target.map((r) =>
         [
-          `"${new Date(r.printed_at).toLocaleString()}"`,
+          `"${formatDisplayDateTime(r.printed_at, "")}"`,
           r.card_count,
           `"${r.paper_size}"`,
           `"${r.printed_by_email || ""}"`,
@@ -100,7 +101,7 @@ export default function PrintHistoryPage() {
                   />
                 </td>
                 <td className="px-4 py-2">
-                  {new Date(r.printed_at).toLocaleString()}
+                  {formatDisplayDateTime(r.printed_at)}
                 </td>
                 <td className="px-4 py-2">{r.card_count}</td>
                 <td className="px-4 py-2">{r.paper_size}</td>

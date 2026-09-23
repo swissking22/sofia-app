@@ -13,20 +13,13 @@ import {
 } from "../../../lib/academic-mgmt";
 import { TableSelectionBar } from "../../../components/students/ui";
 
+import { formatDisplayDateWithWeekday } from "../../../lib/date-format";
+
 const selectClass =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
 
 function formatDate(iso: string) {
-  try {
-    return new Date(iso + "T12:00:00").toLocaleDateString(undefined, {
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return iso;
-  }
+  return formatDisplayDateWithWeekday(iso, iso);
 }
 
 export default function AttendanceIndexPage() {

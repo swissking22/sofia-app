@@ -9,6 +9,7 @@ import {
   type ExamPaperDto,
 } from "../../../lib/academic-mgmt";
 import { handleScoreGridKeyDown } from "../../../lib/score-entry";
+import { formatDisplayDate } from "../../../lib/date-format";
 import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 import { TableSelectionBar } from "../../../components/students/ui";
 
@@ -256,12 +257,7 @@ export default function ExamScoresPage() {
           {selectedPaper.exam_date ? (
             <>
               {" "}
-              · Exam date:{" "}
-              {new Date(selectedPaper.exam_date).toLocaleDateString(undefined, {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })}
+              · Exam date: {formatDisplayDate(selectedPaper.exam_date)}
             </>
           ) : null}
         </p>

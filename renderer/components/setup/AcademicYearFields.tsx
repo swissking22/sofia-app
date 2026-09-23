@@ -1,6 +1,7 @@
 import { Delete02Icon } from "@hugeicons/core-free-icons";
 import { Icon } from "../ui/Icon";
 import type { CalendarEventType } from "../../lib/academic-year";
+import { formatDisplayDate } from "../../lib/date-format";
 
 interface DateFieldProps {
   label: string;
@@ -187,14 +188,7 @@ function parseDate(value: string): number | null {
 }
 
 function formatShort(value: string): string {
-  if (!value) return "—";
-  const d = new Date(value + "T00:00:00");
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  return formatDisplayDate(value, value || "—");
 }
 
 const TONE_CLASS: Record<TimelineItem["tone"], string> = {

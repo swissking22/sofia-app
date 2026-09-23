@@ -25,6 +25,7 @@ import {
   replaceIdCard,
   setIdCardStatus,
 } from "../../../lib/student-id-cards";
+import { formatDisplayDate } from "../../../lib/date-format";
 
 export default function IssuedCardsPage() {
   const router = useRouter();
@@ -226,8 +227,8 @@ export default function IssuedCardsPage() {
               <td className="px-4 py-3">
                 <StatusBadge status={c.effective_status} />
               </td>
-              <td className="px-4 py-3">{c.issue_date}</td>
-              <td className="px-4 py-3">{c.expiry_date}</td>
+              <td className="px-4 py-3">{formatDisplayDate(c.issue_date)}</td>
+              <td className="px-4 py-3">{formatDisplayDate(c.expiry_date)}</td>
               <td className="px-4 py-3 text-right">
                 <TableActionGroup>
                   {meta?.can_issue ? (
