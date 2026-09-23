@@ -73,6 +73,8 @@ On Intel Macs open `SOFIA-1.0.0.dmg` (not `*-arm64*`). On Apple Silicon open the
 
 GitHub Actions workflow: `.github/workflows/build-windows.yml` (`workflow_dispatch` or tag `v*`).
 
+**Release tags must match `package.json` version.** electron-builder publishes GitHub Releases as `v{version}` from `package.json` (e.g. `1.0.1` → tag/release `v1.0.1`). Pushing `v1.0.1` while `package.json` still says `1.0.0` fails with *Published releases must have a valid tag*.
+
 #### Windows Authenticode code signing
 
 electron-builder signs the `.exe` / NSIS installer when these **repository secrets** are set (Settings → Secrets and variables → Actions):
@@ -729,6 +731,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Bumped app version to **1.0.1** so tagged Windows publishes match `package.json` (electron-builder release tag). Docs note: git tag `vX.Y.Z` must equal `package.json` version. |
 | 2026-09-23 | Windows CI: tagged `v*` builds no longer fail when `WINDOWS_CSC_*` secrets are missing — they build/publish **unsigned** with a warning (same as manual runs). |
 | 2026-09-23 | **Display dates** are Day → Month → Year everywhere (e.g. `23 Sept 2026`, `23/09/2026`). Shared helpers: `main/domain/date-format.ts` + `renderer/lib/date-format.ts`. Storage and date inputs stay ISO `YYYY-MM-DD`. |
 | 2026-09-23 | App icons: white background; **macOS .icns / icon.png** use baked corner radius; Windows `.ico` stays square (`npm run icons`). |
