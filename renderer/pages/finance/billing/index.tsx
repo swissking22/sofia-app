@@ -1007,7 +1007,6 @@ export default function BillingPage() {
             {canManage && detail.status === "pending" ? (
               <div className="border-t border-slate-100 pt-3">
                 <SecondaryButton
-                  type="button"
                   className="text-red-700"
                   disabled={busy}
                   onClick={() => setDeleteIds([detail.id])}

@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3'
 import { enqueueSync } from '../../sync/queue'
 import { DEFAULT_STUDENT_ID_PATTERN } from '../../helpers/student-id'
 import { generateStudentCode } from '../../services/student-id'
+import { INCOMPLETE_PROFILE_SQL } from '../../domain/student-profile'
 import type { Student, StudentIdSettings } from '../types'
 import { BaseRepository, type UpdateInput } from './base'
 
@@ -44,6 +45,8 @@ export interface StudentListFilters {
   sectionId?: string | null
   classId?: string | null
   search?: string | null
+  /** Missing gender, date of birth, or guardian phone. */
+  incompleteProfiles?: boolean
 }
 
 export class StudentRepository extends BaseRepository<Student> {
@@ -114,6 +117,9 @@ export class StudentRepository extends BaseRepository<Student> {
         `(s.name LIKE @search OR IFNULL(s.student_code, '') LIKE @search)`
       )
       params.search = `%${filters.search.trim()}%`
+    }
+    if (filters.incompleteProfiles) {
+      clauses.push(INCOMPLETE_PROFILE_SQL)
     }
 
     return this.db

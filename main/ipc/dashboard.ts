@@ -1,9 +1,18 @@
 import { ipcMain } from 'electron'
 import type Database from 'better-sqlite3'
+import { getSession, type SessionData } from '../auth'
 import type { Repositories } from '../db/repositories'
-import type { Class } from '../db/types'
+import {
+  buildDashboardSummary,
+  type DashboardSummary,
+  type DashboardSummaryInput,
+} from '../services/dashboard.service'
 import { getDashboardSetupProgress, type SetupProgress } from './setup-progress'
+import type { Class } from '../db/types'
 
+type Result<T> = { ok: true; data: T } | { ok: false; error: string }
+
+/** @deprecated Prefer dashboard:summary — kept for older callers. */
 export interface DashboardStats {
   totalStudents: number
   activeStudents: number
@@ -18,13 +27,11 @@ export interface DashboardStats {
   setupProgress: SetupProgress
 }
 
-/** Roll up all sections/specializations/classrooms under one academic level. */
 function enrollmentLevelLabel(
   classRow: Class,
   levelName: string | undefined
 ): string {
   if (levelName?.trim()) return levelName.trim()
-  // Legacy rows: strip stream / classroom suffixes when possible
   const stripped = classRow.name
     .replace(/\s+[A-Za-z]$/, '')
     .replace(/\s+(General|Commercial|Technical)\b.*$/i, '')
@@ -84,6 +91,10 @@ function buildEnrollmentByLevel(
     .map(({ label, value }) => ({ label, value }))
 }
 
+function requireSession(): SessionData | null {
+  return getSession()
+}
+
 /**
  * Aggregate local counts for the dashboard overview.
  * No external APIs — all data from SQLite.
@@ -92,6 +103,32 @@ export function registerDashboardIpc(
   db: Database.Database,
   repos: Repositories
 ): void {
+  ipcMain.handle(
+    'dashboard:summary',
+    (
+      _e,
+      input?: DashboardSummaryInput
+    ): Result<DashboardSummary> => {
+      const session = requireSession()
+      if (!session) return { ok: false, error: 'Not signed in.' }
+      try {
+        return {
+          ok: true,
+          data: buildDashboardSummary(db, repos, session, input ?? {}),
+        }
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Could not load dashboard summary.',
+        }
+      }
+    }
+  )
+
+  /** Legacy compact stats — still used by older UI paths. */
   ipcMain.handle('dashboard:stats', (): DashboardStats => {
     const students = repos.students.findAll()
     const classes = repos.classes.findAll()

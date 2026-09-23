@@ -132,7 +132,11 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 
 | Path | Purpose |
 |------|---------|
-| `/home` | Overview KPIs and charts (e.g. enrollment by academic level) |
+| `/home` | School command center: greeting + year/term filters (**All terms** covers the full academic year); KPI cards (students, today’s attendance, fees collected/outstanding); attendance & fee collection **line charts**; student distribution & academic performance **horizontal bar charts**; optional department **donut** (few streams only); Needs Attention list; Recent Activity from audit logs. |
+
+**Data:** Aggregated locally via `dashboard:summary` (`main/services/dashboard.service.ts` + `main/domain/dashboard.ts`). Charts use **recharts**. Teachers see enrollment/attendance/academic (scoped to assigned classes when linked); finance KPIs/trends are admin/secretary only. Empty states are used when attendance/results/fees are missing — never fake 0%.
+
+**Setup checklist:** Unfinished setup steps still appear in the right rail until complete.
 
 ---
 
@@ -157,7 +161,7 @@ Consistent UI across all student routes: filters at top, clean tables, status ba
 
 ### Students list — `/students`
 
-- **Filters:** admission year, level, department (section), **class**, search (name / student ID).
+- **Filters:** admission year, level, department (section), **class**, search (name / student ID), and **Profile** (All / Incomplete only). Incomplete means missing gender, date of birth, or guardian phone. Dashboard **Needs Attention** links to `/students?incomplete=1`.
 - **Actions:** Add student, **Import** (opens Setup → Students CSV importer), bulk actions (mark alumni / delete).
 - **Class list:** **Export class list** (CSV) and **Print class list** are available for the current filter. With **All classes**, print opens `/students/class-lists?class_id=all` (one page per class).
 - Click a name to open the student profile.
@@ -704,6 +708,7 @@ Key libs for built modules:
 - Class order: `main/domain/class-order.ts` — level `sort_order`, then General → Commercial → Technical; applied in `ClassRepository.findStructureClasses` / `findBySchool` and section lists
 - Staff: `renderer/lib/staff-mgmt.ts` → `main/ipc/staff-mgmt.ts`
 - Finance: `renderer/lib/finance-mgmt.ts` → `main/ipc/finance-mgmt.ts`; extensions `renderer/lib/finance-ext.ts` → `main/ipc/finance-ext.ts`; fee package scope (residence / department / level / class) in `main/domain/fee-structure-scope.ts`
+- Dashboard: `renderer/lib/dashboard.ts` → `dashboard:summary` (`main/ipc/dashboard.ts` → `main/services/dashboard.service.ts` + `main/domain/dashboard.ts`); charts via **recharts**
 - Communication: `renderer/lib/communication-mgmt.ts` → `main/ipc/communication-mgmt.ts` (setup: `communication.ts`)
 - Academic: `renderer/lib/academic-mgmt.ts` → `main/ipc/academic-mgmt.ts`; teaching progress `renderer/lib/teaching-progress.ts` → `main/ipc/teaching-progress.ts`
 - Gate Scanner: `renderer/lib/gate-attendance.ts` → `main/ipc/gate-attendance.ts` (`gate-attendance:scan`, `gate-attendance:today-summary`); service `main/services/gate-attendance.ts`; table `gate_attendance`; feedback `renderer/lib/scanner-feedback.ts`
@@ -723,6 +728,9 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Dashboard term filter includes **All terms** (full academic year period for fees, trends, and results). |
+| 2026-09-23 | Students list: **Incomplete only** profile filter (missing gender, DOB, or guardian phone). Dashboard Needs Attention links to `/students?incomplete=1` (`students:mgmt-list` + `main/domain/student-profile.ts`). |
+| 2026-09-23 | Redesigned **Dashboard** (`/home`): real SQLite KPIs (students, today’s attendance, fees collected/outstanding), attendance & fee **line charts**, student distribution & academic performance **bar charts**, optional department donut, Needs Attention + Recent Activity. Aggregation via `dashboard:summary`; charts via **recharts**. |
 | 2026-09-23 | Student billing: managers can **delete pending invoices** (row, detail, or bulk selected). Soft-delete via `finance-mgmt:invoices-delete`; refused if paid, partially paid, overdue, or linked payments/online requests/carried arrears. |
 | 2026-09-22 | Payments **Record payment**: student picker is a typeahead search (name/ID) among students with outstanding invoices; invoice list is filtered to that student (auto-selected when only one). |
 | 2026-09-22 | Student billing **Generate invoice**: student picker is a typeahead search (name/ID) with suggestion dropdown; selecting a student still auto-selects their class fee structure. |

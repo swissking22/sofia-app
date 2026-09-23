@@ -1,17 +1,52 @@
 import React from "react";
+import Link from "next/link";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
 
 interface ChartCardProps {
   title: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  href?: string;
+  summary?: string;
 }
 
 /** White chart panel used on the dashboard overview. */
-export function ChartCard({ title, children, action }: ChartCardProps) {
+export function ChartCard({
+  title,
+  children,
+  action,
+  href,
+  summary,
+}: ChartCardProps) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm animate-[fadeInUp_0.5s_ease-out]">
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+        <div className="min-w-0">
+          {href ? (
+            <Link
+              href={href}
+              className="text-base font-semibold text-slate-900 hover:text-(--sofia-primary)"
+            >
+              {title}
+            </Link>
+          ) : (
+            <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+          )}
+          {summary ? <p className="sr-only">{summary}</p> : null}
+        </div>
         {action}
       </div>
       {children}
@@ -19,61 +54,214 @@ export function ChartCard({ title, children, action }: ChartCardProps) {
   );
 }
 
-/** Simple empty-state chart placeholder until modules have data. */
 export function ChartEmpty({ message }: { message: string }) {
   return (
-    <div className="flex h-52 flex-col items-center justify-center rounded-xl bg-slate-50 text-center">
-      <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-100">
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden>
-          <rect x="4" y="14" width="4" height="10" rx="1" fill="#93c5fd" />
-          <rect x="12" y="8" width="4" height="16" rx="1" fill="#3b82f6" />
-          <rect x="20" y="11" width="4" height="13" rx="1" fill="#1e40af" />
-        </svg>
-      </div>
-      <p className="max-w-55 text-sm text-slate-500">{message}</p>
+    <div className="flex h-52 flex-col items-center justify-center rounded-xl bg-slate-50 text-center px-4">
+      <p className="max-w-xs text-sm text-slate-500">{message}</p>
     </div>
   );
 }
 
-/** Mini bar chart from academic level → student count. */
+export function ChartSkeleton({ height = 208 }: { height?: number }) {
+  return (
+    <div
+      className="animate-pulse rounded-xl bg-slate-100"
+      style={{ height }}
+      aria-hidden
+    />
+  );
+}
+
+const TOOLTIP_STYLE = {
+  backgroundColor: "#fff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 12,
+  fontSize: 12,
+  boxShadow: "0 4px 12px rgba(15,23,42,0.06)",
+};
+
+const AXIS_TICK = { fill: "#94a3b8", fontSize: 11 };
+const GRID = "#f1f5f9";
+const PRIMARY = "var(--sofia-primary, #4f46e5)";
+const DONUT_COLORS = ["#4f46e5", "#0d9488", "#f59e0b", "#6366f1", "#14b8a6"];
+
+export function SofiaLineChart({
+  data,
+  valueSuffix = "",
+  valueFormatter,
+}: {
+  data: Array<{ label: string; value: number }>;
+  valueSuffix?: string;
+  valueFormatter?: (n: number) => string;
+}) {
+  if (!data.length) return <ChartEmpty message="Not enough data" />;
+  const fmt = valueFormatter ?? ((n: number) => `${n}${valueSuffix}`);
+  return (
+    <div className="h-52 w-full" role="img" aria-label="Line chart">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={data}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+        >
+          <CartesianGrid stroke={GRID} vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+            width={44}
+            tickFormatter={(v) => fmt(Number(v))}
+          />
+          <Tooltip
+            contentStyle={TOOLTIP_STYLE}
+            formatter={(value) => [fmt(Number(value)), ""]}
+          />
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke={PRIMARY}
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4 }}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function SofiaHorizontalBarChart({
+  data,
+  valueFormatter,
+  onBarClick,
+}: {
+  data: Array<{ id: string; label: string; value: number; href?: string | null }>;
+  valueFormatter?: (n: number) => string;
+  onBarClick?: (id: string, href?: string | null) => void;
+}) {
+  if (!data.length) return <ChartEmpty message="No data available." />;
+  const fmt = valueFormatter ?? ((n: number) => String(n));
+  const chartData = data.map((d) => ({
+    ...d,
+    short: d.label.length > 14 ? `${d.label.slice(0, 12)}…` : d.label,
+  }));
+  return (
+    <div className="h-56 w-full" role="img" aria-label="Bar chart">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          layout="vertical"
+          data={chartData}
+          margin={{ top: 4, right: 24, left: 8, bottom: 4 }}
+        >
+          <CartesianGrid stroke={GRID} horizontal={false} />
+          <XAxis type="number" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+          <YAxis
+            type="category"
+            dataKey="short"
+            width={88}
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+          />
+          <Tooltip
+            contentStyle={TOOLTIP_STYLE}
+            formatter={(value) => [fmt(Number(value)), ""]}
+            labelFormatter={(_, payload) => {
+              const item = payload?.[0]?.payload as { label?: string } | undefined;
+              return item?.label ?? "";
+            }}
+          />
+          <Bar
+            dataKey="value"
+            fill={PRIMARY}
+            radius={[0, 6, 6, 0]}
+            barSize={14}
+            isAnimationActive={false}
+            cursor={onBarClick ? "pointer" : undefined}
+            onClick={(entry) => {
+              const row = entry as unknown as {
+                id?: string;
+                href?: string | null;
+              };
+              if (row?.id && onBarClick) onBarClick(row.id, row.href);
+            }}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function SofiaDonutChart({
+  data,
+  totalLabel,
+}: {
+  data: Array<{ id: string; label: string; value: number }>;
+  totalLabel: string;
+}) {
+  if (!data.length) return <ChartEmpty message="No composition data." />;
+  const total = data.reduce((s, d) => s + d.value, 0);
+  return (
+    <div className="relative h-52 w-full" role="img" aria-label="Donut chart">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="label"
+            innerRadius="58%"
+            outerRadius="80%"
+            paddingAngle={2}
+            isAnimationActive={false}
+          >
+            {data.map((entry, i) => (
+              <Cell
+                key={entry.id}
+                fill={DONUT_COLORS[i % DONUT_COLORS.length]}
+              />
+            ))}
+          </Pie>
+          <Tooltip contentStyle={TOOLTIP_STYLE} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+        <p className="text-2xl font-bold text-slate-900">{total}</p>
+        <p className="text-xs text-slate-500">{totalLabel}</p>
+      </div>
+      <ul className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-slate-600">
+        {data.map((d, i) => (
+          <li key={d.id} className="inline-flex items-center gap-1.5">
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }}
+            />
+            {d.label} ({d.value})
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** @deprecated legacy vertical bars — prefer SofiaHorizontalBarChart */
 export function ClassBars({
   data,
 }: {
   data: Array<{ label: string; value: number }>;
 }) {
-  const max = Math.max(...data.map((d) => d.value), 1);
-
-  if (data.length === 0) {
-    return (
-      <ChartEmpty message="Add classes and students to see enrollment by class." />
-    );
-  }
-
   return (
-    <div className="flex h-52 items-end gap-3 px-2 pb-2 pt-4">
-      {data.map((d, index) => {
-        const heightPx = Math.max((d.value / max) * 140, 8);
-        return (
-          <div
-            key={`${d.label}-${index}`}
-            className="flex flex-1 flex-col items-center gap-2"
-          >
-            <span className="text-xs font-semibold text-slate-600">
-              {d.value}
-            </span>
-            <div
-              className="w-full max-w-12 rounded-t-lg bg-linear-to-t from-blue-700 to-blue-400"
-              style={{ height: `${heightPx}px` }}
-            />
-            <span
-              className="max-w-full truncate text-[11px] text-slate-500"
-              title={d.label}
-            >
-              {d.label}
-            </span>
-          </div>
-        );
-      })}
-    </div>
+    <SofiaHorizontalBarChart
+      data={data.map((d, i) => ({
+        id: `${d.label}-${i}`,
+        label: d.label,
+        value: d.value,
+      }))}
+    />
   );
 }

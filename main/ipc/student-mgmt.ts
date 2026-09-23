@@ -380,6 +380,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         sectionId?: string | null
         classId?: string | null
         search?: string | null
+        incompleteProfiles?: boolean
       }
     ): Result<StudentListResult> => {
       const schoolId = resolveSchoolId(repos)
@@ -399,6 +400,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           sectionId: input?.sectionId,
           classId: input?.classId,
           search: input?.search,
+          incompleteProfiles: input?.incompleteProfiles === true,
         })
         .map((s) => enrichStudent(repos, s))
         .sort((a, b) =>

@@ -152,6 +152,7 @@ export async function fetchStudentList(filters?: {
   sectionId?: string | null
   classId?: string | null
   search?: string | null
+  incompleteProfiles?: boolean
 }): Promise<Result<StudentListResult>> {
   return (await window.ipc.invoke(
     'students:mgmt-list',

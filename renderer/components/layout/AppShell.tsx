@@ -70,14 +70,16 @@ export function AppShell({
         <div className="flex min-w-0 flex-1 flex-col print:block">
           <AppHeader breadcrumb={breadcrumb} />
           <main className="flex-1 overflow-y-auto px-6 py-5 print:overflow-visible print:p-0">
-            <div className="mb-5 animate-[fadeInUp_0.4s_ease-out] print:hidden">
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                {heading}
-              </h1>
-              {subtitle ? (
-                <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
-              ) : null}
-            </div>
+            {heading ? (
+              <div className="mb-5 animate-[fadeInUp_0.4s_ease-out] print:hidden">
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                  {heading}
+                </h1>
+                {subtitle ? (
+                  <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+                ) : null}
+              </div>
+            ) : null}
             {children}
           </main>
         </div>

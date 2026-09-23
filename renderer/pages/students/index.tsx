@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import {
   Add01Icon,
   File01Icon,
@@ -45,6 +46,7 @@ import {
 } from "../../lib/student-mgmt";
 
 export default function StudentsIndexPage() {
+  const router = useRouter();
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -55,13 +57,28 @@ export default function StudentsIndexPage() {
   const [sectionId, setSectionId] = React.useState("");
   const [classId, setClassId] = React.useState("");
   const [search, setSearch] = React.useState("");
+  const [incompleteOnly, setIncompleteOnly] = React.useState(false);
   const debouncedSearch = useDebouncedValue(search, 300);
   const [selected, setSelected] = React.useState<string[]>([]);
   const [bulkOpen, setBulkOpen] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [rowAction, setRowAction] = React.useState<StudentDto | null>(null);
+  const [filtersHydrated, setFiltersHydrated] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!router.isReady || filtersHydrated) return;
+    const q = router.query;
+    if (typeof q.level_id === "string") setLevelId(q.level_id);
+    if (typeof q.section_id === "string") setSectionId(q.section_id);
+    if (typeof q.class_id === "string") setClassId(q.class_id);
+    if (q.incomplete === "1" || q.incomplete === "true") {
+      setIncompleteOnly(true);
+    }
+    setFiltersHydrated(true);
+  }, [router.isReady, router.query, filtersHydrated]);
 
   const load = React.useCallback(async () => {
+    if (!filtersHydrated && router.isReady === false) return;
     const res = await fetchStudentList({
       status: "active",
       admissionYear: year ? Number(year) : null,
@@ -69,15 +86,26 @@ export default function StudentsIndexPage() {
       sectionId: sectionId || null,
       classId: classId || null,
       search: debouncedSearch || null,
+      incompleteProfiles: incompleteOnly || undefined,
     });
     if (res.ok) setData(res.data);
     else setError(res.error);
     setLoading(false);
-  }, [year, levelId, sectionId, classId, debouncedSearch]);
+  }, [
+    year,
+    levelId,
+    sectionId,
+    classId,
+    debouncedSearch,
+    incompleteOnly,
+    filtersHydrated,
+    router.isReady,
+  ]);
 
   React.useEffect(() => {
+    if (!filtersHydrated) return;
     void load();
-  }, [load]);
+  }, [load, filtersHydrated]);
 
   const students = data?.students ?? [];
   const classOptions = React.useMemo(() => {
@@ -275,6 +303,27 @@ export default function StudentsIndexPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Name or student ID"
               />
+            </FilterField>
+            <FilterField label="Profile">
+              <select
+                className={selectClass}
+                value={incompleteOnly ? "incomplete" : ""}
+                onChange={(e) => {
+                  const next = e.target.value === "incomplete";
+                  setIncompleteOnly(next);
+                  const q = { ...router.query };
+                  if (next) q.incomplete = "1";
+                  else delete q.incomplete;
+                  void router.replace(
+                    { pathname: "/students", query: q },
+                    undefined,
+                    { shallow: true },
+                  );
+                }}
+              >
+                <option value="">All profiles</option>
+                <option value="incomplete">Incomplete only</option>
+              </select>
             </FilterField>
           </>
         }
