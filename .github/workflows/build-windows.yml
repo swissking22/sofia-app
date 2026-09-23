@@ -26,20 +26,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Tagged releases must be Authenticode-signed. Manual workflow_dispatch
-      # may build unsigned when secrets are not configured (local smoke builds).
-      - name: Require Windows signing certificate on release tags
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Sign when WINDOWS_CSC_* secrets exist. Tag builds and workflow_dispatch
+      # both succeed unsigned if secrets are missing (SmartScreen will warn).
+      - name: Check Windows signing certificate
+        id: signing
         shell: bash
         run: |
-          if [ -z "${{ secrets.WINDOWS_CSC_LINK }}" ]; then
-            echo "::error::Secret WINDOWS_CSC_LINK is required for tagged Windows releases."
-            echo "Add a base64-encoded .pfx (or .p12) as WINDOWS_CSC_LINK and its password as WINDOWS_CSC_KEY_PASSWORD."
-            exit 1
-          fi
-          if [ -z "${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}" ]; then
-            echo "::error::Secret WINDOWS_CSC_KEY_PASSWORD is required for tagged Windows releases."
-            exit 1
+          if [ -n "${{ secrets.WINDOWS_CSC_LINK }}" ] && [ -n "${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "Windows installer will be Authenticode-signed."
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::WINDOWS_CSC_LINK / WINDOWS_CSC_KEY_PASSWORD not set — building unsigned. Add those repo secrets for signed releases."
           fi
 
       - name: Build Windows installer (no publish)
@@ -49,7 +47,7 @@ jobs:
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.WINDOWS_CSC_LINK != '' && 'true' || 'false' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.signing.outputs.signed == 'true' && 'true' || 'false' }}
         run: npm run build:win
 
       - name: Build and publish Windows installer to GitHub Releases
@@ -60,7 +58,7 @@ jobs:
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.signing.outputs.signed == 'true' && 'true' || 'false' }}
         run: npm run build:win:publish
 
       - name: Upload Windows installer artifacts

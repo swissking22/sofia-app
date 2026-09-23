@@ -97,8 +97,7 @@ On Windows (PowerShell):
 
 Behaviour:
 
-- **Tag builds (`v*`):** secrets are **required** — the job fails if they are missing.
-- **Manual `workflow_dispatch`:** if secrets are absent, the build continues **unsigned** (useful for launch smoke tests).
+- **Tag builds (`v*`) and manual `workflow_dispatch`:** if secrets are present, the installer is Authenticode-signed; if absent, the build continues **unsigned** (SmartScreen will warn users).
 - Local `npm run build:win` without `WIN_CSC_LINK` / `CSC_LINK` also produces an unsigned installer.
 
 Never commit `.pfx`, `.p12`, or passwords. Signing reduces SmartScreen friction over time; an EV certificate (or sustained reputation) is still typically needed for immediate SmartScreen trust.
@@ -730,6 +729,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Windows CI: tagged `v*` builds no longer fail when `WINDOWS_CSC_*` secrets are missing — they build/publish **unsigned** with a warning (same as manual runs). |
 | 2026-09-23 | **Display dates** are Day → Month → Year everywhere (e.g. `23 Sept 2026`, `23/09/2026`). Shared helpers: `main/domain/date-format.ts` + `renderer/lib/date-format.ts`. Storage and date inputs stay ISO `YYYY-MM-DD`. |
 | 2026-09-23 | App icons: white background; **macOS .icns / icon.png** use baked corner radius; Windows `.ico` stays square (`npm run icons`). |
 | 2026-09-23 | Dashboard term filter includes **All terms** (full academic year period for fees, trends, and results). |
