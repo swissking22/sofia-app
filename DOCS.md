@@ -417,8 +417,8 @@ Shared list/filter UI mirrors Student Management (`renderer/components/staff/ui.
 | Screen | Path | How to use |
 |--------|------|------------|
 | List | `/staff/teachers` | Filter by search, status, department, job role. Actions drawer: view/edit or delete (managers). |
-| Add | `/staff/teachers/create` | Personal + role fields; per-class subject checkboxes (a teacher can teach many classes and many subjects); homeroom. Employee ID auto-generated if blank. **Email required for login:** creates a local user and provisions Supabase Auth for Sofia Teacher (temp password `Sofia@Staff1`). |
-| Profile / edit | `/staff/teachers/:id` | Same fields. Teaching assignments are class × subject, not separate subject and class lists. |
+| Add | `/staff/teachers/create` | Personal + role fields; **Assignment Builder** (add class → pick subjects offered in that class as cards); separate **Homeroom** single select. Employee ID auto-generated if blank. **Email required for login:** creates a local user and provisions Supabase Auth for Sofia Teacher (temp password `Sofia@Staff1`). |
+| Profile / edit | `/staff/teachers/:id` | Same fields. Teaching assignments are class × subject pairs (`staff_subjects`), edited via assignment cards (add / edit / copy to other classes / remove). Homeroom is separate (`classes.class_teacher_id`). |
 
 ### Staff directory
 
@@ -709,7 +709,7 @@ Key libs for built modules:
 - Students: `renderer/lib/student-mgmt.ts` → `main/ipc/student-mgmt.ts` (includes `students:class-list` for print/export rosters; helpers in `main/domain/class-list.ts` / `renderer/lib/class-list.ts`)
 - Student CSV import: `renderer/lib/students.ts` → `main/ipc/students.ts` (`students:import`); normalize + existing-class match in `main/domain/student-import.ts`
 - Class order: `main/domain/class-order.ts` — level `sort_order`, then General → Commercial → Technical; applied in `ClassRepository.findStructureClasses` / `findBySchool` and section lists
-- Staff: `renderer/lib/staff-mgmt.ts` → `main/ipc/staff-mgmt.ts`
+- Staff: `renderer/lib/staff-mgmt.ts` → `main/ipc/staff-mgmt.ts`; teaching Assignment Builder `renderer/components/staff/TeachingAssignmentPicker.tsx` + helpers `main/domain/staff.ts` / `renderer/lib/teaching-assignments.ts` (class×subject pairs in `staff_subjects`)
 - Finance: `renderer/lib/finance-mgmt.ts` → `main/ipc/finance-mgmt.ts`; extensions `renderer/lib/finance-ext.ts` → `main/ipc/finance-ext.ts`; fee package scope (residence / department / level / class) in `main/domain/fee-structure-scope.ts`
 - Dashboard: `renderer/lib/dashboard.ts` → `dashboard:summary` (`main/ipc/dashboard.ts` → `main/services/dashboard.service.ts` + `main/domain/dashboard.ts`); charts via **recharts**
 - Communication: `renderer/lib/communication-mgmt.ts` → `main/ipc/communication-mgmt.ts` (setup: `communication.ts`)
@@ -731,6 +731,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Teachers: **Assignment Builder** replaces the class×subject checkbox matrix on Add/Edit teacher (and Setup staff). Add assignment dialog: searchable class (grouped by section/level) → subjects offered in that class only; cards with edit / copy-to-classes / remove; summary counts; homeroom is a separate single select. Persistence unchanged (`staff_subjects` pairs). |
 | 2026-09-23 | Bumped app version to **1.0.1** so tagged Windows publishes match `package.json` (electron-builder release tag). Docs note: git tag `vX.Y.Z` must equal `package.json` version. |
 | 2026-09-23 | Windows CI: tagged `v*` builds no longer fail when `WINDOWS_CSC_*` secrets are missing — they build/publish **unsigned** with a warning (same as manual runs). |
 | 2026-09-23 | **Display dates** are Day → Month → Year everywhere (e.g. `23 Sept 2026`, `23/09/2026`). Shared helpers: `main/domain/date-format.ts` + `renderer/lib/date-format.ts`. Storage and date inputs stay ISO `YYYY-MM-DD`. |

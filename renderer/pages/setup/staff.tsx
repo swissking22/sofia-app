@@ -643,13 +643,12 @@ function StaffSetupForm() {
             ))}
           </select>
         </label>
-        <div className="mb-4 max-h-64 overflow-y-auto">
+        <div className="mb-4">
           <p className="mb-1.5 text-sm font-medium text-slate-700">
             Teaching assignments
           </p>
           <p className="mb-2 text-xs text-slate-500">
-            Assign this teacher to a subject in a specific class. They can teach
-            several classes and several subjects.
+            Assign classes and subjects this teacher teaches.
           </p>
           <TeachingAssignmentPicker
             classes={data.classes}

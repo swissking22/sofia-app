@@ -32,6 +32,10 @@ function resolveSchoolId(repos: Repositories, session: SessionData): string {
 }
 
 function lookups(repos: Repositories, schoolId: string) {
+  const levels = repos.academicLevels.findBySchool(schoolId)
+  const sections = repos.sections.findBySchool(schoolId)
+  const levelById = new Map(levels.map((l) => [l.id, l]))
+  const sectionById = new Map(sections.map((s) => [s.id, s]))
   return {
     departments: repos.departments
       .findBySchool(schoolId)
@@ -39,9 +43,21 @@ function lookups(repos: Repositories, schoolId: string) {
     subjects: repos.subjects
       .findBySchoolWithClasses(schoolId)
       .map((s) => ({ id: s.id, name: s.name, class_ids: s.class_ids })),
-    classes: repos.classes
-      .findBySchool(schoolId)
-      .map((c) => ({ id: c.id, name: c.name })),
+    classes: repos.classes.findBySchool(schoolId).map((c) => {
+      const level = c.academic_level_id
+        ? levelById.get(c.academic_level_id)
+        : undefined
+      const section = c.section_id ? sectionById.get(c.section_id) : undefined
+      return {
+        id: c.id,
+        name: c.name,
+        academic_level_id: c.academic_level_id,
+        academic_level_name: level?.name ?? null,
+        level_sort_order: level?.sort_order ?? null,
+        section_id: c.section_id,
+        section_name: section?.name ?? null,
+      }
+    }),
   }
 }
 
@@ -104,7 +120,16 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
   ipcMain.handle('staff-mgmt:meta', (): Result<{
     departments: Array<{ id: string; name: string }>
     subjects: Array<{ id: string; name: string; class_ids: string[] }>
-    classes: Array<{ id: string; name: string; class_teacher_id: string | null }>
+    classes: Array<{
+      id: string
+      name: string
+      class_teacher_id: string | null
+      academic_level_id: string | null
+      academic_level_name: string | null
+      level_sort_order: number | null
+      section_id: string | null
+      section_name: string | null
+    }>
     max_teacher_periods: number
     leave_types: LeaveType[]
     job_roles: StaffJobRole[]
@@ -116,15 +141,20 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
     const schoolId = resolveSchoolId(repos, session)
     if (!schoolId) return { ok: false, error: 'No school found.' }
     const lu = lookups(repos, schoolId)
+    const classTeacherById = new Map(
+      repos.classes.findBySchool(schoolId).map((c) => [
+        c.id,
+        c.class_teacher_id ?? null,
+      ])
+    )
     return {
       ok: true,
       data: {
         departments: lu.departments,
         subjects: lu.subjects,
-        classes: repos.classes.findBySchool(schoolId).map((c) => ({
-          id: c.id,
-          name: c.name,
-          class_teacher_id: c.class_teacher_id ?? null,
+        classes: lu.classes.map((c) => ({
+          ...c,
+          class_teacher_id: classTeacherById.get(c.id) ?? null,
         })),
         max_teacher_periods: maxPeriods(repos, schoolId),
         leave_types: LEAVE_TYPES,

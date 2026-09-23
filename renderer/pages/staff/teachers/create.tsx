@@ -23,10 +23,6 @@ const GENDER_OPTIONS = [
   { value: "other", label: "Other" },
 ] as const;
 
-function toggleId(list: string[], id: string): string[] {
-  return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
-}
-
 export default function CreateTeacherPage() {
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
@@ -46,7 +42,7 @@ export default function CreateTeacherPage() {
   const [assignments, setAssignments] = React.useState<
     Array<{ class_id: string; subject_id: string }>
   >([]);
-  const [homeroomClassIds, setHomeroomClassIds] = React.useState<string[]>([]);
+  const [homeroomClassId, setHomeroomClassId] = React.useState("");
 
   React.useEffect(() => {
     void (async () => {
@@ -82,7 +78,7 @@ export default function CreateTeacherPage() {
         address: address.trim() || null,
         gender: gender || null,
         teaching_assignments: assignments,
-        homeroom_class_ids: homeroomClassIds,
+        homeroom_class_ids: homeroomClassId ? [homeroomClassId] : [],
         staff_type: "teaching",
       });
       if (!res.ok) {
@@ -224,39 +220,41 @@ export default function CreateTeacherPage() {
         </FormSection>
 
         <FormSection
-          title="Assignments"
-          description="Tick each subject this teacher teaches in each class. One teacher can cover many classes and many subjects."
+          title="Teaching Assignments"
+          description="Assign the classes and subjects this teacher teaches."
         >
-          <div className="mb-4">
-            <TeachingAssignmentPicker
-              classes={meta?.classes ?? []}
-              subjects={meta?.subjects ?? []}
-              value={assignments}
-              onChange={setAssignments}
-            />
-          </div>
-          <fieldset className="mb-4">
-            <legend className="mb-2 text-sm font-medium text-slate-700">
+          <TeachingAssignmentPicker
+            classes={meta?.classes ?? []}
+            subjects={meta?.subjects ?? []}
+            value={assignments}
+            onChange={setAssignments}
+          />
+        </FormSection>
+
+        <FormSection
+          title="Homeroom"
+          description="A teacher can have only one homeroom class."
+        >
+          <label className="mb-0 block max-w-md">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">
               Homeroom class
-            </legend>
-            <div className="grid gap-2 sm:grid-cols-2">
+            </span>
+            <select
+              className={fieldClass}
+              value={homeroomClassId}
+              onChange={(e) => setHomeroomClassId(e.target.value)}
+            >
+              <option value="">None</option>
               {(meta?.classes ?? []).map((c) => (
-                <label
-                  key={c.id}
-                  className="flex items-center gap-2 text-sm text-slate-700"
-                >
-                  <input
-                    type="checkbox"
-                    checked={homeroomClassIds.includes(c.id)}
-                    onChange={() =>
-                      setHomeroomClassIds(toggleId(homeroomClassIds, c.id))
-                    }
-                  />
+                <option key={c.id} value={c.id}>
                   {c.name}
-                </label>
+                </option>
               ))}
-            </div>
-          </fieldset>
+            </select>
+            <p className="mt-1.5 text-xs text-slate-500">
+              Homeroom is separate from teaching assignments.
+            </p>
+          </label>
         </FormSection>
 
         <div className="flex flex-wrap gap-2">

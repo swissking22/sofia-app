@@ -175,3 +175,119 @@ export function formatTeachingAssignmentLabel(
   const cls = className?.trim() || 'Class'
   return `${subject} · ${cls}`
 }
+
+/** One card in the assignment builder: a class with its subject IDs. */
+export type ClassAssignmentGroup = {
+  class_id: string
+  subject_ids: string[]
+}
+
+export function groupAssignmentsByClass(
+  pairs: TeachingAssignment[]
+): ClassAssignmentGroup[] {
+  const map = new Map<string, string[]>()
+  for (const pair of pairs) {
+    const class_id = pair.class_id?.trim()
+    const subject_id = pair.subject_id?.trim()
+    if (!class_id || !subject_id) continue
+    const list = map.get(class_id) ?? []
+    if (!list.includes(subject_id)) list.push(subject_id)
+    map.set(class_id, list)
+  }
+  return [...map.entries()].map(([class_id, subject_ids]) => ({
+    class_id,
+    subject_ids,
+  }))
+}
+
+export function flattenClassAssignmentGroups(
+  groups: ClassAssignmentGroup[]
+): TeachingAssignment[] {
+  const pairs: TeachingAssignment[] = []
+  for (const g of groups) {
+    for (const subject_id of g.subject_ids) {
+      pairs.push({ class_id: g.class_id, subject_id })
+    }
+  }
+  return pairs
+}
+
+export function summarizeTeachingAssignments(pairs: TeachingAssignment[]): {
+  classes: number
+  subjects: number
+  assignments: number
+} {
+  const classIds = new Set<string>()
+  const subjectIds = new Set<string>()
+  for (const p of pairs) {
+    if (p.class_id) classIds.add(p.class_id)
+    if (p.subject_id) subjectIds.add(p.subject_id)
+  }
+  return {
+    classes: classIds.size,
+    subjects: subjectIds.size,
+    assignments: pairs.length,
+  }
+}
+
+/** Subjects offered in a class (from subject.class_ids). */
+export function subjectsOfferedInClass<
+  T extends { id: string; class_ids: string[] }
+>(classId: string, subjects: T[]): T[] {
+  if (!classId) return []
+  return subjects.filter((s) => s.class_ids.includes(classId))
+}
+
+/**
+ * Replace all pairs for `previousClassId` with `next` (for that class),
+ * then normalize against offerings.
+ */
+export function upsertClassAssignment(
+  existing: TeachingAssignment[],
+  previousClassId: string | null,
+  next: { class_id: string; subject_ids: string[] },
+  offeredBySubject: Map<string, string[]>
+): TeachingAssignment[] {
+  const kept =
+    previousClassId != null
+      ? existing.filter((p) => p.class_id !== previousClassId)
+      : existing.filter((p) => p.class_id !== next.class_id)
+  const added = next.subject_ids.map((subject_id) => ({
+    class_id: next.class_id,
+    subject_id,
+  }))
+  return normalizeTeachingAssignments([...kept, ...added], offeredBySubject)
+}
+
+/**
+ * Copy selected subjects onto target classes, merging without duplicates.
+ * Only keeps pairs that are offered in the target class.
+ */
+export function copySubjectsToClasses(
+  existing: TeachingAssignment[],
+  subjectIds: string[],
+  targetClassIds: string[],
+  offeredBySubject: Map<string, string[]>
+): TeachingAssignment[] {
+  const additions: TeachingAssignment[] = []
+  for (const class_id of targetClassIds) {
+    for (const subject_id of subjectIds) {
+      additions.push({ class_id, subject_id })
+    }
+  }
+  return normalizeTeachingAssignments(
+    [...existing, ...additions],
+    offeredBySubject
+  )
+}
+
+export function buildOfferedBySubjectMap(
+  subjects: Array<{ id: string; class_ids: string[] }>
+): Map<string, string[]> {
+  const map = new Map<string, string[]>()
+  for (const s of subjects) {
+    map.set(s.id, s.class_ids ?? [])
+  }
+  return map
+}
+

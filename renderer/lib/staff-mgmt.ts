@@ -59,6 +59,11 @@ export interface StaffMeta {
     id: string
     name: string
     class_teacher_id: string | null
+    academic_level_id?: string | null
+    academic_level_name?: string | null
+    level_sort_order?: number | null
+    section_id?: string | null
+    section_name?: string | null
   }>
   max_teacher_periods: number
   leave_types: LeaveType[]

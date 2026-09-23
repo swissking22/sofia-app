@@ -34,10 +34,25 @@ function loadSetup(repos: Repositories, schoolId: string): StaffSetupData {
     name: s.name,
     class_ids: s.class_ids,
   }))
-  const classes = repos.classes.findStructureClasses(schoolId).map((c) => ({
-    id: c.id,
-    name: c.name,
-  }))
+  const levels = repos.academicLevels.findBySchool(schoolId)
+  const sections = repos.sections.findBySchool(schoolId)
+  const levelById = new Map(levels.map((l) => [l.id, l]))
+  const sectionById = new Map(sections.map((s) => [s.id, s]))
+  const classes = repos.classes.findStructureClasses(schoolId).map((c) => {
+    const level = c.academic_level_id
+      ? levelById.get(c.academic_level_id)
+      : undefined
+    const section = c.section_id ? sectionById.get(c.section_id) : undefined
+    return {
+      id: c.id,
+      name: c.name,
+      academic_level_id: c.academic_level_id,
+      academic_level_name: level?.name ?? null,
+      level_sort_order: level?.sort_order ?? null,
+      section_id: c.section_id,
+      section_name: section?.name ?? null,
+    }
+  })
   return repos.staff.getSetupData(schoolId, { departments, subjects, classes })
 }
 

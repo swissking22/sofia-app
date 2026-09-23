@@ -40,7 +40,15 @@ export interface StaffSetupData {
   teachers: StaffMember[]
   departments: Array<{ id: string; name: string }>
   subjects: Array<{ id: string; name: string; class_ids: string[] }>
-  classes: Array<{ id: string; name: string }>
+  classes: Array<{
+    id: string
+    name: string
+    academic_level_id?: string | null
+    academic_level_name?: string | null
+    level_sort_order?: number | null
+    section_id?: string | null
+    section_name?: string | null
+  }>
   tempPassword: string
 }
 
