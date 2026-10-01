@@ -35,6 +35,10 @@ export async function updateAdminUser(input: Record<string, unknown>) {
   return (await window.ipc.invoke('system-admin:users-update', input)) as Result<unknown>
 }
 
+export async function deleteAdminUser(id: string) {
+  return (await window.ipc.invoke('system-admin:users-delete', { id })) as Result<{ id: string }>
+}
+
 export async function resetAdminPassword(id: string, password: string) {
   return (await window.ipc.invoke('system-admin:users-reset-password', { id, password })) as Result<unknown>
 }

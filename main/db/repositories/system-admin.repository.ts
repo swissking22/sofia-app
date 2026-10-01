@@ -2,7 +2,14 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
-import { countByStatus, countFailedPhase1, countPendingPhase1, queueStatsByTable, retryFailed } from '../../sync/queue'
+import {
+  countByStatus,
+  countFailedPhase1,
+  countPendingPhase1,
+  enqueueSync,
+  queueStatsByTable,
+  retryFailed,
+} from '../../sync/queue'
 import {
   DEFAULT_CURRENCY,
   DEFAULT_TIMEZONE,
@@ -278,6 +285,74 @@ export class SystemAdminRepository {
         `UPDATE user_sessions SET revoked_at = ? WHERE school_id = ? AND user_id = ? AND revoked_at IS NULL`
       )
       .run(new Date().toISOString(), schoolId, userId)
+  }
+
+  /** Soft-delete a user and enqueue cloud DELETE. Revokes open sessions. */
+  softDeleteUser(schoolId: string, id: string): User {
+    const existing = this.db
+      .prepare(
+        `SELECT * FROM users WHERE id = ? AND school_id = ? AND deleted_at IS NULL`
+      )
+      .get(id, schoolId) as User | undefined
+    if (!existing) throw new Error('User not found.')
+
+    const now = new Date().toISOString()
+    const updated: User = {
+      ...existing,
+      deleted_at: now,
+      updated_at: now,
+      version: existing.version + 1,
+      sync_status: 'pending',
+      status: 'inactive',
+    }
+
+    const tx = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE users
+           SET deleted_at = @deleted_at,
+               updated_at = @updated_at,
+               version = @version,
+               sync_status = @sync_status,
+               status = @status
+           WHERE id = @id AND school_id = @school_id`
+        )
+        .run({
+          id,
+          school_id: schoolId,
+          deleted_at: updated.deleted_at,
+          updated_at: updated.updated_at,
+          version: updated.version,
+          sync_status: updated.sync_status,
+          status: updated.status,
+        })
+      this.revokeSessions(schoolId, id)
+      enqueueSync(
+        this.db,
+        'users',
+        id,
+        'DELETE',
+        updated as unknown as Record<string, unknown>
+      )
+    })
+    tx()
+    return updated
+  }
+
+  countActiveAdmins(schoolId: string, excludeUserId?: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM users
+         WHERE school_id = ?
+           AND deleted_at IS NULL
+           AND status = 'active'
+           AND role = 'admin'
+           AND (? IS NULL OR id <> ?)`
+      )
+      .get(schoolId, excludeUserId ?? null, excludeUserId ?? null) as {
+      n: number
+    }
+    return Number(row.n) || 0
   }
 
   listAudit(

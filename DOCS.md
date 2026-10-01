@@ -541,7 +541,7 @@ School-scoped control centre. There is no platform super-admin. Session role `ad
 | Screen | Path | How to use |
 |--------|------|------------|
 | Overview | `/administration` | Active users, audit volume today, last backup, sync health. |
-| Users & Roles | `/administration/users` | Search/filter users. Create (temporary password, never stored in plaintext). View inherited permissions. Change role, deactivate/suspend (no delete), reset password, revoke sessions. |
+| Users & Roles | `/administration/users` | Search/filter users. Create (temporary password, never stored in plaintext). View inherited permissions. Change role, deactivate/suspend, **delete** (soft-delete + sync; blocked for self and last active admin), reset password, revoke sessions. Requires `system.users.delete` (or session `admin`). |
 | Roles | `/administration/roles` | Create/edit/duplicate custom roles. System roles cannot be deleted. Roles with assigned users cannot be deleted. Activate/deactivate. |
 | Permissions | `/administration/permissions` | Live matrix of catalog permissions × school roles. |
 | Audit logs | `/administration/audit-logs` | Paginated union of central `audit_events` plus finance and document audit tables. Append-only — no edit/delete API. |
@@ -590,6 +590,55 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 
 **Asset notes:** Object key `{school_id}/{table}/{record_id}/{field}.{ext}` in bucket `school-assets`. Upload after successful push when the local file exists; download on pull/Join/Sync Now when the path string is present but the file is missing locally. Local paths are rewritten under `userData/uploads/…`.
 
+### Sofia Teacher (Expo) mobile API
+
+Teachers sign in with **Supabase Auth** (provisioned from desktop via Edge Function `provision-staff-auth`). JWT `app_metadata` must include:
+
+| Key | Purpose |
+|-----|---------|
+| `role` | Must be `teacher` |
+| `school_id` | Tenant UUID |
+| `staff_id` | Local `staff.id` (linked when provisioning) |
+
+Desktop Sync Now pushes assignments and timetable into **`public.synced_entities`** (`table_name` = `staff_subjects`, `timetable_slots`, `classes`, `subjects`, `staff`, …). There are **no** PostgREST tables named `staff_subjects` / `timetable_slots` for the mobile app to query directly.
+
+**Teacher RPCs** (migration `20260923200000_teacher_mobile_rpcs.sql`) — `SECURITY DEFINER`, scoped only from JWT claims, `GRANT EXECUTE` to **`authenticated`** only:
+
+| RPC | Returns |
+|-----|---------|
+| `get_teacher_me()` | `staff_id`, `school_id`, `full_name`, `school_name`, `email`, `employee_code` |
+| `get_teacher_assignments()` | `assignment_id`, `staff_id`, `class_id`, `class_name`, `subject_id`, `subject_name` |
+| `get_teacher_timetable(p_day_of_week int default null)` | `slot_id`, class/subject names, `day_of_week` (**1=Mon … 7=Sun**), `period_number`, `room` |
+
+**Expo client (after migration is applied):**
+
+```ts
+const { data: me, error: meError } = await supabase.rpc('get_teacher_me')
+const { data: assignments, error } = await supabase.rpc('get_teacher_assignments')
+const { data: slots } = await supabase.rpc('get_teacher_timetable') // all days
+// or one day: await supabase.rpc('get_teacher_timetable', { p_day_of_week: 1 })
+```
+
+**Ops:** After changing teaching assignments or the timetable on desktop, run **Sync Now**. Empty RPC results usually mean sync not pushed yet, or Auth missing `staff_id` (re-save teacher with email / re-run provision).
+
+**Verify in SQL Editor** (as a teacher JWT session, or check raw mirror first):
+
+```sql
+-- Mirror has data?
+select table_name, count(*) from synced_entities
+where school_id = '<school_uuid>'
+  and table_name in ('staff_subjects','timetable_slots','classes','subjects','staff')
+  and deleted_at is null
+group by 1;
+
+-- Assignments for one staff id in the mirror
+select payload from synced_entities
+where school_id = '<school_uuid>' and table_name = 'staff_subjects'
+  and payload->>'staff_id' = '<staff_uuid>' and deleted_at is null;
+```
+
+**Deploy:** `npx supabase db push` (or apply the migration in the Supabase SQL editor / linked project).
+
 ### Multi-desk ops guide
 
 | Topic | Guidance |
@@ -616,6 +665,7 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
   - `supabase/migrations/20260917110000_documents_id_cards_synced_entities.sql` (documents/ID cards allow-list)
   - `supabase/migrations/20260917120000_communication_synced_entities.sql` (communication allow-list)
   - `supabase/migrations/20260917130000_school_assets_storage.sql` (Storage bucket `school-assets`)
+  - `supabase/migrations/20260923200000_teacher_mobile_rpcs.sql` (Sofia Teacher RPCs: `get_teacher_me`, `get_teacher_assignments`, `get_teacher_timetable`)
 - **Cloud Tables**:
   - `public.schools`: Tenant root (`id UUID PRIMARY KEY`, `name TEXT`, `school_code TEXT`, partial unique index on `school_code`).
   - `public.devices`: Registered desktop clients (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`).
@@ -720,7 +770,7 @@ Key libs for built modules:
 - Student ID cards: `renderer/lib/student-id-cards.ts` → `main/ipc/student-id-cards.ts`
 - Reports: `renderer/lib/reports.ts` → `main/ipc/reports.ts`
 - Documents: `renderer/lib/documents-mgmt.ts` → `main/ipc/documents-mgmt.ts` (setup templates remain `renderer/lib/documents.ts`)
-- System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts`
+- System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts` (users soft-delete: `system-admin:users-delete` → `SystemAdminRepository.softDeleteUser` + `assertUserDeletable` in `main/domain/system-admin.ts`; RBAC `system.users.delete`)
 - Auto-update (Windows): `main/updater.ts` + `main/ipc/updater.ts` (`updater:*`); UI `UpdateNotifier` in `AppShell`. **`electron-updater` must stay a runtime dynamic import** (`loadAutoUpdater()` in `main/updater.ts`) — a static import is evaluated with the main chunk and breaks packaged Windows launch. Startup still pins `userData` first via `main/pin-user-data.ts`. Recovery evaluation does not load the updater module graph for native update checks until after the window is ready.
 - Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); table registry `main/sync/tables.ts`; generic apply `main/sync/apply-generic.ts`; PostgREST RPCs `process_sync_operation`, `process_synced_entity`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
 - Teacher / staff cloud Auth: `main/services/cloud-auth.ts` (`provisionStaffAuth`) calls Edge Function `supabase/functions/provision-staff-auth` (anon key); optional local fallback via `SUPABASE_SERVICE_ROLE_KEY`. Hooked from `staff:upsert-teacher`, `staff:upsert-admin`, `staff:import-teachers`, `staff-mgmt:create`, and `system-admin:users-create` / `users-reset-password`. Deploy with `npx supabase functions deploy provision-staff-auth`.
@@ -731,6 +781,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Administration **Users**: soft-delete accounts (`system-admin:users-delete`, permission `system.users.delete`). Revokes sessions and enqueues cloud DELETE. Blocked for self-delete and last active admin. Detail modal + bulk Delete selected. |
+| 2026-09-23 | Sofia Teacher mobile API: RPCs `get_teacher_me`, `get_teacher_assignments`, `get_teacher_timetable` unpack `synced_entities` for JWT teachers (`app_metadata.staff_id` / `school_id`). Migration `20260923200000_teacher_mobile_rpcs.sql`. |
 | 2026-09-23 | Teachers: **Assignment Builder** replaces the class×subject checkbox matrix on Add/Edit teacher (and Setup staff). Add assignment dialog: searchable class (grouped by section/level) → subjects offered in that class only; cards with edit / copy-to-classes / remove; summary counts; homeroom is a separate single select. Persistence unchanged (`staff_subjects` pairs). |
 | 2026-09-23 | Bumped app version to **1.0.1** so tagged Windows publishes match `package.json` (electron-builder release tag). Docs note: git tag `vX.Y.Z` must equal `package.json` version. |
 | 2026-09-23 | Windows CI: tagged `v*` builds no longer fail when `WINDOWS_CSC_*` secrets are missing — they build/publish **unsigned** with a warning (same as manual runs). |

@@ -512,6 +512,12 @@ export const PERMISSION_CATALOG: PermissionSeed[] = [
     module_label: 'System Administration',
   },
   {
+    name: 'system.users.delete',
+    label: 'Delete users',
+    module_key: 'system',
+    module_label: 'System Administration',
+  },
+  {
     name: 'system.roles.view',
     label: 'View roles',
     module_key: 'system',

@@ -1,6 +1,7 @@
 import { SystemAdminService } from '../../main/services/system-admin'
 import {
   accountAllowsLogin,
+  assertUserDeletable,
   auditIsMutable,
   buildPermissionMatrix,
   inferCoarseRole,
@@ -27,6 +28,44 @@ describe('System admin users', () => {
     expect(user.display_name).toBe('Amina Tabe')
     expect(user.role).toBe('secretary')
     expect(user.status).toBe('active')
+  })
+
+  it('blocks self-delete and last active admin delete', () => {
+    expect(() =>
+      assertUserDeletable({
+        actorUserId: 'u1',
+        targetUserId: 'u1',
+        targetRole: 'teacher',
+        remainingActiveAdminsIfDeleted: 0,
+      })
+    ).toThrow(/cannot delete your own/i)
+
+    expect(() =>
+      assertUserDeletable({
+        actorUserId: 'u1',
+        targetUserId: 'u2',
+        targetRole: 'admin',
+        remainingActiveAdminsIfDeleted: 0,
+      })
+    ).toThrow(/last active administrator/i)
+
+    expect(() =>
+      assertUserDeletable({
+        actorUserId: 'u1',
+        targetUserId: 'u2',
+        targetRole: 'admin',
+        remainingActiveAdminsIfDeleted: 1,
+      })
+    ).not.toThrow()
+
+    expect(() =>
+      assertUserDeletable({
+        actorUserId: 'u1',
+        targetUserId: 'u3',
+        targetRole: 'teacher',
+        remainingActiveAdminsIfDeleted: 0,
+      })
+    ).not.toThrow()
   })
 
   it('rejects weak passwords and missing school', () => {

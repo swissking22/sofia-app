@@ -41,6 +41,22 @@ export function validatePassword(
   return null
 }
 
+export function assertUserDeletable(input: {
+  actorUserId: string
+  targetUserId: string
+  targetRole: string | null | undefined
+  remainingActiveAdminsIfDeleted: number
+}): void {
+  if (input.actorUserId === input.targetUserId) {
+    throw new Error('You cannot delete your own account.')
+  }
+  if (input.targetRole === 'admin' && input.remainingActiveAdminsIfDeleted < 1) {
+    throw new Error(
+      'Cannot delete the last active administrator. Create or activate another admin first.'
+    )
+  }
+}
+
 export function accountAllowsLogin(status: AccountStatus | string | null | undefined): boolean {
   return !status || status === 'active'
 }

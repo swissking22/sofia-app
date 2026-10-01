@@ -5,7 +5,11 @@ import { getDatabasePath, queueDatabaseRestore } from '../db'
 import type { Repositories } from '../db/repositories'
 import { SystemAdminService } from '../services/system-admin'
 import { tryProvisionStaffAuth, type CloudAuthRole } from '../services/cloud-auth'
-import { buildPermissionMatrix, restoreWarning } from '../domain/system-admin'
+import {
+  assertUserDeletable,
+  buildPermissionMatrix,
+  restoreWarning,
+} from '../domain/system-admin'
 import { runSyncWorker } from '../sync/worker'
 import type { RoleWriteInput } from '../db/repositories/role.repository'
 import type { UserRole } from '../db/types'
@@ -248,6 +252,46 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         })
         return admin().getUser(schoolId, input.id)
       }, 'Could not update user.')
+    }
+  )
+
+  ipcMain.handle(
+    'system-admin:users-delete',
+    (_e, input: { id: string }): Result<{ id: string }> => {
+      const s = session()
+      if (!s || !allow(repos, s, ['system.users.delete'])) {
+        return { ok: false, error: 'Access denied.' }
+      }
+      const schoolId = sid(repos, s)
+      const before = admin().getUser(schoolId, input.id)
+      if (!before) return { ok: false, error: 'User not found.' }
+      return wrap(() => {
+        const remainingAdmins =
+          before.user.role === 'admin'
+            ? admin().countActiveAdmins(schoolId, input.id)
+            : 1
+        assertUserDeletable({
+          actorUserId: s.userId,
+          targetUserId: input.id,
+          targetRole: before.user.role,
+          remainingActiveAdminsIfDeleted: remainingAdmins,
+        })
+        admin().softDeleteUser(schoolId, input.id)
+        admin().writeAudit({
+          school_id: schoolId,
+          actor_user_id: s.userId,
+          action: 'user.delete',
+          entity_type: 'user',
+          entity_id: input.id,
+          description: `Deleted user ${before.user.email}`,
+          before: {
+            email: before.user.email,
+            role: before.user.role,
+            status: before.user.status,
+          },
+        })
+        return { id: input.id }
+      }, 'Could not delete user.')
     }
   )
 
@@ -709,6 +753,7 @@ function permissionFlags(repos: Repositories, s: SessionData) {
     users_create: p('system.users.create'),
     users_edit: p('system.users.edit'),
     users_deactivate: p('system.users.deactivate'),
+    users_delete: p('system.users.delete'),
     roles_manage: p('system.roles.manage') || p('system.roles.edit'),
     roles_create: p('system.roles.create'),
     permissions_view: p('system.permissions.view'),

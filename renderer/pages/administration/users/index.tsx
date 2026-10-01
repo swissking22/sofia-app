@@ -24,6 +24,7 @@ import {
 import { formatDisplayDateTime } from "../../../lib/date-format";
 import {
   createAdminUser,
+  deleteAdminUser,
   fetchAdminMeta,
   fetchAdminUser,
   fetchAdminUsers,
@@ -50,9 +51,11 @@ export default function AdminUsersPage() {
   const [detail, setDetail] = React.useState<Record<string, unknown> | null>(
     null,
   );
+  const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
 
   const canCreate = meta?.can?.users_create;
   const canEdit = meta?.can?.users_edit;
+  const canDelete = meta?.can?.users_delete;
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const allSelected =
@@ -77,6 +80,28 @@ export default function AdminUsersPage() {
       }
       setSuccess(`${selectedIds.length} user(s) updated to ${newStatus}.`);
       setSelectedIds([]);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function bulkDelete() {
+    if (!selectedIds.length) return;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    let deleted = 0;
+    const failures: string[] = [];
+    try {
+      for (const id of selectedIds) {
+        const res = await deleteAdminUser(id);
+        if (res.ok) deleted += 1;
+        else failures.push(res.error);
+      }
+      if (deleted) setSuccess(`Deleted ${deleted} user(s).`);
+      if (failures.length) setError(failures[0] || "Some users could not be deleted.");
+      setSelectedIds([]);
+      setConfirmBulkDelete(false);
       await load();
     } finally {
       setBusy(false);
@@ -133,7 +158,7 @@ export default function AdminUsersPage() {
       title="Users"
       breadcrumb={["System Administration", "Users & Roles"]}
       heading="Users & Roles"
-      subtitle="School accounts inherit permissions from a single role. Deactivate instead of deleting."
+      subtitle="School accounts inherit permissions from a single role. Prefer deactivate for temporary access; delete removes the account (soft-delete + sync)."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
       {success ? <PageAlert tone="success">{success}</PageAlert> : null}
@@ -294,6 +319,16 @@ export default function AdminUsersPage() {
                 </button>
               </>
             ) : null}
+            {canDelete ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setConfirmBulkDelete(true)}
+                className="cursor-pointer rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+              >
+                Delete selected
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={exportSelected}
@@ -342,6 +377,7 @@ export default function AdminUsersPage() {
         <UserDetailModal
           data={detail}
           canEdit={Boolean(canEdit)}
+          canDelete={Boolean(canDelete)}
           roles={meta?.roles ?? []}
           onClose={() => setDetail(null)}
           onUpdated={async (msg) => {
@@ -349,8 +385,19 @@ export default function AdminUsersPage() {
             setDetail(null);
             await load();
           }}
+          onError={(msg) => setError(msg)}
         />
       ) : null}
+
+      <ConfirmModal
+        open={confirmBulkDelete}
+        title="Delete selected users?"
+        description="Accounts are soft-deleted and removed from the active list. You cannot delete your own account or the last active administrator."
+        confirmLabel="Delete"
+        danger
+        onCancel={() => setConfirmBulkDelete(false)}
+        onConfirm={() => void bulkDelete()}
+      />
     </AppShell>
   );
 }
@@ -480,15 +527,19 @@ function CreateUserModal({
 function UserDetailModal({
   data,
   canEdit,
+  canDelete,
   roles,
   onClose,
   onUpdated,
+  onError,
 }: {
   data: Record<string, unknown>;
   canEdit: boolean;
+  canDelete: boolean;
   roles: Array<{ id: string; name: string }>;
   onClose: () => void;
   onUpdated: (msg: string) => void;
+  onError: (msg: string) => void;
 }) {
   const user = (data.user ?? {}) as Record<string, string>;
   const perms = (data.permissions ?? []) as string[];
@@ -496,6 +547,8 @@ function UserDetailModal({
   const [roleId, setRoleId] = React.useState(user.role_id);
   const [password, setPassword] = React.useState("Sofia@Temp1");
   const [confirmOff, setConfirmOff] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
 
   return (
     <FormModal
@@ -590,7 +643,26 @@ function UserDetailModal({
                 Deactivate
               </button>
             ) : null}
+            {canDelete ? (
+              <button
+                type="button"
+                className="text-sm text-red-700"
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete user
+              </button>
+            ) : null}
           </div>
+        </div>
+      ) : canDelete ? (
+        <div className="mt-4">
+          <button
+            type="button"
+            className="text-sm text-red-700"
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete user
+          </button>
         </div>
       ) : null}
       <ConfirmModal
@@ -607,6 +679,24 @@ function UserDetailModal({
               if (r.ok) onUpdated("User deactivated.");
             },
           );
+        }}
+      />
+      <ConfirmModal
+        open={confirmDelete}
+        title="Delete this user?"
+        description="The account is soft-deleted, sessions are revoked, and the change syncs to the cloud. You cannot delete your own account or the last active administrator."
+        confirmLabel={deleting ? "Deleting…" : "Delete"}
+        danger
+        onCancel={() => !deleting && setConfirmDelete(false)}
+        onConfirm={() => {
+          if (deleting) return;
+          setDeleting(true);
+          void deleteAdminUser(user.id).then((r) => {
+            setDeleting(false);
+            setConfirmDelete(false);
+            if (r.ok) onUpdated("User deleted.");
+            else onError(r.error);
+          });
         }}
       />
     </FormModal>
