@@ -82,7 +82,6 @@ export default function AdminBackupSyncPage() {
   const runs = ((sync?.runs as { runs?: Array<Record<string, unknown>> })
     ?.runs ?? []) as Array<Record<string, unknown>>;
   const conflicts = (sync?.conflicts ?? []) as Array<Record<string, unknown>>;
-  const pendingCount = Number(dash.pending ?? 0);
   const failedCount = Number(dash.failed ?? 0);
   const byTable = (Array.isArray(dash.by_table) ? dash.by_table : []) as Array<{
     table_name: string;
