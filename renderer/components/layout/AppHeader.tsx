@@ -1,6 +1,7 @@
 import React from "react";
-import { Notification03Icon, Search01Icon } from "@hugeicons/core-free-icons";
+import { Notification03Icon } from "@hugeicons/core-free-icons";
 import { Icon } from "../ui/Icon";
+import { GlobalSearch } from "./GlobalSearch";
 
 interface AppHeaderProps {
   breadcrumb: string[];
@@ -27,13 +28,7 @@ export function AppHeader({ breadcrumb }: AppHeaderProps) {
         ))}
       </nav>
 
-      <div className="mx-auto flex w-full max-w-md cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-sm text-slate-400">
-        <Icon icon={Search01Icon} size={15} />
-        <span className="flex-1">Search…</span>
-        <kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400">
-          Ctrl K
-        </kbd>
-      </div>
+      <GlobalSearch />
 
       <button
         type="button"

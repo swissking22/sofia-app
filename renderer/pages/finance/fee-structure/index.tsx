@@ -14,6 +14,7 @@ import {
   ConfirmModal,
   EmptyRow,
   FilterBar,
+  FilterField,
   FinanceTable,
   TableSelectionBar,
   PageAlert,
@@ -22,6 +23,7 @@ import {
   StatusBadge,
   fieldClass,
   selectClass,
+  useDebouncedValue,
 } from "../../../components/finance/ui";
 import { Icon } from "../../../components/ui/Icon";
 import {
@@ -93,16 +95,62 @@ export default function FeeStructurePage() {
   );
   const [lines, setLines] = React.useState<LineDraft[]>([emptyLine()]);
   const [selected, setSelected] = React.useState<string[]>([]);
+  const [filterYear, setFilterYear] = React.useState("");
+  const [filterLevel, setFilterLevel] = React.useState("");
+  const [filterSection, setFilterSection] = React.useState("");
+  const [filterStatus, setFilterStatus] = React.useState("");
+  const [filterSearch, setFilterSearch] = React.useState("");
+  const debouncedFilterSearch = useDebouncedValue(filterSearch, 250);
 
-  const allSelected = rows.length > 0 && selected.length === rows.length;
+  const filteredRows = React.useMemo(() => {
+    const q = debouncedFilterSearch.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (filterYear && r.academic_year_id !== filterYear) return false;
+      if (filterLevel && r.academic_level_id !== filterLevel) return false;
+      if (filterSection && r.section_id !== filterSection) return false;
+      if (filterStatus === "active" && !r.is_active) return false;
+      if (filterStatus === "inactive" && r.is_active) return false;
+      if (!q) return true;
+      const hay = [
+        r.name,
+        r.year_name,
+        r.level_name,
+        r.section_name,
+        r.class_name,
+        r.applies_to_residence,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [
+    rows,
+    filterYear,
+    filterLevel,
+    filterSection,
+    filterStatus,
+    debouncedFilterSearch,
+  ]);
+
+  const allSelected =
+    filteredRows.length > 0 &&
+    filteredRows.every((r) => selected.includes(r.id));
   function toggle(id: string) {
     setSelected((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   }
   function toggleAll() {
-    if (allSelected) setSelected([]);
-    else setSelected(rows.map((r) => r.id));
+    if (allSelected) {
+      setSelected((prev) =>
+        prev.filter((id) => !filteredRows.some((r) => r.id === id)),
+      );
+    } else {
+      setSelected((prev) => [
+        ...new Set([...prev, ...filteredRows.map((r) => r.id)]),
+      ]);
+    }
   }
   function exportSelected() {
     const target = rows.filter((r) => selected.includes(r.id));
@@ -350,9 +398,73 @@ export default function FeeStructurePage() {
 
       <FilterBar
         filters={
-          <span className="text-sm text-slate-500">
-            {rows.length} structures
-          </span>
+          <>
+            <FilterField label="Search" className="min-w-44 flex-1">
+              <input
+                className={`w-full ${selectClass}`}
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+                placeholder="Name, year, level…"
+              />
+            </FilterField>
+            <FilterField label="Year">
+              <select
+                className={selectClass}
+                value={filterYear}
+                onChange={(e) => setFilterYear(e.target.value)}
+              >
+                <option value="">All years</option>
+                {(meta?.years ?? []).map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.name}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+            <FilterField label="Level">
+              <select
+                className={selectClass}
+                value={filterLevel}
+                onChange={(e) => setFilterLevel(e.target.value)}
+              >
+                <option value="">All levels</option>
+                {(meta?.levels ?? []).map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+            <FilterField label="Department">
+              <select
+                className={selectClass}
+                value={filterSection}
+                onChange={(e) => setFilterSection(e.target.value)}
+              >
+                <option value="">All departments</option>
+                {(meta?.sections ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+            <FilterField label="Status">
+              <select
+                className={selectClass}
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="">All</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </FilterField>
+            <span className="self-end pb-2 text-sm text-slate-500">
+              {filteredRows.length} structure
+              {filteredRows.length === 1 ? "" : "s"}
+            </span>
+          </>
         }
         actions={
           canManage ? (
@@ -376,7 +488,11 @@ export default function FeeStructurePage() {
             type="checkbox"
             checked={allSelected}
             ref={(el) => {
-              if (el) el.indeterminate = selected.length > 0 && !allSelected;
+              if (el)
+                el.indeterminate =
+                  selected.length > 0 &&
+                  !allSelected &&
+                  filteredRows.some((r) => selected.includes(r.id));
             }}
             onChange={toggleAll}
             aria-label="Select all"
@@ -391,10 +507,17 @@ export default function FeeStructurePage() {
         ]}
         loading={loading}
       >
-        {rows.length === 0 ? (
-          <EmptyRow colSpan={8} message="No fee structures yet." />
+        {filteredRows.length === 0 ? (
+          <EmptyRow
+            colSpan={8}
+            message={
+              rows.length === 0
+                ? "No fee structures yet."
+                : "No fee structures match these filters."
+            }
+          />
         ) : (
-          rows.map((row) => (
+          filteredRows.map((row) => (
             <tr
               key={row.id}
               className="border-t border-slate-100 hover:bg-slate-50/80"

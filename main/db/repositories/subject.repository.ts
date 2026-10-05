@@ -44,6 +44,35 @@ export class SubjectRepository extends BaseRepository<Subject> {
     })
   }
 
+  /**
+   * Subject already linked to any class at the given level with the same
+   * display name (case-insensitive).
+   */
+  findDuplicateAtLevel(
+    schoolId: string,
+    academicLevelId: string,
+    name: string,
+    excludeId?: string
+  ): Subject | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT s.* FROM subjects s
+         INNER JOIN subject_classes sc
+           ON sc.subject_id = s.id AND sc.deleted_at IS NULL
+         INNER JOIN classes c
+           ON c.id = sc.class_id AND c.deleted_at IS NULL
+         WHERE s.deleted_at IS NULL
+           AND (s.school_id = ? OR s.school_id IS NULL)
+           AND c.academic_level_id = ?
+           AND lower(trim(s.name)) = lower(trim(?))
+         LIMIT 1`
+      )
+      .get(schoolId, academicLevelId, name) as Subject | undefined
+    if (!row) return undefined
+    if (excludeId && row.id === excludeId) return undefined
+    return row
+  }
+
   create(input: CreateInput<Subject>): Subject {
     const record: Subject = {
       ...this.buildBaseFields(),

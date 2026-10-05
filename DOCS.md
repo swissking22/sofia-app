@@ -152,7 +152,7 @@ Day-to-day school configuration (mirrors much of setup, editable anytime).
 | Terms & Sessions | `/school/terms` | Term dates within the year |
 | Classes | `/school/classes` | Manage levels, sections, specs, classes, and the school day schedule (period times + breaks). Class lists and dropdowns follow **level → section** order (Form 1 General, Commercial, Technical, then Form 2…). |
 | Departments | `/school/departments` | Add/edit/delete departments; department list paginates **10 rows** per page |
-| Subjects | `/school/subjects` | Pick an **academic level**, then add subjects (classes in that level are selected by default). One subject row per level + name is linked to every class that offers it (e.g. Form 1 Mathematics for General, Commercial, and Technical). Level subject list paginates **10 rows** per page. |
+| Subjects | `/school/subjects` | Pick an **academic level**, then use **Add new subject** (modal). Filter the subjects table by search and department. Duplicate names at the same level are blocked. |
 
 ---
 
@@ -162,10 +162,11 @@ Consistent UI across all student routes: filters at top, clean tables, status ba
 
 ### Students list — `/students`
 
-- **Filters:** admission year, level, department (section), **class**, search (name / student ID), and **Profile** (All / Incomplete only). Incomplete means missing gender, date of birth, or guardian phone. Dashboard **Needs Attention** links to `/students?incomplete=1`.
+- **Filters:** admission year, level, department (section), **class**, search (name / student ID), **Sort by** (Name or Class — class uses level → department structure order), and **Profile** (All / Incomplete only). Incomplete means missing gender, date of birth, or guardian phone. Dashboard **Needs Attention** links to `/students?incomplete=1`.
 - **Actions:** Add student, **Import** (opens Setup → Students CSV importer), bulk actions (mark alumni / delete).
 - **Class list:** **Export class list** (CSV) and **Print class list** are available for the current filter. With **All classes**, print opens `/students/class-lists?class_id=all` (one page per class).
 - Click a name to open the student profile.
+- **Duplicates:** creating a student rejects an active student with the same name in the same class.
 
 ### Bulk student import — `/setup/students`
 
@@ -462,7 +463,7 @@ Fee categories and currency come from Setup → Finance. Receipt header/footer u
 
 | Screen | Path | How to use |
 |--------|------|------------|
-| Fee structure | `/finance/fee-structure` | List packages with total, year, **level / department / class**, active badge, and **day/boarding** applicability. Managers can **create**, **edit**, **duplicate** (opens a pre-filled copy to adjust), activate/deactivate, and delete. Structures include fee lines, **Department**, and **Applies to** (all / day / boarding). Editing updates the package for future billing; existing invoices are unchanged. Billing refuses a structure whose department, level, class, or residence does not match the student. |
+| Fee structure | `/finance/fee-structure` | List packages with **filters** (search, year, level, department, status). Columns: total, year, **level / department / class**, active badge, and **day/boarding** applicability. Managers can **create**, **edit**, **duplicate** (opens a pre-filled copy to adjust), activate/deactivate, and delete. Structures include fee lines, **Department**, and **Applies to** (all / day / boarding). Editing updates the package for future billing; existing invoices are unchanged. Billing refuses a structure whose department, level, class, or residence does not match the student. |
 | Student billing | `/finance/billing` | Filter invoices by status/search. Generate for one student: type to search by name/ID, pick from suggestions; fee structures are filtered to the student’s **day/boarding** residence plus department/level/class, and the matching **class fee structure is pre-selected**. **Bulk generate** can target **one fee structure** (optional class filter) or **all classes** (each active student is billed with their class fee package; falls back to level/department packages when no class-specific package applies; day/boarding still respected). Generation is refused if scope does not match. Managers can **delete pending** invoices (row action, detail drawer, or bulk on selected pending rows); soft-delete only — paid/partial/overdue invoices and those with payments or carried arrears cannot be deleted. |
 | Payments | `/finance/payments` | Payment history. **Record payment**: type to search a student with outstanding balance, pick from suggestions, then choose their invoice (auto-selected when only one). Amount, method, reference, optional use of credit. **Online payment** starts a request (`pending`/`processing`); Confirm/Fail/Cancel after the provider settles. A request is not a successful payment — student balance and receipt update only on verified success. |
 | Receipts | `/finance/receipts` | List + search. View/print drawer or full page `/finance/receipts/:id`. Receipts show **Paid for** fee components (charged vs amount applied on this receipt, FIFO across invoice lines for partial payments). Managers can log a reprint. |
@@ -772,6 +773,8 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 
 **Main window:** `main/helpers/create-window.ts` always calls `maximize()` on create so Sofia launches full-screen on the display (window chrome kept; not exclusive kiosk fullscreen). Restored bounds still apply when the user un-maximizes.
 
+**Global search:** Header search / **Ctrl+K** (`renderer/components/layout/GlobalSearch.tsx`) filters sidebar destinations from `NAV_SECTIONS` and navigates on select.
+
 **Date display:** Human-facing dates use **Day → Month → Year** (`en-GB`) via `main/domain/date-format.ts` and `renderer/lib/date-format.ts` (`formatDisplayDate`, `formatDisplayDateTime`, etc.). Do not call `toLocaleDateString()` with the system locale in UI. HTML `<input type="date">` and DB storage remain ISO `YYYY-MM-DD`.
 
 **After schema/IPC changes:** restart the Nextron process so migrations and handlers reload.
@@ -804,6 +807,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-05 | **List UX:** students **Sort by** name/class; header **Ctrl/Cmd+K** global page search (`GlobalSearch`); duplicate guards for students (same class), teachers (same name), subjects (same level); fee structure + setup fee-category filters; Subjects page table with search/department filters and **Add new subject** modal. |
 | 2026-10-05 | **Restore from backup file:** Administration → Backup & Sync → **Restore from file…** (`system-admin:backup-pick-restore-file` / `backup-restore-from-file`). Verifies SQLite integrity, stages a copy under `userData/backups/restore-staging`, safety-backs up the live DB, queues replace on restart. |
 | 2026-10-05 | Dashboard top row shows a **Sync** button when the device is online (`useOnlineStatus` + `backup-sync:sync-now`); hidden offline. |
 | 2026-10-05 | Desktop window always launches **maximized** (`main/helpers/create-window.ts`) so Sofia opens full-screen on the display while keeping the title bar. |

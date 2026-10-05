@@ -55,6 +55,7 @@ export interface StudentDto {
   class_name: string | null
   academic_level_id: string | null
   level_name: string | null
+  level_sort_order: number | null
   section_id: string | null
   section_name: string | null
   school_id: string | null
@@ -199,6 +200,7 @@ function enrichStudent(repos: Repositories, student: Student): StudentDto {
     class_name: cls?.name ?? null,
     academic_level_id: levelId,
     level_name: level?.name ?? null,
+    level_sort_order: level?.sort_order ?? null,
     section_id: sectionId,
     section_name: section?.name ?? null,
     school_id: student.school_id,
@@ -381,6 +383,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         classId?: string | null
         search?: string | null
         incompleteProfiles?: boolean
+        sortBy?: 'name' | 'class'
       }
     ): Result<StudentListResult> => {
       const schoolId = resolveSchoolId(repos)
@@ -391,6 +394,7 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         }
       }
 
+      const sortBy = input?.sortBy === 'class' ? 'class' : 'name'
       const students = repos.students
         .listFiltered({
           schoolId,
@@ -403,12 +407,27 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
           incompleteProfiles: input?.incompleteProfiles === true,
         })
         .map((s) => enrichStudent(repos, s))
-        .sort((a, b) =>
-          a.name.localeCompare(b.name, undefined, {
+        .sort((a, b) => {
+          if (sortBy === 'class') {
+            const byClass = compareClassesByStructure(
+              {
+                level_sort_order: a.level_sort_order,
+                section_name: a.section_name,
+                name: a.class_name ?? '',
+              },
+              {
+                level_sort_order: b.level_sort_order,
+                section_name: b.section_name,
+                name: b.class_name ?? '',
+              }
+            )
+            if (byClass !== 0) return byClass
+          }
+          return a.name.localeCompare(b.name, undefined, {
             sensitivity: 'base',
             numeric: true,
           })
-        )
+        })
 
       return {
         ok: true,
@@ -632,6 +651,18 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
       const cls = repos.classes.findById(input.class_id)
       if (!cls || cls.school_id !== schoolId) {
         return { ok: false, error: 'Class not found.' }
+      }
+
+      const duplicate = repos.students.findActiveDuplicateInClass(
+        schoolId,
+        name,
+        input.class_id
+      )
+      if (duplicate) {
+        return {
+          ok: false,
+          error: `A student named "${duplicate.name}" already exists in this class (${duplicate.student_code || 'no ID'}).`,
+        }
       }
 
       const academicLevelId = cls.academic_level_id

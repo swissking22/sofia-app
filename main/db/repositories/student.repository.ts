@@ -69,6 +69,29 @@ export class StudentRepository extends BaseRepository<Student> {
       .get(schoolId, studentCode) as Student | undefined
   }
 
+  /** Active student with the same name in the same class (case-insensitive). */
+  findActiveDuplicateInClass(
+    schoolId: string,
+    name: string,
+    classId: string,
+    excludeId?: string
+  ): Student | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM students
+         WHERE school_id = ?
+           AND class_id = ?
+           AND status = 'active'
+           AND deleted_at IS NULL
+           AND lower(trim(name)) = lower(trim(?))
+         LIMIT 1`
+      )
+      .get(schoolId, classId, name) as Student | undefined
+    if (!row) return undefined
+    if (excludeId && row.id === excludeId) return undefined
+    return row
+  }
+
   findBySchool(schoolId: string, status: StudentStatus | 'all' = 'active'): Student[] {
     if (status === 'all') {
       return this.db

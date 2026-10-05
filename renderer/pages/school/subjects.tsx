@@ -6,8 +6,22 @@ import {
 } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../components/layout/AppShell";
 import { FormField, FormSection } from "../../components/setup";
+import {
+  EmptyRow,
+  FilterBar,
+  FilterField,
+  FormModal,
+  PageAlert,
+  PrimaryButton,
+  SecondaryButton,
+  selectClass,
+  useDebouncedValue,
+} from "../../components/students/ui";
 import { Icon } from "../../components/ui/Icon";
-import { TableActionGroup, TableIconButton } from "../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../components/ui/TableActions";
 import { ClientPaginatedTable } from "../../components/ui/table-pagination";
 import {
   createSubject,
@@ -18,9 +32,6 @@ import {
   type SubjectsSetup,
 } from "../../lib/subjects";
 
-const selectClass =
-  "w-full cursor-pointer rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
-
 export default function SchoolSubjectsPage() {
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -29,6 +40,11 @@ export default function SchoolSubjectsPage() {
   const [setup, setSetup] = React.useState<SubjectsSetup | null>(null);
 
   const [levelId, setLevelId] = React.useState("");
+  const [deptFilter, setDeptFilter] = React.useState("");
+  const [search, setSearch] = React.useState("");
+  const debouncedSearch = useDebouncedValue(search, 250);
+
+  const [formOpen, setFormOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [name, setName] = React.useState("");
   const [departmentId, setDepartmentId] = React.useState("");
@@ -61,10 +77,18 @@ export default function SchoolSubjectsPage() {
     return setup.classes.filter((c) => c.academic_level_id === levelId);
   }, [setup, levelId]);
 
-  const levelSubjects = React.useMemo(() => {
+  const filteredSubjects = React.useMemo(() => {
     if (!setup || !levelId) return [];
-    return setup.subjects.filter((s) => s.academic_level_id === levelId);
-  }, [setup, levelId]);
+    const q = debouncedSearch.trim().toLowerCase();
+    return setup.subjects.filter((s) => {
+      if (s.academic_level_id !== levelId) return false;
+      if (deptFilter && s.department_id !== deptFilter) return false;
+      if (!q) return true;
+      const hay =
+        `${s.name} ${s.department_name ?? ""} ${s.class_names.join(" ")}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [setup, levelId, deptFilter, debouncedSearch]);
 
   const selectedLevelName =
     setup?.levels.find((l) => l.id === levelId)?.name ?? "this level";
@@ -74,7 +98,6 @@ export default function SchoolSubjectsPage() {
     setName("");
     setDepartmentId(setup?.departments[0]?.id ?? "");
     setCoefficient("1");
-    // Default: all classes at the selected level
     setClassIds(
       keepLevel && levelId
         ? (setup?.classes
@@ -84,11 +107,12 @@ export default function SchoolSubjectsPage() {
     );
   }
 
-  React.useEffect(() => {
-    if (editingId) return;
-    // When switching level, default new subject to all classes in that level
-    setClassIds(levelClasses.map((c) => c.id));
-  }, [levelId, levelClasses, editingId]);
+  function openCreate() {
+    resetForm(true);
+    setError("");
+    setSuccess("");
+    setFormOpen(true);
+  }
 
   function startEdit(subject: SubjectDto) {
     setEditingId(subject.id);
@@ -99,6 +123,7 @@ export default function SchoolSubjectsPage() {
     setClassIds(subject.class_ids);
     setError("");
     setSuccess("");
+    setFormOpen(true);
   }
 
   function toggleClass(id: string) {
@@ -149,6 +174,7 @@ export default function SchoolSubjectsPage() {
       }
       applySetup(res.data);
       setSuccess(editingId ? "Subject updated." : "Subject added.");
+      setFormOpen(false);
       resetForm(true);
     } catch {
       setError("Could not save subject.");
@@ -166,7 +192,10 @@ export default function SchoolSubjectsPage() {
       return;
     }
     applySetup(res.data);
-    if (editingId === id) resetForm(true);
+    if (editingId === id) {
+      setFormOpen(false);
+      resetForm(true);
+    }
     setSuccess("Subject removed.");
   }
 
@@ -183,16 +212,8 @@ export default function SchoolSubjectsPage() {
         </p>
       ) : (
         <div className="space-y-5">
-          {error ? (
-            <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-              {error}
-            </div>
-          ) : null}
-          {success ? (
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-              {success}
-            </div>
-          ) : null}
+          {error ? <PageAlert tone="error">{error}</PageAlert> : null}
+          {success ? <PageAlert tone="success">{success}</PageAlert> : null}
 
           <FormSection
             title="Academic Level"
@@ -217,11 +238,8 @@ export default function SchoolSubjectsPage() {
                       type="button"
                       onClick={() => {
                         setLevelId(level.id);
-                        if (editingId) {
-                          setEditingId(null);
-                          setName("");
-                          setCoefficient("1");
-                        }
+                        setDeptFilter("");
+                        setSearch("");
                         setError("");
                         setSuccess("");
                       }}
@@ -244,189 +262,229 @@ export default function SchoolSubjectsPage() {
 
           {levelId ? (
             <>
-              <FormSection
-                title={
-                  editingId
-                    ? "Edit Subject"
-                    : `Add Subject — ${selectedLevelName}`
-                }
-                description={`Applies to classes in ${selectedLevelName}. All classes in the level are selected by default.`}
-                layout="stack"
-              >
-                <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
-                  <FormField
-                    label="Subject Name"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Mathematics"
-                  />
-                  <label className="mb-4 block">
-                    <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                      Department{" "}
-                      <span className="text-red-500" aria-hidden>
-                        *
-                      </span>
-                    </span>
-                    <select
-                      value={departmentId}
-                      onChange={(e) => setDepartmentId(e.target.value)}
-                      className={selectClass}
-                    >
-                      <option value="">Select department</option>
-                      {setup.departments.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <FormField
-                    label="Coefficient"
-                    type="number"
-                    min={0.5}
-                    step={0.5}
-                    value={coefficient}
-                    onChange={(e) => setCoefficient(e.target.value)}
-                    hint="Weight used in averages (typically 1–3)."
-                  />
-                </div>
-
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-slate-700">
-                      Classes in {selectedLevelName}{" "}
-                      <span className="text-red-500" aria-hidden>
-                        *
-                      </span>
-                    </p>
-                    {levelClasses.length > 0 ? (
-                      <button
-                        type="button"
-                        onClick={selectAllLevelClasses}
-                        className="cursor-pointer text-xs font-semibold text-(--sofia-primary) hover:underline"
+              <FilterBar
+                filters={
+                  <>
+                    <FilterField label="Search" className="min-w-48 flex-1">
+                      <input
+                        className={`w-full ${selectClass}`}
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Subject, department, class"
+                      />
+                    </FilterField>
+                    <FilterField label="Department">
+                      <select
+                        className={selectClass}
+                        value={deptFilter}
+                        onChange={(e) => setDeptFilter(e.target.value)}
                       >
-                        Select all
-                      </button>
-                    ) : null}
-                  </div>
-                  {levelClasses.length === 0 ? (
-                    <p className="text-sm text-slate-500">
-                      No classes for {selectedLevelName} yet. Create them under
-                      School Management → Classes.
-                    </p>
-                  ) : (
-                    <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-                      {levelClasses.map((c) => {
-                        const checked = classIds.includes(c.id);
-                        return (
-                          <label
-                            key={c.id}
-                            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                              checked
-                                ? "border-(--sofia-primary)/40 bg-(--sofia-primary)/5 font-medium text-(--sofia-primary)"
-                                : "border-slate-200 bg-white text-slate-700"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleClass(c.id)}
-                              className="h-4 w-4 rounded border-slate-300 text-(--sofia-primary)"
-                            />
-                            {c.name}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={saving || levelClasses.length === 0}
-                    onClick={() => void handleSubmit()}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-(--sofia-primary) px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                        <option value="">All departments</option>
+                        {setup.departments.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                    </FilterField>
+                    <span className="self-end pb-2 text-sm text-slate-500">
+                      {filteredSubjects.length} subject
+                      {filteredSubjects.length === 1 ? "" : "s"}
+                    </span>
+                  </>
+                }
+                actions={
+                  <PrimaryButton
+                    onClick={openCreate}
+                    disabled={levelClasses.length === 0}
                   >
                     <Icon icon={Add01Icon} size={16} />
-                    {saving
-                      ? "Saving…"
-                      : editingId
-                        ? "Update Subject"
-                        : "Add Subject"}
-                  </button>
-                  {editingId ? (
-                    <button
-                      type="button"
-                      onClick={() => resetForm(true)}
-                      className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                </div>
-              </FormSection>
+                    Add new subject
+                  </PrimaryButton>
+                }
+              />
 
-              <FormSection
-                title={`Subjects — ${selectedLevelName}`}
-                layout="stack"
+              <ClientPaginatedTable
+                tableClassName="w-full text-left text-sm"
+                head={
+                  <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Subject</th>
+                      <th className="px-4 py-3">Department</th>
+                      <th className="px-4 py-3">Coeff.</th>
+                      <th className="px-4 py-3">Classes</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                }
               >
-                {levelSubjects.length === 0 ? (
-                  <p className="text-sm text-slate-500">
-                    No subjects for {selectedLevelName} yet.
-                  </p>
+                {filteredSubjects.length === 0 ? (
+                  <EmptyRow
+                    colSpan={5}
+                    message={`No subjects for ${selectedLevelName} match these filters.`}
+                  />
                 ) : (
-                  <ClientPaginatedTable
-                    tableClassName="w-full text-left text-sm"
-                    head={
-                      <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-4 py-3">Subject</th>
-                          <th className="px-4 py-3">Department</th>
-                          <th className="px-4 py-3">Coeff.</th>
-                          <th className="px-4 py-3">Classes</th>
-                          <th className="px-4 py-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                    }
-                  >
-                    {levelSubjects.map((s) => (
-                      <tr key={s.id}>
-                        <td className="px-4 py-3 font-medium text-slate-900">
-                          {s.name}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {s.department_name ?? "—"}
-                        </td>
-                        <td className="px-4 py-3 text-slate-600">
-                          {s.coefficient}
-                        </td>
-                        <td className="max-w-xs truncate px-4 py-3 text-slate-600">
-                          {s.class_names.join(", ") || "—"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <TableActionGroup>
-                            <TableIconButton
-                              icon={PencilEdit01Icon}
-                              label={`Edit ${s.name}`}
-                              onClick={() => startEdit(s)}
-                            />
-                            <TableIconButton
-                              icon={Delete02Icon}
-                              label={`Delete ${s.name}`}
-                              tone="danger"
-                              onClick={() => void handleDelete(s.id)}
-                            />
-                          </TableActionGroup>
-                        </td>
-                      </tr>
-                    ))}
-                  </ClientPaginatedTable>
+                  filteredSubjects.map((s) => (
+                    <tr key={s.id}>
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {s.name}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {s.department_name ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {s.coefficient}
+                      </td>
+                      <td className="max-w-xs truncate px-4 py-3 text-slate-600">
+                        {s.class_names.join(", ") || "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <TableActionGroup>
+                          <TableIconButton
+                            icon={PencilEdit01Icon}
+                            label={`Edit ${s.name}`}
+                            onClick={() => startEdit(s)}
+                          />
+                          <TableIconButton
+                            icon={Delete02Icon}
+                            label={`Delete ${s.name}`}
+                            tone="danger"
+                            onClick={() => void handleDelete(s.id)}
+                          />
+                        </TableActionGroup>
+                      </td>
+                    </tr>
+                  ))
                 )}
-              </FormSection>
+              </ClientPaginatedTable>
             </>
           ) : null}
+
+          <FormModal
+            open={formOpen}
+            title={
+              editingId
+                ? `Edit subject — ${selectedLevelName}`
+                : `Add subject — ${selectedLevelName}`
+            }
+            onClose={() => {
+              if (saving) return;
+              setFormOpen(false);
+              resetForm(true);
+            }}
+            footer={
+              <div className="flex justify-end gap-2">
+                <SecondaryButton
+                  disabled={saving}
+                  onClick={() => {
+                    setFormOpen(false);
+                    resetForm(true);
+                  }}
+                >
+                  Cancel
+                </SecondaryButton>
+                <PrimaryButton
+                  disabled={saving || levelClasses.length === 0}
+                  onClick={() => void handleSubmit()}
+                >
+                  {saving
+                    ? "Saving…"
+                    : editingId
+                      ? "Update subject"
+                      : "Add subject"}
+                </PrimaryButton>
+              </div>
+            }
+          >
+            <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+              <FormField
+                label="Subject Name"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Mathematics"
+              />
+              <label className="mb-4 block">
+                <span className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Department{" "}
+                  <span className="text-red-500" aria-hidden>
+                    *
+                  </span>
+                </span>
+                <select
+                  value={departmentId}
+                  onChange={(e) => setDepartmentId(e.target.value)}
+                  className={selectClass}
+                >
+                  <option value="">Select department</option>
+                  {(setup?.departments ?? []).map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <FormField
+                label="Coefficient"
+                type="number"
+                min={0.5}
+                step={0.5}
+                value={coefficient}
+                onChange={(e) => setCoefficient(e.target.value)}
+                hint="Weight used in averages (typically 1–3)."
+              />
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-slate-700">
+                  Classes in {selectedLevelName}{" "}
+                  <span className="text-red-500" aria-hidden>
+                    *
+                  </span>
+                </p>
+                {levelClasses.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={selectAllLevelClasses}
+                    className="cursor-pointer text-xs font-semibold text-(--sofia-primary) hover:underline"
+                  >
+                    Select all
+                  </button>
+                ) : null}
+              </div>
+              {levelClasses.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  No classes for {selectedLevelName} yet. Create them under
+                  School Management → Classes.
+                </p>
+              ) : (
+                <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                  {levelClasses.map((c) => {
+                    const checked = classIds.includes(c.id);
+                    return (
+                      <label
+                        key={c.id}
+                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                          checked
+                            ? "border-(--sofia-primary)/40 bg-(--sofia-primary)/5 font-medium text-(--sofia-primary)"
+                            : "border-slate-200 bg-white text-slate-700"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleClass(c.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-(--sofia-primary)"
+                        />
+                        {c.name}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </FormModal>
         </div>
       )}
     </AppShell>

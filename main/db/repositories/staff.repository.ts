@@ -645,6 +645,27 @@ export class StaffRepository extends BaseRepository<Staff> {
     return row
   }
 
+  /** Teaching staff with the same full name (case-insensitive). */
+  findTeacherByFullName(
+    schoolId: string,
+    fullName: string,
+    excludeId?: string
+  ): Staff | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM staff
+         WHERE school_id = ?
+           AND staff_type = 'teaching'
+           AND deleted_at IS NULL
+           AND lower(trim(full_name)) = lower(trim(?))
+         LIMIT 1`
+      )
+      .get(schoolId, fullName) as Staff | undefined
+    if (!row) return undefined
+    if (excludeId && row.id === excludeId) return undefined
+    return row
+  }
+
   findByEmail(
     schoolId: string,
     email: string,

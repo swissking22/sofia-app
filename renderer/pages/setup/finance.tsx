@@ -88,6 +88,10 @@ function FinanceSetupForm() {
   const [receiptPrefix, setReceiptPrefix] = React.useState("RCP");
   const [receiptNext, setReceiptNext] = React.useState("1");
   const [expandedLevel, setExpandedLevel] = React.useState<string | null>(null);
+  const [categorySearch, setCategorySearch] = React.useState("");
+  const [categoryStatus, setCategoryStatus] = React.useState<
+    "" | "active" | "inactive"
+  >("");
 
   const applyData = React.useCallback((data: FinanceSetup) => {
     setCategories(data.categories);
@@ -111,6 +115,15 @@ function FinanceSetupForm() {
   }, [applyData]);
 
   const activeCategories = categories.filter((c) => c.is_active);
+  const filteredCategories = React.useMemo(() => {
+    const q = categorySearch.trim().toLowerCase();
+    return categories.filter((c) => {
+      if (categoryStatus === "active" && !c.is_active) return false;
+      if (categoryStatus === "inactive" && c.is_active) return false;
+      if (!q) return true;
+      return `${c.name} ${c.category_key}`.toLowerCase().includes(q);
+    });
+  }, [categories, categorySearch, categoryStatus]);
   const receiptExample = `${receiptPrefix.trim().toUpperCase() || "RCP"}-${String(
     Math.max(1, Number(receiptNext) || 1),
   ).padStart(5, "0")}`;
@@ -267,47 +280,76 @@ function FinanceSetupForm() {
         description="Enable the fee types your school charges. System defaults can be toggled."
         layout="stack"
       >
+        <div className="mb-3 flex flex-wrap gap-2">
+          <input
+            className={`${inputClass} min-w-48 flex-1`}
+            value={categorySearch}
+            onChange={(e) => setCategorySearch(e.target.value)}
+            placeholder="Filter categories…"
+          />
+          <select
+            className={inputClass}
+            value={categoryStatus}
+            onChange={(e) =>
+              setCategoryStatus(
+                e.target.value === "active" || e.target.value === "inactive"
+                  ? e.target.value
+                  : "",
+              )
+            }
+          >
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {categories.map((cat) => (
-            <div
-              key={cat.id}
-              className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 ${
-                cat.is_active
-                  ? "border-(--sofia-primary)/30 bg-(--sofia-primary)/5"
-                  : "border-slate-200 bg-white"
-              }`}
-            >
-              <input
-                type="checkbox"
-                checked={cat.is_active}
-                onChange={() => toggleCategory(cat.id)}
-                className="h-4 w-4 rounded border-slate-300 text-(--sofia-primary)"
-              />
-              {cat.is_system || !cat.isNew ? (
-                <span className="flex-1 text-sm font-medium text-slate-900">
-                  {cat.name}
-                  {cat.is_system ? (
-                    <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                      Default
-                    </span>
-                  ) : null}
-                </span>
-              ) : (
+          {filteredCategories.length === 0 ? (
+            <p className="col-span-full text-sm text-slate-500">
+              No categories match these filters.
+            </p>
+          ) : (
+            filteredCategories.map((cat) => (
+              <div
+                key={cat.id}
+                className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 ${
+                  cat.is_active
+                    ? "border-(--sofia-primary)/30 bg-(--sofia-primary)/5"
+                    : "border-slate-200 bg-white"
+                }`}
+              >
                 <input
-                  value={cat.name}
-                  onChange={(e) =>
-                    setCategories((prev) =>
-                      prev.map((c) =>
-                        c.id === cat.id ? { ...c, name: e.target.value } : c,
-                      ),
-                    )
-                  }
-                  placeholder="Category name"
-                  className={`${inputClass} flex-1`}
+                  type="checkbox"
+                  checked={cat.is_active}
+                  onChange={() => toggleCategory(cat.id)}
+                  className="h-4 w-4 rounded border-slate-300 text-(--sofia-primary)"
                 />
-              )}
-            </div>
-          ))}
+                {cat.is_system || !cat.isNew ? (
+                  <span className="flex-1 text-sm font-medium text-slate-900">
+                    {cat.name}
+                    {cat.is_system ? (
+                      <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Default
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <input
+                    value={cat.name}
+                    onChange={(e) =>
+                      setCategories((prev) =>
+                        prev.map((c) =>
+                          c.id === cat.id ? { ...c, name: e.target.value } : c,
+                        ),
+                      )
+                    }
+                    placeholder="Category name"
+                    className={`${inputClass} flex-1`}
+                  />
+                )}
+              </div>
+            ))
+          )}
         </div>
         <button
           type="button"

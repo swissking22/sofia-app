@@ -9,6 +9,7 @@ export interface StudentDto {
   class_name: string | null
   academic_level_id: string | null
   level_name: string | null
+  level_sort_order?: number | null
   section_id: string | null
   section_name: string | null
   school_id: string | null
@@ -153,6 +154,7 @@ export async function fetchStudentList(filters?: {
   classId?: string | null
   search?: string | null
   incompleteProfiles?: boolean
+  sortBy?: 'name' | 'class'
 }): Promise<Result<StudentListResult>> {
   return (await window.ipc.invoke(
     'students:mgmt-list',

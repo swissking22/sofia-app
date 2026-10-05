@@ -58,6 +58,7 @@ export default function StudentsIndexPage() {
   const [classId, setClassId] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [incompleteOnly, setIncompleteOnly] = React.useState(false);
+  const [sortBy, setSortBy] = React.useState<"name" | "class">("name");
   const debouncedSearch = useDebouncedValue(search, 300);
   const [selected, setSelected] = React.useState<string[]>([]);
   const [bulkOpen, setBulkOpen] = React.useState(false);
@@ -87,6 +88,7 @@ export default function StudentsIndexPage() {
       classId: classId || null,
       search: debouncedSearch || null,
       incompleteProfiles: incompleteOnly || undefined,
+      sortBy,
     });
     if (res.ok) setData(res.data);
     else setError(res.error);
@@ -98,6 +100,7 @@ export default function StudentsIndexPage() {
     classId,
     debouncedSearch,
     incompleteOnly,
+    sortBy,
     filtersHydrated,
     router.isReady,
   ]);
@@ -303,6 +306,18 @@ export default function StudentsIndexPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Name or student ID"
               />
+            </FilterField>
+            <FilterField label="Sort by">
+              <select
+                className={selectClass}
+                value={sortBy}
+                onChange={(e) =>
+                  setSortBy(e.target.value === "class" ? "class" : "name")
+                }
+              >
+                <option value="name">Name</option>
+                <option value="class">Class</option>
+              </select>
             </FilterField>
             <FilterField label="Profile">
               <select

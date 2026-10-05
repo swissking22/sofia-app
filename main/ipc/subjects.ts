@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { getSession } from '../auth'
 import type { Repositories } from '../db/repositories'
 import type { SubjectWithClasses } from '../db/repositories/subject.repository'
+import { normalizeSubjectName } from '../domain/subject-names'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -141,7 +142,7 @@ export function registerSubjectsIpc(repos: Repositories): void {
       const schoolId = resolveSchoolId(repos)
       if (!schoolId) return { ok: false, error: 'No school found.' }
 
-      const name = input?.name?.trim()
+      const name = normalizeSubjectName(input?.name?.trim() || '')
       if (!name) return { ok: false, error: 'Subject name is required.' }
       if (!input?.department_id) {
         return { ok: false, error: 'Select a department.' }
@@ -169,6 +170,18 @@ export function registerSubjectsIpc(repos: Repositories): void {
         return {
           ok: false,
           error: 'Assign the subject to at least one class in this level.',
+        }
+      }
+
+      const duplicate = repos.subjects.findDuplicateAtLevel(
+        schoolId,
+        input.academic_level_id,
+        name
+      )
+      if (duplicate) {
+        return {
+          ok: false,
+          error: `Subject "${duplicate.name}" already exists for this level.`,
         }
       }
 
@@ -207,7 +220,7 @@ export function registerSubjectsIpc(repos: Repositories): void {
       const schoolId = resolveSchoolId(repos)
       if (!schoolId) return { ok: false, error: 'No school found.' }
 
-      const name = input?.name?.trim()
+      const name = normalizeSubjectName(input?.name?.trim() || '')
       if (!input?.id || !name) {
         return { ok: false, error: 'Subject id and name are required.' }
       }
@@ -242,6 +255,19 @@ export function registerSubjectsIpc(repos: Repositories): void {
         return {
           ok: false,
           error: 'Assign the subject to at least one class in this level.',
+        }
+      }
+
+      const duplicate = repos.subjects.findDuplicateAtLevel(
+        schoolId,
+        input.academic_level_id,
+        name,
+        input.id
+      )
+      if (duplicate) {
+        return {
+          ok: false,
+          error: `Subject "${duplicate.name}" already exists for this level.`,
         }
       }
 

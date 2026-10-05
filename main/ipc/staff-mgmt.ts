@@ -341,6 +341,15 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
           return { ok: false, error: 'Email already used by another staff member.' }
         }
       }
+      if (
+        staff_type === 'teaching' &&
+        repos.staff.findTeacherByFullName(schoolId, full_name)
+      ) {
+        return {
+          ok: false,
+          error: `A teacher named "${full_name}" already exists. Use a distinguishing name or edit the existing record.`,
+        }
+      }
 
       const job_role: StaffJobRole =
         input.job_role ??
@@ -460,6 +469,17 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         )
         if (clash) {
           return { ok: false, error: 'Email already used by another staff member.' }
+        }
+      }
+      const nextName = input.full_name?.trim()
+      if (
+        nextName &&
+        existing.staff_type === 'teaching' &&
+        repos.staff.findTeacherByFullName(schoolId, nextName, input.id)
+      ) {
+        return {
+          ok: false,
+          error: `A teacher named "${nextName}" already exists. Use a distinguishing name or edit the existing record.`,
         }
       }
 
