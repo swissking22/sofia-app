@@ -1,4 +1,5 @@
 import React from "react";
+import { useRouter } from "next/router";
 import {
   Add01Icon,
   Delete02Icon,
@@ -33,6 +34,7 @@ import {
 } from "../../lib/subjects";
 
 export default function SchoolSubjectsPage() {
+  const router = useRouter();
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -71,6 +73,14 @@ export default function SchoolSubjectsPage() {
       setLoading(false);
     })();
   }, []);
+
+  React.useEffect(() => {
+    if (!router.isReady) return;
+    const q = router.query.q;
+    const level = router.query.level_id;
+    if (typeof q === "string" && q.trim()) setSearch(q.trim());
+    if (typeof level === "string" && level.trim()) setLevelId(level.trim());
+  }, [router.isReady, router.query.q, router.query.level_id]);
 
   const levelClasses = React.useMemo(() => {
     if (!setup || !levelId) return [];

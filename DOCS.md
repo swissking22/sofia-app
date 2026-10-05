@@ -773,7 +773,7 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 
 **Main window:** `main/helpers/create-window.ts` always calls `maximize()` on create so Sofia launches full-screen on the display (window chrome kept; not exclusive kiosk fullscreen). Restored bounds still apply when the user un-maximizes.
 
-**Global search:** Header search / **Ctrl+K** (`renderer/components/layout/GlobalSearch.tsx`) filters sidebar destinations from `NAV_SECTIONS` and navigates on select.
+**Global search:** Header search / **Ctrl+K** (`renderer/components/layout/GlobalSearch.tsx`) searches sidebar pages and local SQLite records (students, teachers/staff, classes, subjects, departments, fee structures, invoices, users) via `search:global` (`main/ipc/global-search.ts`). Selecting a hit opens the matching profile or filtered list.
 
 **Date display:** Human-facing dates use **Day → Month → Year** (`en-GB`) via `main/domain/date-format.ts` and `renderer/lib/date-format.ts` (`formatDisplayDate`, `formatDisplayDateTime`, etc.). Do not call `toLocaleDateString()` with the system locale in UI. HTML `<input type="date">` and DB storage remain ISO `YYYY-MM-DD`.
 
@@ -807,6 +807,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-05 | **Wide global search:** Ctrl+K / header search queries school data (students, staff, classes, subjects, departments, fee packages, invoices, users) plus pages (`search:global`), and deep-links into profiles or filtered lists. |
 | 2026-10-05 | **List UX:** students **Sort by** name/class; header **Ctrl/Cmd+K** global page search (`GlobalSearch`); duplicate guards for students (same class), teachers (same name), subjects (same level); fee structure + setup fee-category filters; Subjects page table with search/department filters and **Add new subject** modal. |
 | 2026-10-05 | **Restore from backup file:** Administration → Backup & Sync → **Restore from file…** (`system-admin:backup-pick-restore-file` / `backup-restore-from-file`). Verifies SQLite integrity, stages a copy under `userData/backups/restore-staging`, safety-backs up the live DB, queues replace on restart. |
 | 2026-10-05 | Dashboard top row shows a **Sync** button when the device is online (`useOnlineStatus` + `backup-sync:sync-now`); hidden offline. |

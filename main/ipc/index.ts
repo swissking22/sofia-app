@@ -32,6 +32,7 @@ import { registerSystemAdminIpc } from './system-admin'
 import { registerResultsCalculationIpc } from './results-calculation'
 import { registerUpdaterIpc } from './updater'
 import { registerGateAttendanceIpc } from './gate-attendance'
+import { registerGlobalSearchIpc } from './global-search'
 
 /** Register all IPC handlers for the main process. */
 export function registerIpcHandlers(
@@ -70,4 +71,5 @@ export function registerIpcHandlers(
   registerBackupSyncIpc(db, repos)
   registerDepartmentsIpc(repos)
   registerSubjectsIpc(repos)
+  registerGlobalSearchIpc(repos)
 }

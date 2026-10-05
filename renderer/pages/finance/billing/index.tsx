@@ -1,4 +1,5 @@
 import React from "react";
+import { useRouter } from "next/router";
 import { Add01Icon, Delete02Icon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
@@ -48,6 +49,7 @@ import {
 } from "../../../lib/finance-mgmt";
 
 export default function BillingPage() {
+  const router = useRouter();
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -58,6 +60,12 @@ export default function BillingPage() {
   const [status, setStatus] = React.useState<InvoiceStatus | "all">("all");
   const [search, setSearch] = React.useState("");
   const debouncedSearch = useDebouncedValue(search, 300);
+
+  React.useEffect(() => {
+    if (!router.isReady) return;
+    const q = router.query.q;
+    if (typeof q === "string" && q.trim()) setSearch(q.trim());
+  }, [router.isReady, router.query.q]);
 
   const [genOpen, setGenOpen] = React.useState(false);
   const [bulkOpen, setBulkOpen] = React.useState(false);

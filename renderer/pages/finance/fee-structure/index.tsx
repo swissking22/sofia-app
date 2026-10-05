@@ -1,4 +1,5 @@
 import React from "react";
+import { useRouter } from "next/router";
 import {
   Add01Icon,
   Copy01Icon,
@@ -72,6 +73,7 @@ function emptyLine(): LineDraft {
 }
 
 export default function FeeStructurePage() {
+  const router = useRouter();
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -101,6 +103,12 @@ export default function FeeStructurePage() {
   const [filterStatus, setFilterStatus] = React.useState("");
   const [filterSearch, setFilterSearch] = React.useState("");
   const debouncedFilterSearch = useDebouncedValue(filterSearch, 250);
+
+  React.useEffect(() => {
+    if (!router.isReady) return;
+    const q = router.query.q;
+    if (typeof q === "string" && q.trim()) setFilterSearch(q.trim());
+  }, [router.isReady, router.query.q]);
 
   const filteredRows = React.useMemo(() => {
     const q = debouncedFilterSearch.trim().toLowerCase();
