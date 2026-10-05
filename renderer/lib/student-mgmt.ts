@@ -154,7 +154,6 @@ export async function fetchStudentList(filters?: {
   classId?: string | null
   search?: string | null
   incompleteProfiles?: boolean
-  sortBy?: 'name' | 'class'
 }): Promise<Result<StudentListResult>> {
   return (await window.ipc.invoke(
     'students:mgmt-list',

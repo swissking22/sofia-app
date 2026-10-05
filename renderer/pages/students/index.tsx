@@ -4,9 +4,10 @@ import { useRouter } from "next/router";
 import {
   Add01Icon,
   File01Icon,
-  MoreHorizontalIcon,
+  PencilEdit01Icon,
   PrinterIcon,
   Upload04Icon,
+  ViewIcon,
 } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../components/layout/AppShell";
 import {
@@ -58,12 +59,10 @@ export default function StudentsIndexPage() {
   const [classId, setClassId] = React.useState("");
   const [search, setSearch] = React.useState("");
   const [incompleteOnly, setIncompleteOnly] = React.useState(false);
-  const [sortBy, setSortBy] = React.useState<"name" | "class">("name");
   const debouncedSearch = useDebouncedValue(search, 300);
   const [selected, setSelected] = React.useState<string[]>([]);
   const [bulkOpen, setBulkOpen] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
-  const [rowAction, setRowAction] = React.useState<StudentDto | null>(null);
   const [filtersHydrated, setFiltersHydrated] = React.useState(false);
 
   React.useEffect(() => {
@@ -88,7 +87,6 @@ export default function StudentsIndexPage() {
       classId: classId || null,
       search: debouncedSearch || null,
       incompleteProfiles: incompleteOnly || undefined,
-      sortBy,
     });
     if (res.ok) setData(res.data);
     else setError(res.error);
@@ -100,7 +98,6 @@ export default function StudentsIndexPage() {
     classId,
     debouncedSearch,
     incompleteOnly,
-    sortBy,
     filtersHydrated,
     router.isReady,
   ]);
@@ -195,7 +192,6 @@ export default function StudentsIndexPage() {
       setSuccess(`Marked ${res.data.updated} student(s) as alumni.`);
       setSelected([]);
       setBulkOpen(false);
-      setRowAction(null);
       await load();
     } finally {
       setBusy(false);
@@ -234,144 +230,140 @@ export default function StudentsIndexPage() {
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
       {success ? <PageAlert tone="success">{success}</PageAlert> : null}
 
-      <FilterBar
-        filters={
-          <>
-            <FilterField label="Year">
-              <select
-                className={selectClass}
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-              >
-                <option value="">All years</option>
-                {(data?.filters.years ?? []).map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-            <FilterField label="Level">
-              <select
-                className={selectClass}
-                value={levelId}
-                onChange={(e) => {
-                  setLevelId(e.target.value);
-                  setClassId("");
-                }}
-              >
-                <option value="">All levels</option>
-                {(data?.filters.levels ?? []).map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-            <FilterField label="Department">
-              <select
-                className={selectClass}
-                value={sectionId}
-                onChange={(e) => {
-                  setSectionId(e.target.value);
-                  setClassId("");
-                }}
-              >
-                <option value="">All departments</option>
-                {(data?.filters.sections ?? []).map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-            <FilterField label="Class">
-              <select
-                className={selectClass}
-                value={classId}
-                onChange={(e) => setClassId(e.target.value)}
-              >
-                <option value="">All classes</option>
-                {classOptions.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-            <FilterField label="Search" className="min-w-48 flex-1">
-              <input
-                className={`w-full ${selectClass}`}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Name or student ID"
-              />
-            </FilterField>
-            <FilterField label="Sort by">
-              <select
-                className={selectClass}
-                value={sortBy}
-                onChange={(e) =>
-                  setSortBy(e.target.value === "class" ? "class" : "name")
-                }
-              >
-                <option value="name">Name</option>
-                <option value="class">Class</option>
-              </select>
-            </FilterField>
-            <FilterField label="Profile">
-              <select
-                className={selectClass}
-                value={incompleteOnly ? "incomplete" : ""}
-                onChange={(e) => {
-                  const next = e.target.value === "incomplete";
-                  setIncompleteOnly(next);
-                  const q = { ...router.query };
-                  if (next) q.incomplete = "1";
-                  else delete q.incomplete;
-                  void router.replace(
-                    { pathname: "/students", query: q },
-                    undefined,
-                    { shallow: true },
-                  );
-                }}
-              >
-                <option value="">All profiles</option>
-                <option value="incomplete">Incomplete only</option>
-              </select>
-            </FilterField>
-          </>
-        }
-        actions={
-          <>
-            {canPrintOrExport ? (
-              <>
-                <SecondaryButton onClick={exportCurrentList}>
-                  <Icon icon={File01Icon} size={16} />
-                  Export class list
+      <div className="mb-4 flex flex-col gap-3">
+        <FilterBar
+          className=""
+          filters={
+            <>
+              <FilterField label="Year">
+                <select
+                  className={selectClass}
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                >
+                  <option value="">All years</option>
+                  {(data?.filters.years ?? []).map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+              <FilterField label="Level">
+                <select
+                  className={selectClass}
+                  value={levelId}
+                  onChange={(e) => {
+                    setLevelId(e.target.value);
+                    setClassId("");
+                  }}
+                >
+                  <option value="">All levels</option>
+                  {(data?.filters.levels ?? []).map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+              <FilterField label="Department">
+                <select
+                  className={selectClass}
+                  value={sectionId}
+                  onChange={(e) => {
+                    setSectionId(e.target.value);
+                    setClassId("");
+                  }}
+                >
+                  <option value="">All departments</option>
+                  {(data?.filters.sections ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+              <FilterField label="Class">
+                <select
+                  className={selectClass}
+                  value={classId}
+                  onChange={(e) => setClassId(e.target.value)}
+                >
+                  <option value="">All classes</option>
+                  {classOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+              <FilterField label="Profile">
+                <select
+                  className={selectClass}
+                  value={incompleteOnly ? "incomplete" : ""}
+                  onChange={(e) => {
+                    const next = e.target.value === "incomplete";
+                    setIncompleteOnly(next);
+                    const q = { ...router.query };
+                    if (next) q.incomplete = "1";
+                    else delete q.incomplete;
+                    void router.replace(
+                      { pathname: "/students", query: q },
+                      undefined,
+                      { shallow: true },
+                    );
+                  }}
+                >
+                  <option value="">All profiles</option>
+                  <option value="incomplete">Incomplete only</option>
+                </select>
+              </FilterField>
+            </>
+          }
+          actions={
+            <>
+              {canPrintOrExport ? (
+                <>
+                  <SecondaryButton onClick={exportCurrentList}>
+                    <Icon icon={File01Icon} size={16} />
+                    Export class list
+                  </SecondaryButton>
+                  <SecondaryButton href={classListHref()}>
+                    <Icon icon={PrinterIcon} size={16} />
+                    Print class list
+                  </SecondaryButton>
+                </>
+              ) : null}
+              {selected.length > 0 ? (
+                <SecondaryButton onClick={() => setBulkOpen(true)}>
+                  Bulk ({selected.length})
                 </SecondaryButton>
-                <SecondaryButton href={classListHref()}>
-                  <Icon icon={PrinterIcon} size={16} />
-                  Print class list
-                </SecondaryButton>
-              </>
-            ) : null}
-            {selected.length > 0 ? (
-              <SecondaryButton onClick={() => setBulkOpen(true)}>
-                Bulk ({selected.length})
+              ) : null}
+              <SecondaryButton href="/setup/students">
+                <Icon icon={Upload04Icon} size={16} />
+                Import
               </SecondaryButton>
-            ) : null}
-            <SecondaryButton href="/setup/students">
-              <Icon icon={Upload04Icon} size={16} />
-              Import
-            </SecondaryButton>
-            <PrimaryButton href="/students/create">
-              <Icon icon={Add01Icon} size={16} />
-              Add student
-            </PrimaryButton>
-          </>
-        }
-      />
+            </>
+          }
+        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <FilterField
+            label="Search"
+            className="min-w-48 w-full flex-1 sm:max-w-md"
+          >
+            <input
+              className={`w-full ${selectClass}`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Name or student ID"
+            />
+          </FilterField>
+          <PrimaryButton href="/students/create">
+            <Icon icon={Add01Icon} size={16} />
+            Add student
+          </PrimaryButton>
+        </div>
+      </div>
 
       <StudentTable
         loading={loading}
@@ -447,9 +439,15 @@ export default function StudentsIndexPage() {
               <td className="px-4 py-3 text-right">
                 <TableActionGroup>
                   <TableIconButton
-                    icon={MoreHorizontalIcon}
-                    label="Actions"
-                    onClick={() => setRowAction(s)}
+                    icon={ViewIcon}
+                    label="View profile"
+                    tone="primary"
+                    href={`/students/${s.id}`}
+                  />
+                  <TableIconButton
+                    icon={PencilEdit01Icon}
+                    label="Edit details"
+                    href={`/students/${s.id}?edit=1`}
                   />
                 </TableActionGroup>
               </td>
@@ -524,68 +522,6 @@ export default function StudentsIndexPage() {
         <p className="text-sm text-slate-600">
           Choose an action to apply to every selected student.
         </p>
-      </FormModal>
-
-      <FormModal
-        open={!!rowAction}
-        title="Quick actions"
-        subtitle={rowAction?.name}
-        onClose={() => setRowAction(null)}
-        footer={
-          rowAction ? (
-            <>
-              <PrimaryButton
-                className="w-full"
-                href={`/students/${rowAction.id}`}
-              >
-                View profile
-              </PrimaryButton>
-              <SecondaryButton
-                className="w-full"
-                href={`/students/documents/upload?student_id=${rowAction.id}`}
-              >
-                Upload document
-              </SecondaryButton>
-              <SecondaryButton
-                className="w-full"
-                href={`/students/transfers/create?student_id=${rowAction.id}`}
-              >
-                Transfer student
-              </SecondaryButton>
-              <SecondaryButton
-                className="w-full"
-                disabled={busy}
-                onClick={() => void markAlumni([rowAction.id])}
-              >
-                Mark as alumni
-              </SecondaryButton>
-            </>
-          ) : null
-        }
-      >
-        <dl className="space-y-2 text-sm">
-          <div className="flex justify-between gap-3">
-            <dt className="text-slate-500">Student ID</dt>
-            <dd className="font-mono text-xs font-medium">
-              {rowAction?.student_code || "—"}
-            </dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-slate-500">Class</dt>
-            <dd className="font-medium">{rowAction?.class_name || "—"}</dd>
-          </div>
-          <div className="flex justify-between gap-3">
-            <dt className="text-slate-500">Status</dt>
-            <dd>
-              {rowAction ? (
-                <StatusBadge
-                  status={rowAction.status}
-                  label={STATUS_LABELS[rowAction.status] ?? rowAction.status}
-                />
-              ) : null}
-            </dd>
-          </div>
-        </dl>
       </FormModal>
 
       <ConfirmModal

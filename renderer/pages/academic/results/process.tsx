@@ -105,20 +105,26 @@ export default function ResultsProcessPage() {
             <h3 className="font-semibold text-slate-900">How it works</h3>
             <ul className="mt-2 list-inside list-disc space-y-1 text-slate-600">
               <li>
-                Sofia loads the active calculation profile for this class when one exists.
+                Sofia loads the active calculation profile for this class when
+                one exists.
               </li>
               <li>
-                Continuous assessment and exam scores are the inputs. The profile decides weights, grades, ranking, and promotion.
+                Continuous assessment and exam scores are the inputs. The
+                profile decides weights, grades, ranking, and promotion.
               </li>
               <li>
                 Configure rules under{" "}
-                <Link className="font-medium text-(--sofia-primary)" href="/academic/results/calculation-settings">
+                <Link
+                  className="font-medium text-(--sofia-primary)"
+                  href="/academic/results/calculation-settings"
+                >
                   Calculation settings
                 </Link>
                 .
               </li>
               <li>
-                Locked results keep a snapshot of the rules used. Changing settings later will not rewrite them.
+                Locked results keep a snapshot of the rules used. Changing
+                settings later will not rewrite them.
               </li>
             </ul>
           </div>
@@ -202,12 +208,6 @@ export default function ResultsProcessPage() {
                 View results
               </Link>
             ) : null}
-            <Link
-              href="/academic/results"
-              className="rounded-xl px-5 py-2.5 text-sm font-medium text-slate-500"
-            >
-              Back to results
-            </Link>
           </div>
         </>
       )}

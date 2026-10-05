@@ -354,7 +354,6 @@ export default function TeacherDetailPage() {
               {saving ? "Saving…" : "Save changes"}
             </PrimaryButton>
           ) : null}
-          <SecondaryButton href="/staff/teachers">Back</SecondaryButton>
         </div>
       </form>
     </AppShell>

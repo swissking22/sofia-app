@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
@@ -25,8 +24,7 @@ function todayIso() {
 }
 
 const markButtonClass: Record<AttendanceMark, string> = {
-  present:
-    "border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-300",
+  present: "border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-300",
   absent: "border-red-200 bg-red-50 text-red-700 ring-red-300",
   late: "border-amber-200 bg-amber-50 text-amber-700 ring-amber-300",
   excused: "border-sky-200 bg-sky-50 text-sky-700 ring-sky-300",
@@ -87,7 +85,11 @@ export default function AttendanceTakePage() {
     const csv = [
       ["Student ID", "Name", "Attendance Status"].join(","),
       ...target.map((s) =>
-        [`"${s.student_code || ""}"`, `"${s.name}"`, `"${marks[s.id] ?? s.status ?? ""}"`].join(","),
+        [
+          `"${s.student_code || ""}"`,
+          `"${s.name}"`,
+          `"${marks[s.id] ?? s.status ?? ""}"`,
+        ].join(","),
       ),
     ].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -105,14 +107,18 @@ export default function AttendanceTakePage() {
       if (res.ok) {
         setMeta(res.data);
         const qClass =
-          typeof router.query.class_id === "string" ? router.query.class_id : "";
+          typeof router.query.class_id === "string"
+            ? router.query.class_id
+            : "";
         const qDate =
-          typeof router.query.date === "string" ? router.query.date : todayIso();
+          typeof router.query.date === "string"
+            ? router.query.date
+            : todayIso();
         setSessionDate(qDate);
         const initial =
           qClass && res.data.classes.some((c) => c.id === qClass)
             ? qClass
-            : res.data.classes[0]?.id ?? "";
+            : (res.data.classes[0]?.id ?? "");
         setClassId(initial);
       } else {
         setError(res.error);
@@ -130,7 +136,10 @@ export default function AttendanceTakePage() {
     }
     setLoading(true);
     setError("");
-    const res = await fetchAttendanceRoster({ class_id: cid, session_date: date });
+    const res = await fetchAttendanceRoster({
+      class_id: cid,
+      session_date: date,
+    });
     if (res.ok) {
       setStudents(res.data.students);
       const initial: Record<string, AttendanceMark> = {};
@@ -411,15 +420,6 @@ export default function AttendanceTakePage() {
           />
         </>
       )}
-
-      <div className="mt-5">
-        <Link
-          href="/academic/attendance"
-          className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700"
-        >
-          Back to sessions
-        </Link>
-      </div>
     </AppShell>
   );
 }

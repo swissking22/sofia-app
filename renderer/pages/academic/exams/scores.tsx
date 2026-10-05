@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
@@ -53,8 +52,7 @@ export default function ExamScoresPage() {
   const scoreInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
-  const allSelected =
-    scores.length > 0 && selectedIds.length === scores.length;
+  const allSelected = scores.length > 0 && selectedIds.length === scores.length;
   function toggleRow(id: string) {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -66,9 +64,7 @@ export default function ExamScoresPage() {
   }
   function bulkSetScore(val: number | null) {
     setScores((prev) =>
-      prev.map((s) =>
-        selectedIds.includes(s.id) ? { ...s, score: val } : s,
-      ),
+      prev.map((s) => (selectedIds.includes(s.id) ? { ...s, score: val } : s)),
     );
   }
   function exportSelected() {
@@ -231,12 +227,6 @@ export default function ExamScoresPage() {
         </label>
 
         <div className="flex flex-wrap gap-2">
-          <Link
-            href="/academic/exams"
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
-          >
-            Back to sessions
-          </Link>
           <button
             type="button"
             disabled={!paperId || saving || loadingScores}
@@ -255,10 +245,7 @@ export default function ExamScoresPage() {
             {selectedPaper.max_score}
           </span>
           {selectedPaper.exam_date ? (
-            <>
-              {" "}
-              · Exam date: {formatDisplayDate(selectedPaper.exam_date)}
-            </>
+            <> · Exam date: {formatDisplayDate(selectedPaper.exam_date)}</>
           ) : null}
         </p>
       ) : null}

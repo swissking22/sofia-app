@@ -383,7 +383,6 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         classId?: string | null
         search?: string | null
         incompleteProfiles?: boolean
-        sortBy?: 'name' | 'class'
       }
     ): Result<StudentListResult> => {
       const schoolId = resolveSchoolId(repos)
@@ -394,7 +393,6 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         }
       }
 
-      const sortBy = input?.sortBy === 'class' ? 'class' : 'name'
       const students = repos.students
         .listFiltered({
           schoolId,
@@ -408,21 +406,19 @@ export function registerStudentMgmtIpc(repos: Repositories): void {
         })
         .map((s) => enrichStudent(repos, s))
         .sort((a, b) => {
-          if (sortBy === 'class') {
-            const byClass = compareClassesByStructure(
-              {
-                level_sort_order: a.level_sort_order,
-                section_name: a.section_name,
-                name: a.class_name ?? '',
-              },
-              {
-                level_sort_order: b.level_sort_order,
-                section_name: b.section_name,
-                name: b.class_name ?? '',
-              }
-            )
-            if (byClass !== 0) return byClass
-          }
+          const byClass = compareClassesByStructure(
+            {
+              level_sort_order: a.level_sort_order,
+              section_name: a.section_name,
+              name: a.class_name ?? '',
+            },
+            {
+              level_sort_order: b.level_sort_order,
+              section_name: b.section_name,
+              name: b.class_name ?? '',
+            }
+          )
+          if (byClass !== 0) return byClass
           return a.name.localeCompare(b.name, undefined, {
             sensitivity: 'base',
             numeric: true,

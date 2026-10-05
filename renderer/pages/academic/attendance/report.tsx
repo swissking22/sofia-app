@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
@@ -55,11 +54,13 @@ export default function AttendanceReportPage() {
       if (res.ok) {
         setMeta(res.data);
         const qClass =
-          typeof router.query.class_id === "string" ? router.query.class_id : "";
+          typeof router.query.class_id === "string"
+            ? router.query.class_id
+            : "";
         const initial =
           qClass && res.data.classes.some((c) => c.id === qClass)
             ? qClass
-            : res.data.classes[0]?.id ?? "";
+            : (res.data.classes[0]?.id ?? "");
         setClassId(initial);
       } else {
         setError(res.error);
@@ -95,8 +96,7 @@ export default function AttendanceReportPage() {
     if (!rows.length) {
       return { avgRate: 0, totalPresent: 0, totalAbsent: 0, studentCount: 0 };
     }
-    const avgRate =
-      rows.reduce((sum, r) => sum + r.rate, 0) / rows.length;
+    const avgRate = rows.reduce((sum, r) => sum + r.rate, 0) / rows.length;
     const totalPresent = rows.reduce((sum, r) => sum + r.present, 0);
     const totalAbsent = rows.reduce((sum, r) => sum + r.absent, 0);
     return {
@@ -196,7 +196,9 @@ export default function AttendanceReportPage() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading report…</p>
       ) : !classId ? (
-        <p className="text-sm text-slate-500">Select a class to view the report.</p>
+        <p className="text-sm text-slate-500">
+          Select a class to view the report.
+        </p>
       ) : (
         <ClientPaginatedTable
           head={
@@ -216,10 +218,7 @@ export default function AttendanceReportPage() {
         >
           {rows.length === 0 ? (
             <tr>
-              <td
-                colSpan={8}
-                className="px-4 py-8 text-center text-slate-500"
-              >
+              <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
                 No attendance data for this range.
               </td>
             </tr>
@@ -257,15 +256,6 @@ export default function AttendanceReportPage() {
           )}
         </ClientPaginatedTable>
       )}
-
-      <div className="mt-5">
-        <Link
-          href="/academic/attendance"
-          className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700"
-        >
-          Back to sessions
-        </Link>
-      </div>
     </AppShell>
   );
 }

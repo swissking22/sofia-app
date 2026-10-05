@@ -46,12 +46,16 @@ export function PageAlert({
 export function FilterBar({
   filters,
   actions,
+  className,
 }: {
   filters: React.ReactNode;
   actions?: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+    <div
+      className={`flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between ${className ?? "mb-4"}`}
+    >
       <div className="flex flex-wrap gap-2">{filters}</div>
       {actions ? (
         <div className="flex flex-wrap items-center gap-2">{actions}</div>

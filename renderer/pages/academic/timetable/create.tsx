@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
@@ -425,15 +424,6 @@ export default function TimetableCreatePage() {
           </div>
         </div>
       )}
-
-      <div className="mt-5">
-        <Link
-          href="/academic/timetable"
-          className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700"
-        >
-          Back to timetable
-        </Link>
-      </div>
     </AppShell>
   );
 }

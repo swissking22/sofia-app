@@ -277,12 +277,6 @@ export default function ResultsPublishPage() {
             >
               View results
             </Link>
-            <Link
-              href="/academic/results"
-              className="rounded-xl px-5 py-2.5 text-sm font-medium text-slate-500"
-            >
-              Back to results
-            </Link>
           </div>
         </>
       )}

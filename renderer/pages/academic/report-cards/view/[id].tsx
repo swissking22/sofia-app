@@ -1,5 +1,4 @@
 import React from "react";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { OfficialReportCard } from "../../../../components/report-cards/OfficialReportCard";
@@ -54,12 +53,6 @@ export default function ReportCardViewPage() {
         >
           Print / Save as PDF
         </button>
-        <Link
-          href="/academic/report-cards"
-          className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700"
-        >
-          Back to list
-        </Link>
       </div>
 
       {loading ? (

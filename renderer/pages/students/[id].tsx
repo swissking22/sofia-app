@@ -227,6 +227,29 @@ export default function StudentDetailPage() {
     setEditOpen(true);
   }
 
+  const editRequested =
+    router.query.edit === "1" || router.query.edit === "true";
+  const [editFromQueryDone, setEditFromQueryDone] = React.useState(false);
+
+  React.useEffect(() => {
+    setEditFromQueryDone(false);
+  }, [id]);
+
+  React.useEffect(() => {
+    if (!editRequested || editFromQueryDone || loading || !student) return;
+    openEdit();
+    setEditFromQueryDone(true);
+    const nextQuery = { ...router.query };
+    delete nextQuery.edit;
+    void router.replace(
+      { pathname: "/students/[id]", query: nextQuery },
+      undefined,
+      { shallow: true },
+    );
+    // openEdit reads current student/structure; intentional one-shot on load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequested, editFromQueryDone, loading, student, structure]);
+
   async function setStatus(status: "active" | "alumni" | "transferred") {
     if (!student) return;
     setError("");
@@ -392,7 +415,6 @@ export default function StudentDetailPage() {
               <Icon icon={Upload04Icon} size={16} />
               Upload document
             </SecondaryButton>
-            <SecondaryButton href="/students">Back</SecondaryButton>
           </div>
         </div>
       </div>

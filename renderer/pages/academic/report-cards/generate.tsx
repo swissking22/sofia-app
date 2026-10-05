@@ -161,12 +161,6 @@ export default function ReportCardsGeneratePage() {
                 View report cards
               </Link>
             ) : null}
-            <Link
-              href="/academic/report-cards"
-              className="rounded-xl px-5 py-2.5 text-sm font-medium text-slate-500"
-            >
-              Back to list
-            </Link>
           </div>
         </>
       )}

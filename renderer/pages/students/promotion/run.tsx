@@ -7,7 +7,6 @@ import {
   EmptyRow,
   PageAlert,
   PrimaryButton,
-  SecondaryButton,
   StudentTable,
 } from "../../../components/students/ui";
 import {
@@ -177,9 +176,7 @@ export default function PromotionRunPage() {
           </h3>
           <StudentTable columns={["From", "To", "Students"]} loading={false}>
             {activeMappings.length === 0 ? (
-              <EmptyRow colSpan={3}>
-                No destination mappings selected.
-              </EmptyRow>
+              <EmptyRow colSpan={3}>No destination mappings selected.</EmptyRow>
             ) : (
               activeMappings.map(renderMappingRow)
             )}
@@ -194,7 +191,10 @@ export default function PromotionRunPage() {
                 Students in these classes will not be promoted. They may
                 graduate or remain in place depending on your school policy.
               </p>
-              <StudentTable columns={["From", "To", "Students"]} loading={false}>
+              <StudentTable
+                columns={["From", "To", "Students"]}
+                loading={false}
+              >
                 {skippedMappings.map(renderMappingRow)}
               </StudentTable>
             </>
@@ -207,9 +207,6 @@ export default function PromotionRunPage() {
             >
               Confirm promotion
             </PrimaryButton>
-            <SecondaryButton href="/students/promotion">
-              Back to mapping
-            </SecondaryButton>
           </div>
         </>
       ) : (
@@ -226,8 +223,8 @@ export default function PromotionRunPage() {
         title="Run promotion?"
         description={
           <>
-            This will move about <strong>{totalStudents}</strong> student(s) from{" "}
-            <strong>{payload?.from_year}</strong> to{" "}
+            This will move about <strong>{totalStudents}</strong> student(s)
+            from <strong>{payload?.from_year}</strong> to{" "}
             <strong>{payload?.to_year}</strong> according to{" "}
             {activeMappings.length} class mapping(s). This action cannot be
             undone from this screen.

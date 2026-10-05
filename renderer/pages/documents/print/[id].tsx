@@ -5,7 +5,6 @@ import {
   DocumentHtml,
   PageAlert,
   PrimaryButton,
-  SecondaryButton,
 } from "../../../components/documents/ui";
 import {
   fetchIssuedDocument,
@@ -47,7 +46,6 @@ export default function DocumentPrintPage() {
       subtitle="Use Print to paper or Save as PDF. A4, school branding, and verification ID are included in the layout."
     >
       <div className="mb-4 flex flex-wrap gap-2 print:hidden">
-        <SecondaryButton onClick={() => router.back()}>Back</SecondaryButton>
         <PrimaryButton onClick={() => void handlePrint()}>
           Print / Download PDF
         </PrimaryButton>

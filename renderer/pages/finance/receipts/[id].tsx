@@ -66,14 +66,17 @@ export default function ReceiptPrintPage() {
   return (
     <AppShell
       title="Receipt"
-      breadcrumb={["Finance & Fees", "Receipts", data?.receipt.receipt_number ?? "…"]}
+      breadcrumb={[
+        "Finance & Fees",
+        "Receipts",
+        data?.receipt.receipt_number ?? "…",
+      ]}
       heading="Receipt"
       subtitle="Printable payment receipt."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
 
       <div className="no-print mb-4 flex flex-wrap gap-2 print:hidden">
-        <SecondaryButton href="/finance/receipts">Back to list</SecondaryButton>
         <PrimaryButton onClick={() => window.print()}>Print</PrimaryButton>
         {canManage ? (
           <SecondaryButton disabled={busy} onClick={() => void handleReprint()}>
@@ -163,8 +166,8 @@ export default function ReceiptPrintPage() {
               </dt>
               <dd className="mt-1 text-slate-800">
                 {data.payment?.method
-                  ? PAYMENT_METHOD_LABELS[data.payment.method] ??
-                    data.payment.method
+                  ? (PAYMENT_METHOD_LABELS[data.payment.method] ??
+                    data.payment.method)
                   : "—"}
               </dd>
             </div>
@@ -203,8 +206,13 @@ export default function ReceiptPrintPage() {
                 </thead>
                 <tbody>
                   {data.lines.map((line, idx) => (
-                    <tr key={`${line.description}-${idx}`} className="border-b border-slate-100">
-                      <td className="py-2 text-slate-800">{line.description}</td>
+                    <tr
+                      key={`${line.description}-${idx}`}
+                      className="border-b border-slate-100"
+                    >
+                      <td className="py-2 text-slate-800">
+                        {line.description}
+                      </td>
                       <td className="py-2 text-right text-slate-600">
                         {formatMoney(line.charged, currency)}
                       </td>

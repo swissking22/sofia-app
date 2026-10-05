@@ -162,10 +162,10 @@ Consistent UI across all student routes: filters at top, clean tables, status ba
 
 ### Students list — `/students`
 
-- **Filters:** admission year, level, department (section), **class**, search (name / student ID), **Sort by** (Name or Class — class uses level → department structure order), and **Profile** (All / Incomplete only). Incomplete means missing gender, date of birth, or guardian phone. Dashboard **Needs Attention** links to `/students?incomplete=1`.
-- **Actions:** Add student, **Import** (opens Setup → Students CSV importer), bulk actions (mark alumni / delete).
+- **Filters:** admission year, level, department (section), **class**, and **Profile** (All / Incomplete only) on the first row; **name / student ID** search and **Add student** on the second. List is always ordered by class (level → department structure) then name A–Z. Incomplete means missing gender, date of birth, or guardian phone. Dashboard **Needs Attention** links to `/students?incomplete=1`.
+- **Actions:** Add student, **Import** (opens Setup → Students CSV importer), bulk actions (mark alumni / delete). Row actions: **View** profile and **Edit** details (`/students/[id]?edit=1` opens the edit modal).
 - **Class list:** **Export class list** (CSV) and **Print class list** are available for the current filter. With **All classes**, print opens `/students/class-lists?class_id=all` (one page per class).
-- Click a name to open the student profile.
+- Click a name (or View) to open the student profile.
 - **Duplicates:** creating a student rejects an active student with the same name in the same class.
 
 ### Bulk student import — `/setup/students`
@@ -773,6 +773,8 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 
 **Main window:** `main/helpers/create-window.ts` always calls `maximize()` on create so Sofia launches full-screen on the display (window chrome kept; not exclusive kiosk fullscreen). Restored bounds still apply when the user un-maximizes.
 
+**Nested Back:** `AppShell` shows a heading **Back** control on deep routes (detail, create/action, and module sub-pages). Parent href comes from `resolveNestedBackHref` (`renderer/lib/nested-back.ts`), or an explicit `backHref` / `backLabel` prop; pass `backHref={false}` to hide. Prefer this over ad-hoc page-level Back buttons.
+
 **Global search:** Header search / **Ctrl+K** (`renderer/components/layout/GlobalSearch.tsx`) searches sidebar pages and local SQLite records (students, teachers/staff, classes, subjects, departments, fee structures, invoices, users) via `search:global` (`main/ipc/global-search.ts`). Selecting a hit opens the matching profile or filtered list.
 
 **Date display:** Human-facing dates use **Day → Month → Year** (`en-GB`) via `main/domain/date-format.ts` and `renderer/lib/date-format.ts` (`formatDisplayDate`, `formatDisplayDateTime`, etc.). Do not call `toLocaleDateString()` with the system locale in UI. HTML `<input type="date">` and DB storage remain ISO `YYYY-MM-DD`.
@@ -807,6 +809,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-05 | **Students list:** row actions are View profile and Edit details icon buttons (`?edit=1` opens the edit modal); search + Add student on a second toolbar row; sorted by class then name. |
+| 2026-10-05 | **Nested Back:** `AppShell` auto-shows a Back control on deep routes via `resolveNestedBackHref` (`renderer/lib/nested-back.ts`); optional `backHref` / `backLabel`. |
 | 2026-10-05 | **Wide global search:** Ctrl+K / header search queries school data (students, staff, classes, subjects, departments, fee packages, invoices, users) plus pages (`search:global`), and deep-links into profiles or filtered lists. |
 | 2026-10-05 | **List UX:** students **Sort by** name/class; header **Ctrl/Cmd+K** global page search (`GlobalSearch`); duplicate guards for students (same class), teachers (same name), subjects (same level); fee structure + setup fee-category filters; Subjects page table with search/department filters and **Add new subject** modal. |
 | 2026-10-05 | **Restore from backup file:** Administration → Backup & Sync → **Restore from file…** (`system-admin:backup-pick-restore-file` / `backup-restore-from-file`). Verifies SQLite integrity, stages a copy under `userData/backups/restore-staging`, safety-backs up the live DB, queues replace on restart. |

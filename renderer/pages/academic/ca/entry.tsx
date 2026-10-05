@@ -35,8 +35,7 @@ export default function CaEntryPage() {
   const scoreInputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
-  const allSelected =
-    scores.length > 0 && selectedIds.length === scores.length;
+  const allSelected = scores.length > 0 && selectedIds.length === scores.length;
   function toggleRow(id: string) {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -48,9 +47,7 @@ export default function CaEntryPage() {
   }
   function bulkSetScore(val: number | null) {
     setScores((prev) =>
-      prev.map((s) =>
-        selectedIds.includes(s.id) ? { ...s, score: val } : s,
-      ),
+      prev.map((s) => (selectedIds.includes(s.id) ? { ...s, score: val } : s)),
     );
   }
   function exportSelected() {
@@ -212,12 +209,6 @@ export default function CaEntryPage() {
       ) : null}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Link
-          href="/academic/ca"
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
-        >
-          Back to assessments
-        </Link>
         <button
           type="button"
           disabled={saving || loading}

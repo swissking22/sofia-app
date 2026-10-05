@@ -106,16 +106,12 @@ export default function StaffDirectoryDetailPage() {
             <InfoRow
               label="Staff type"
               value={
-                staff.staff_type === "teaching"
-                  ? "Teaching"
-                  : "Administrative"
+                staff.staff_type === "teaching" ? "Teaching" : "Administrative"
               }
             />
             <InfoRow
               label="Job role"
-              value={
-                staff.job_role ? JOB_ROLE_LABELS[staff.job_role] : null
-              }
+              value={staff.job_role ? JOB_ROLE_LABELS[staff.job_role] : null}
             />
             <InfoRow label="Department" value={staff.department_name} />
             <InfoRow label="Employee ID" value={staff.employee_code} />
@@ -167,12 +163,6 @@ export default function StaffDirectoryDetailPage() {
             </dl>
           </section>
         )}
-      </div>
-
-      <div className="mt-5">
-        <SecondaryButton href="/staff/directory">
-          Back to directory
-        </SecondaryButton>
       </div>
     </AppShell>
   );

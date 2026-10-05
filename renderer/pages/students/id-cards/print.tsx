@@ -1,11 +1,7 @@
 import React from "react";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
-import {
-  PageAlert,
-  PrimaryButton,
-  SecondaryButton,
-} from "../../../components/students/ui";
+import { PageAlert, PrimaryButton } from "../../../components/students/ui";
 import { CardSurface } from "../../../components/id-cards/CardSurface";
 import { fetchIdCardsPrint } from "../../../lib/student-id-cards";
 
@@ -51,7 +47,6 @@ export default function IdCardPrintPage() {
       subtitle="Cards are drawn from the template version stored with each record, so reprints match the original design. Use the browser print dialog to save a PDF."
     >
       <div className="mb-4 flex gap-2 print:hidden">
-        <SecondaryButton onClick={() => router.back()}>Back</SecondaryButton>
         <PrimaryButton onClick={() => window.print()}>
           Print / Save PDF
         </PrimaryButton>
