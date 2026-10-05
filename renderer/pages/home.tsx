@@ -6,6 +6,7 @@ import {
   UserCheck01Icon,
   BanknoteIcon,
   AddInvoiceIcon,
+  CloudUploadIcon,
 } from "@hugeicons/core-free-icons";
 import { AppShell } from "../components/layout/AppShell";
 import { KpiCard } from "../components/dashboard/KpiCard";
@@ -18,13 +19,19 @@ import {
   SofiaLineChart,
 } from "../components/dashboard/ChartCard";
 import { SetupProgressCard } from "../components/dashboard/SetupProgressCard";
+import { Icon } from "../components/ui/Icon";
 import {
   fetchDashboardSummary,
   type AttendanceTrendRange,
   type DashboardDistributionMode,
   type DashboardSummary,
 } from "../lib/dashboard";
-import { formatDisplayDateWithWeekday, SOFIA_DATE_LOCALE } from "../lib/date-format";
+import { syncNow } from "../lib/backup-sync";
+import {
+  formatDisplayDateWithWeekday,
+  SOFIA_DATE_LOCALE,
+} from "../lib/date-format";
+import { useOnlineStatus } from "../lib/online";
 
 const selectClass =
   "cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -59,8 +66,12 @@ function severityDot(severity: "critical" | "warning" | "info") {
 
 export default function HomePage() {
   const router = useRouter();
+  const online = useOnlineStatus();
   const [data, setData] = React.useState<DashboardSummary | null>(null);
   const [error, setError] = React.useState("");
+  const [syncMessage, setSyncMessage] = React.useState("");
+  const [syncError, setSyncError] = React.useState("");
+  const [syncing, setSyncing] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [yearId, setYearId] = React.useState<string>("");
   const [termId, setTermId] = React.useState<string>("");
@@ -103,6 +114,45 @@ export default function HomePage() {
     void load();
   }, [load]);
 
+  const handleSync = React.useCallback(async () => {
+    if (!online || syncing) return;
+    setSyncing(true);
+    setSyncError("");
+    setSyncMessage("");
+    try {
+      const res = await syncNow();
+      if (!res.ok) {
+        setSyncError(res.error);
+        return;
+      }
+      const pushed = Number(res.data.successful ?? res.data.processed ?? 0);
+      const failed = Number(res.data.failed ?? 0);
+      const hasMore = Boolean(res.data.has_more || res.data.message);
+      if (res.data.message) {
+        setSyncMessage(String(res.data.message));
+      } else if (hasMore) {
+        setSyncMessage(
+          `Synced ${pushed} item(s). More remain — sync again when ready.`,
+        );
+      } else if (failed > 0) {
+        setSyncMessage(
+          `Sync finished: ${pushed} pushed, ${failed} failed. Check Backup & Sync for details.`,
+        );
+      } else {
+        setSyncMessage(
+          pushed > 0
+            ? `Sync finished — pushed ${pushed} pending item(s).`
+            : "Sync finished (up to date).",
+        );
+      }
+      void load();
+    } catch {
+      setSyncError("Sync failed unexpectedly.");
+    } finally {
+      setSyncing(false);
+    }
+  }, [online, syncing, load]);
+
   const showSetup = data && !data.setupProgress.isComplete;
   const caps = data?.capabilities;
 
@@ -129,6 +179,24 @@ export default function HomePage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {online ? (
+              <button
+                type="button"
+                onClick={() => void handleSync()}
+                disabled={syncing}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-(--sofia-primary) px-3 py-1.5 text-sm font-semibold text-white outline-none transition hover:opacity-95 focus:ring-2 focus:ring-(--sofia-primary)/25 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {syncing ? (
+                  <span
+                    className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                    aria-hidden
+                  />
+                ) : (
+                  <Icon icon={CloudUploadIcon} size={16} />
+                )}
+                {syncing ? "Syncing…" : "Sync"}
+              </button>
+            ) : null}
             <label className="sr-only" htmlFor="dash-year">
               Academic year
             </label>
@@ -176,6 +244,17 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      {syncError ? (
+        <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {syncError}
+        </div>
+      ) : null}
+      {syncMessage ? (
+        <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {syncMessage}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">

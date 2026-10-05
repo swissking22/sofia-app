@@ -520,22 +520,22 @@ export function TeachingAssignmentPicker({
                   {filteredSubjects.map((s) => {
                     const checked = selectedSubjectIds.includes(s.id);
                     return (
-                      <label
-                        key={s.id}
+              <label
+                key={s.id}
                         className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm ${
                           checked
                             ? "bg-(--sofia-primary)/10 text-slate-900"
                             : "text-slate-700 hover:bg-slate-50"
                         }`}
-                      >
-                        <input
-                          type="checkbox"
+              >
+                <input
+                  type="checkbox"
                           checked={checked}
                           onChange={() => toggleSubject(s.id)}
                           className="size-4 accent-(--sofia-primary)"
-                        />
-                        {s.name}
-                      </label>
+                />
+                {s.name}
+              </label>
                     );
                   })}
                 </div>
@@ -563,9 +563,9 @@ export function TeachingAssignmentPicker({
                       {subjectById.get(sid)?.name ?? "Subject"}
                       <Icon icon={Cancel01Icon} size={12} />
                     </button>
-                  ))}
-                </div>
-              </div>
+            ))}
+          </div>
+        </div>
             ) : null}
           </div>
         ) : (

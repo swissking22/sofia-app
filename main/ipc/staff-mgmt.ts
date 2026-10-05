@@ -1,11 +1,11 @@
 import { ipcMain } from 'electron'
-import { getSession, hashPassword, type SessionData } from '../auth'
+import { getSession, type SessionData } from '../auth'
 import type { Repositories } from '../db/repositories'
 import type { StaffDto } from '../db/repositories/staff.repository'
-import { STAFF_TEMP_PASSWORD } from '../db/repositories/staff.repository'
 import { LEAVE_TYPES } from '../db/repositories/leave.repository'
 import { countLeaveDays } from '../domain/staff'
-import { tryProvisionStaffAuth } from '../services/cloud-auth'
+import { prepareTeacherForMobile } from '../services/prepare-teacher-mobile'
+import { scheduleTeacherReadySync } from '../sync/auto-sync'
 import type {
   LeaveRequestStatus,
   LeaveType,
@@ -380,28 +380,18 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
 
         let warning: string | null = null
         const email = input.email?.trim()
-        if (email && staff_type === 'teaching') {
-          const passwordHash = await hashPassword(STAFF_TEMP_PASSWORD)
-          const account = await repos.staff.ensureUserAccount(
-            (u) => repos.users.create(u),
-            (e) => {
-              const found = repos.users.findByEmail(e)
-              return found ? { id: found.id, school_id: found.school_id } : undefined
-            },
-            repos.staff.findById(staff.id)!,
-            'teacher',
-            passwordHash
-          )
-          warning = await tryProvisionStaffAuth({
-            email,
-            password: STAFF_TEMP_PASSWORD,
-            role: 'teacher',
+        if (staff_type === 'teaching') {
+          // Teachers are Sofia Teacher (mobile) staff — not Administration desktop users.
+          warning = await prepareTeacherForMobile({
             schoolId,
             staffId: staff.id,
-            schoolName: repos.schools.findById(schoolId)?.name ?? null,
+            email,
             displayName: full_name,
-            resetPassword: account.created,
+            schoolName: repos.schools.findById(schoolId)?.name ?? null,
+            resetPassword: true,
           })
+        } else {
+          scheduleTeacherReadySync(schoolId)
         }
 
         const dto = enrichStaff(repos, schoolId, staff.id)
@@ -422,7 +412,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
 
   ipcMain.handle(
     'staff-mgmt:update',
-    (
+    async (
       _e,
       input: {
         id: string
@@ -441,7 +431,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         homeroom_class_ids?: string[]
         teaching_assignments?: Array<{ class_id: string; subject_id: string }>
       }
-    ): Result<StaffDto> => {
+    ): Promise<Result<StaffDto>> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
       if (!isManager(session.role)) {
@@ -518,9 +508,29 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
           }
         }
 
+        const updated = repos.staff.findById(input.id)!
+        let warning: string | null = null
+        if (updated.staff_type === 'teaching') {
+          // Refresh Auth staff_id metadata; keep existing Auth password.
+          warning = await prepareTeacherForMobile({
+            schoolId,
+            staffId: updated.id,
+            email: updated.email,
+            displayName: updated.full_name,
+            schoolName: repos.schools.findById(schoolId)?.name ?? null,
+            resetPassword: false,
+          })
+        } else {
+          scheduleTeacherReadySync(schoolId)
+        }
+
         const dto = enrichStaff(repos, schoolId, input.id)
         if (!dto) return { ok: false, error: 'Could not load staff.' }
-        return { ok: true, data: dto }
+        return {
+          ok: true,
+          data: dto,
+          ...(warning ? { warning } : {}),
+        }
       } catch (err) {
         return {
           ok: false,

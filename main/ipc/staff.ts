@@ -13,6 +13,8 @@ import {
   tryProvisionStaffAuth,
   type CloudAuthRole,
 } from '../services/cloud-auth'
+import { prepareTeacherForMobile } from '../services/prepare-teacher-mobile'
+import { scheduleTeacherReadySync } from '../sync/auto-sync'
 
 type Ok<T> = { ok: true; data: T; warning?: string }
 type Err = { ok: false; error: string }
@@ -64,10 +66,23 @@ async function userHelpers(repos: Repositories) {
       email: string
       password_hash: string
       role: 'admin' | 'secretary' | 'teacher'
-    }) => repos.users.create(input),
+      staff_id?: string | null
+    }) =>
+      repos.users.create({
+        school_id: input.school_id,
+        email: input.email,
+        password_hash: input.password_hash,
+        role: input.role,
+        staff_id: input.staff_id ?? null,
+      }),
     findUserByEmail: (email: string) => {
       const u = repos.users.findByEmail(email)
-      return u ? { id: u.id, school_id: u.school_id } : undefined
+      return u
+        ? { id: u.id, school_id: u.school_id, staff_id: u.staff_id }
+        : undefined
+    },
+    setUserStaffId: (userId: string, staffId: string) => {
+      repos.users.update(userId, { staff_id: staffId })
     },
     passwordHash,
   }
@@ -96,7 +111,17 @@ async function provisionForStaff(
   userCreated: boolean
 ): Promise<string | null> {
   if (!staff.email?.trim()) return null
-  return tryProvisionStaffAuth({
+  if (role === 'teacher') {
+    return prepareTeacherForMobile({
+      schoolId,
+      staffId: staff.id,
+      email: staff.email,
+      displayName: staff.full_name,
+      schoolName: schoolNameOf(repos, schoolId),
+      resetPassword: userCreated,
+    })
+  }
+  const warning = await tryProvisionStaffAuth({
     email: staff.email,
     password: STAFF_TEMP_PASSWORD,
     role,
@@ -104,10 +129,10 @@ async function provisionForStaff(
     staffId: staff.id,
     schoolName: schoolNameOf(repos, schoolId),
     displayName: staff.full_name,
-    // New local accounts get the temp password pushed to Auth.
-    // Existing accounts only refresh metadata (keep their Auth password).
     resetPassword: userCreated,
   })
+  scheduleTeacherReadySync(schoolId)
+  return warning
 }
 
 export function registerStaffIpc(repos: Repositories): void {
@@ -186,22 +211,23 @@ export function registerStaffIpc(repos: Repositories): void {
         return { ok: false, error: 'Full name is required.' }
       }
       try {
-        const { staff, userCreated } = await repos.staff.upsertTeacher(
+        const { staff } = await repos.staff.upsertTeacher(
           schoolId,
           {
             ...input,
             gender: (input.gender as StaffGender | null | undefined) ?? null,
             status: (input.status as StaffStatus | undefined) ?? 'active',
-          },
-          await userHelpers(repos)
+          }
         )
-        const warning = await provisionForStaff(
-          repos,
+        // Teachers are mobile staff — always refresh Auth metadata + sync when email set.
+        const warning = await prepareTeacherForMobile({
           schoolId,
-          staff,
-          'teacher',
-          userCreated
-        )
+          staffId: staff.id,
+          email: staff.email,
+          displayName: staff.full_name,
+          schoolName: schoolNameOf(repos, schoolId),
+          resetPassword: !input.id,
+        })
         return {
           ok: true,
           data: loadSetup(repos, schoolId),

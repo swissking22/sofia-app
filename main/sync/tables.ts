@@ -30,6 +30,8 @@ export const GENERIC_SYNC_TABLES = [
   'staff',
   'staff_subjects',
   'staff_classes',
+  // Teacher mobile — day schedule breaks (period clock times)
+  'school_day_breaks',
   // Step 5 — finance
   'finance_settings',
   'fee_categories',
@@ -166,7 +168,10 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
     'id', 'name', 'email', 'phone', 'country', 'address', 'logo_path',
     'school_code', 'short_code', 'school_type', 'education_system', 'school_category',
     'region', 'division', 'subdivision', 'website', 'stamp_path',
-    'principal_signature_path', 'created_at', 'updated_at', 'deleted_at', 'version',
+    'principal_signature_path',
+    'day_start_time', 'day_end_time', 'period_duration_minutes', 'periods_per_day',
+    'max_teacher_periods',
+    'created_at', 'updated_at', 'deleted_at', 'version',
   ],
   academic_years: [
     'id', 'school_id', 'name', 'start_date', 'end_date', 'is_current',
@@ -193,7 +198,11 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   ],
   classes: [
     'id', 'name', 'school_id', 'level', 'form_key', 'stream', 'academic_level_id',
-    'section_id', 'specialization_id', 'capacity', 'is_active',
+    'section_id', 'specialization_id', 'capacity', 'is_active', 'class_teacher_id',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  school_day_breaks: [
+    'id', 'school_id', 'name', 'after_period', 'duration_minutes', 'sort_order',
     'created_at', 'updated_at', 'deleted_at', 'version',
   ],
   subjects: [

@@ -18,14 +18,20 @@ import { TabBar as DocTabs } from "../../../components/documents/ui";
 import {
   fetchBackups,
   fetchSyncDashboard,
+  pickRestoreBackupFile,
   resolveAdminConflict,
   restoreBackup,
+  restoreBackupFromFile,
   retryAdminSync,
   runAdminSync,
   runBackupNow,
 } from "../../../lib/system-admin";
 import { listPreUpdateBackups } from "../../../lib/updater";
 import { formatSyncTime } from "../../../lib/backup-sync";
+
+type RestoreTarget =
+  | { kind: "record"; id: string }
+  | { kind: "file"; path: string; fileName: string };
 
 export default function AdminBackupSyncPage() {
   const [tab, setTab] = React.useState<"backup" | "sync">("backup");
@@ -44,8 +50,10 @@ export default function AdminBackupSyncPage() {
     }>
   >([]);
   const [sync, setSync] = React.useState<Record<string, unknown> | null>(null);
-  const [restoreId, setRestoreId] = React.useState<string | null>(null);
+  const [restoreTarget, setRestoreTarget] =
+    React.useState<RestoreTarget | null>(null);
   const [phrase, setPhrase] = React.useState("");
+  const [restoring, setRestoring] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
   const [retrying, setRetrying] = React.useState(false);
 
@@ -92,11 +100,33 @@ export default function AdminBackupSyncPage() {
     try {
       const r = await runAdminSync();
       if (r.ok) {
-        setSuccess(
-          pendingCount > 0
-            ? "Sync finished (push + pull)."
-            : "Sync finished (pulled latest from cloud).",
-        );
+        const data = r.data as {
+          successful?: number;
+          processed?: number;
+          failed?: number;
+          message?: string;
+          push?: { hasMore?: boolean; successful?: number };
+        };
+        const pushed = Number(data.push?.successful ?? data.successful ?? 0);
+        const failed = Number(data.failed ?? 0);
+        const hasMore = Boolean(data.push?.hasMore || data.message);
+        if (data.message) {
+          setSuccess(data.message);
+        } else if (hasMore) {
+          setSuccess(
+            `Synced ${pushed} item(s). More remain — click Sync Now again.`,
+          );
+        } else if (failed > 0) {
+          setSuccess(
+            `Sync finished: ${pushed} pushed, ${failed} failed. Use Retry failed if needed.`,
+          );
+        } else {
+          setSuccess(
+            pushed > 0
+              ? `Sync finished — pushed ${pushed} pending item(s) and pulled latest.`
+              : "Sync finished (pulled latest from cloud).",
+          );
+        }
         await load();
       } else {
         setError(r.error);
@@ -171,7 +201,7 @@ export default function AdminBackupSyncPage() {
               scheduled local snapshots)
             </p>
           </div>
-          <div className="mb-4 flex gap-2">
+          <div className="mb-4 flex flex-wrap gap-2">
             <PrimaryButton
               onClick={() =>
                 void runBackupNow().then((r) => {
@@ -184,6 +214,27 @@ export default function AdminBackupSyncPage() {
             >
               Backup Now
             </PrimaryButton>
+            <SecondaryButton
+              disabled={restoring}
+              onClick={() => {
+                setError("");
+                setSuccess("");
+                void pickRestoreBackupFile().then((r) => {
+                  if (!r.ok) {
+                    if (r.error !== "No file selected.") setError(r.error);
+                    return;
+                  }
+                  setRestoreTarget({
+                    kind: "file",
+                    path: r.data.path,
+                    fileName: r.data.fileName,
+                  });
+                  setPhrase("");
+                });
+              }}
+            >
+              Restore from file…
+            </SecondaryButton>
           </div>
           {preUpdate.length > 0 ? (
             <div className="mb-6">
@@ -229,7 +280,13 @@ export default function AdminBackupSyncPage() {
                         icon={ReloadIcon}
                         label="Restore"
                         tone="danger"
-                        onClick={() => setRestoreId(String(b.id))}
+                        onClick={() => {
+                          setRestoreTarget({
+                            kind: "record",
+                            id: String(b.id),
+                          });
+                          setPhrase("");
+                        }}
                       />
                     </TableActionGroup>
                   </td>
@@ -289,9 +346,11 @@ export default function AdminBackupSyncPage() {
             </SecondaryButton>
           </div>
           <p className="mb-4 text-sm text-slate-500">
-            Sync Now always pushes pending changes and pulls the latest from
-            cloud (safe when pending is 0 — secondary desks use it to refresh).
-            Branding logos and student photos download when Storage has them.
+            Sync Now drains the pending outbox in batches (prioritizing staff,
+            assignments, classes, and timetable before large finance backlogs),
+            then pulls the latest from cloud. A safety cap stops around 10 000
+            items — click Sync Now again if pending remains. Branding logos and
+            student photos download when Storage has them.
           </p>
           {byTable.length > 0 ? (
             <div className="mb-6">
@@ -381,17 +440,19 @@ export default function AdminBackupSyncPage() {
       )}
 
       <FormModal
-        open={Boolean(restoreId)}
+        open={Boolean(restoreTarget)}
         title="Restore Backup?"
         onClose={() => {
-          setRestoreId(null);
+          if (restoring) return;
+          setRestoreTarget(null);
           setPhrase("");
         }}
         footer={
           <div className="flex justify-end gap-2">
             <SecondaryButton
+              disabled={restoring}
               onClick={() => {
-                setRestoreId(null);
+                setRestoreTarget(null);
                 setPhrase("");
               }}
             >
@@ -399,33 +460,52 @@ export default function AdminBackupSyncPage() {
             </SecondaryButton>
             <PrimaryButton
               className="bg-red-600"
+              disabled={restoring}
               onClick={() => {
-                if (!restoreId) return;
-                void restoreBackup(restoreId, phrase).then((r) => {
-                  if (r.ok) {
-                    setSuccess(
-                      r.data.warning || "Restart Sofia to finish restore.",
-                    );
-                    setRestoreId(null);
-                    setPhrase("");
-                  } else setError(r.error);
-                });
+                if (!restoreTarget) return;
+                setRestoring(true);
+                setError("");
+                const request =
+                  restoreTarget.kind === "record"
+                    ? restoreBackup(restoreTarget.id, phrase)
+                    : restoreBackupFromFile(restoreTarget.path, phrase);
+                void request
+                  .then((r) => {
+                    if (r.ok) {
+                      setSuccess(
+                        r.data.warning || "Restart Sofia to finish restore.",
+                      );
+                      setRestoreTarget(null);
+                      setPhrase("");
+                    } else setError(r.error);
+                  })
+                  .finally(() => setRestoring(false));
               }}
             >
-              Continue
+              {restoring ? "Preparing…" : "Continue"}
             </PrimaryButton>
           </div>
         }
       >
         <PageAlert tone="warning">
           This will replace the current Sofia database with the selected backup.
-          A safety backup of the current database will be created first.
+          A safety backup of the current database will be created first. Restart
+          Sofia after confirming to finish the restore.
         </PageAlert>
+        {restoreTarget?.kind === "file" ? (
+          <p className="mb-3 text-sm text-slate-600">
+            File:{" "}
+            <span className="font-medium text-slate-900">
+              {restoreTarget.fileName}
+            </span>
+          </p>
+        ) : null}
         <input
           className={fieldClass}
           placeholder="Type RESTORE to confirm"
           value={phrase}
           onChange={(e) => setPhrase(e.target.value)}
+          disabled={restoring}
         />
       </FormModal>
     </AppShell>

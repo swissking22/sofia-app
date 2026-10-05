@@ -1891,6 +1891,26 @@ function migrateAcademicManagementTables(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_report_cards_class
       ON report_cards(class_id, term_id);
   `)
+
+  // Idempotent uniqueness for teacher offline upserts (skip if duplicates already exist).
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_records_session_student
+        ON attendance_records(session_id, student_id)
+        WHERE deleted_at IS NULL;
+    `)
+  } catch {
+    /* existing duplicate rows — leave non-unique until cleaned */
+  }
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_ca_scores_assessment_student
+        ON ca_scores(assessment_id, student_id)
+        WHERE deleted_at IS NULL;
+    `)
+  } catch {
+    /* existing duplicate rows — leave non-unique until cleaned */
+  }
 }
 
 /** Staff Management: extended staff profile, homeroom, attendance, leave. */

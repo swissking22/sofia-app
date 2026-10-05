@@ -1,10 +1,11 @@
 import type { Database } from 'better-sqlite3'
 import {
   getPendingSyncItems,
+  countReadyPendingSyncItems,
+  discardUnsupportedSyncItems,
   markFailed,
   markNetworkError,
   markSynced,
-  markUnsupportedPendingAsFailed,
   recordSyncConflict,
   requeueFailedSupportedTables,
 } from './queue'
@@ -33,6 +34,15 @@ function isPermanentSyncBarrier(error: string | undefined): boolean {
     e.includes('relation "public.sync_operations" does not exist') ||
     e.includes('relation "sync_operations" does not exist')
   )
+}
+
+/**
+ * Cloud DELETE when the row was never pushed (or already gone) — desired end state.
+ * Treat as success so Retry / Sync Now stop looping on these validation errors.
+ */
+function isIdempotentDeleteNotFound(error: string | undefined): boolean {
+  if (!error) return false
+  return /not found for delete/i.test(error)
 }
 
 /** Once per process: lift historical "unsupported table" failures into the expanded allowlist. */
@@ -88,8 +98,13 @@ export async function pushPendingSync(
     didRequeueExpandedTables = true
   }
 
-  // Drain unsupported pending tables locally (finance etc. until later phases)
-  markUnsupportedPendingAsFailed(db)
+  // Discard unsupported pending/failed tables locally (settings etc. until later phases)
+  const unsupportedDrained = discardUnsupportedSyncItems(db)
+  if (unsupportedDrained > 0) {
+    console.log(
+      `[SYNC] Discarded ${unsupportedDrained} unsupported-table queue item(s) as synced`
+    )
+  }
 
   // 2. Check and ensure device registration for this school
   const deviceId = getOrCreateDeviceId()
@@ -145,6 +160,7 @@ export async function pushPendingSync(
       successful: 0,
       failed: 0,
       conflicts: 0,
+      hasMore: false,
     }
   }
 
@@ -219,6 +235,16 @@ export async function pushPendingSync(
         }
       }
     } else {
+      // Idempotent DELETE: student (etc.) never existed in cloud — local soft-delete already done
+      if (isIdempotentDeleteNotFound(response.error)) {
+        markSynced(db, item.id)
+        successful += 1
+        console.log(
+          `[SYNC] Operation ${item.id}: cloud already absent — marked synced (${response.error})`
+        )
+        continue
+      }
+
       failed += 1
 
       if (response.errorType === 'network') {
@@ -266,11 +292,14 @@ export async function pushPendingSync(
     `[SYNC] Push completed: ${successful} succeeded, ${failed} failed (${conflicts} conflicts)`
   )
 
+  const hasMore = countReadyPendingSyncItems(db) > 0
+
   return {
     ok: failed === 0,
     processed,
     successful,
     failed,
     conflicts,
+    hasMore,
   }
 }

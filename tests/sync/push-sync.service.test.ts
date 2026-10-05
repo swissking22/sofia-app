@@ -380,6 +380,32 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     expect(op.recordId).toBe(student.id)
   })
 
+  // 9b. DELETE of a student never pushed to cloud is idempotent (not-found → synced)
+  test('9b. DELETE not-found from cloud is treated as synced (idempotent)', async () => {
+    const ghostId = '3a6bceb2-2069-46b2-9694-235e7d991b8a'
+    enqueueSync(db, 'students', ghostId, 'DELETE', {
+      id: ghostId,
+      school_id: schoolId,
+      deleted_at: new Date().toISOString(),
+      version: 2,
+    })
+
+    mockClient.operationHandler = async () => ({
+      ok: false,
+      errorType: 'validation',
+      error: `Student not found for DELETE: ${ghostId}`,
+    })
+
+    const result = await pushPendingSync({ db, schoolId, client: mockClient })
+    expect(result.successful).toBe(1)
+    expect(result.failed).toBe(0)
+
+    const item = db
+      .prepare(`SELECT status FROM sync_queue WHERE record_id = ?`)
+      .get(ghostId) as { status: string }
+    expect(item.status).toBe('synced')
+  })
+
   // 10. Exactly one sync_changes entry is created per successful operation
   test('10. Exactly one sync_changes entry is acknowledged per successful operation', async () => {
     const student = repos.students.create({
@@ -498,8 +524,8 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     expect(item.status).toBe('failed')
   })
 
-  // 15. Unsupported tables are failed locally without RPC calls
-  test('15. Unsupported pending tables are skipped without calling cloud RPC', async () => {
+  // 15. Unsupported tables are discarded locally without RPC calls
+  test('15. Unsupported pending tables are discarded as synced without calling cloud RPC', async () => {
     enqueueSync(db, 'backup_sync_settings', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'INSERT', {
       id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       school_id: schoolId,
@@ -522,8 +548,8 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     const b = db
       .prepare(`SELECT status FROM sync_queue WHERE record_id = ?`)
       .get('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb') as { status: string }
-    expect(a.status).toBe('failed')
-    expect(b.status).toBe('failed')
+    expect(a.status).toBe('synced')
+    expect(b.status).toBe('synced')
   })
 
   // 16. Permanent RPC barriers abort the batch (no sync storm)

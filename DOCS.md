@@ -116,7 +116,7 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 | Academic Structure | `/setup/academic-structure` | Levels → sections → specializations → classes; **school day schedule** (start/close times, period duration, breaks) for the timetable |
 | Student ID Format | `/setup/student-id` | Pattern builder (default `{SCHOOL}-{SEQ}` e.g. `ABC-0001`), sequence scope (`school` continuous vs `year` / `year_level`), next sequence number counter. Student IDs are permanent school-wide identities and never change across academic years or class promotions. |
 | Grading System | `/setup/grading-system` | CA/exam weights + grade bands (A–F, etc.) |
-| Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments). Teachers/admins with an **email** get a local login and automatic **Supabase Auth** provisioning for Sofia Teacher (`Sofia@Staff1` temp password). |
+| Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments). **Teachers are mobile staff** (not Administration desktop users): email provisions Supabase Auth with `app_metadata.staff_id` and auto-syncs when online (`Sofia@Staff1` temp password). Admins with email still get a desktop login. |
 | Permissions | `/setup/permissions` | Roles & permissions |
 | Student ID | `/setup/student-id` | ID pattern (school code, year, sequence, …) |
 | Students | `/setup/students` | Required profile fields, admission types, and **CSV bulk import**. Template columns: Full Name, Date of Birth, Place of Birth, Level, Department, Specialization, Residence Type, Gender, Parent Name, Parent Contact, Parent Email, Relationship. Sofia matches an **existing** class from level + department + specialization (never creates classes); residence is stored for day/boarding fee structures. |
@@ -133,9 +133,9 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 
 | Path | Purpose |
 |------|---------|
-| `/home` | School command center: greeting + year/term filters (**All terms** covers the full academic year); KPI cards (students, today’s attendance, fees collected/outstanding); attendance & fee collection **line charts**; student distribution & academic performance **horizontal bar charts**; optional department **donut** (few streams only); Needs Attention list; Recent Activity from audit logs. |
+| `/home` | School command center: greeting + year/term filters (**All terms** covers the full academic year); **Sync** button in the top row when online (`navigator.onLine`); KPI cards (students, today’s attendance, fees collected/outstanding); attendance & fee collection **line charts**; student distribution & academic performance **horizontal bar charts**; optional department **donut** (few streams only); Needs Attention list; Recent Activity from audit logs. |
 
-**Data:** Aggregated locally via `dashboard:summary` (`main/services/dashboard.service.ts` + `main/domain/dashboard.ts`). Charts use **recharts**. Teachers see enrollment/attendance/academic (scoped to assigned classes when linked); finance KPIs/trends are admin/secretary only. Empty states are used when attendance/results/fees are missing — never fake 0%.
+**Data:** Aggregated locally via `dashboard:summary` (`main/services/dashboard.service.ts` + `main/domain/dashboard.ts`). Charts use **recharts**. Teachers see enrollment/attendance/academic (scoped to assigned classes when linked); finance KPIs/trends are admin/secretary only. Empty states are used when attendance/results/fees are missing — never fake 0%. Online Sync on the dashboard calls `backup-sync:sync-now` via `renderer/lib/backup-sync.ts` + `useOnlineStatus` (`renderer/lib/online.ts`).
 
 **Setup checklist:** Unfinished setup steps still appear in the right rail until complete.
 
@@ -417,8 +417,8 @@ Shared list/filter UI mirrors Student Management (`renderer/components/staff/ui.
 | Screen | Path | How to use |
 |--------|------|------------|
 | List | `/staff/teachers` | Filter by search, status, department, job role. Actions drawer: view/edit or delete (managers). |
-| Add | `/staff/teachers/create` | Personal + role fields; **Assignment Builder** (add class → pick subjects offered in that class as cards); separate **Homeroom** single select. Employee ID auto-generated if blank. **Email required for login:** creates a local user and provisions Supabase Auth for Sofia Teacher (temp password `Sofia@Staff1`). |
-| Profile / edit | `/staff/teachers/:id` | Same fields. Teaching assignments are class × subject pairs (`staff_subjects`), edited via assignment cards (add / edit / copy to other classes / remove). Homeroom is separate (`classes.class_teacher_id`). |
+| Add | `/staff/teachers/create` | Personal + role fields; **Assignment Builder**; separate **Homeroom**. Employee ID auto-generated if blank. **Email** provisions Sofia Teacher Auth (`staff_id` in JWT) and **auto-syncs** staff + `staff_subjects` when online (temp password `Sofia@Staff1`). Teachers are **not** created as Administration → Users desktop accounts. |
+| Profile / edit | `/staff/teachers/:id` | Same fields. Saving teaching assignments re-provisions Auth metadata (keeps password) and auto-syncs again. |
 
 ### Staff directory
 
@@ -541,11 +541,11 @@ School-scoped control centre. There is no platform super-admin. Session role `ad
 | Screen | Path | How to use |
 |--------|------|------------|
 | Overview | `/administration` | Active users, audit volume today, last backup, sync health. |
-| Users & Roles | `/administration/users` | Search/filter users. Create (temporary password, never stored in plaintext). View inherited permissions. Change role, deactivate/suspend, **delete** (soft-delete + sync; blocked for self and last active admin), reset password, revoke sessions. Requires `system.users.delete` (or session `admin`). |
+| Users & Roles | `/administration/users` | Desktop accounts only (admin/secretary). Creating a **teacher** role without a linked staff member is rejected — use **Staff → Teachers** instead. Optional staff link for admins; Auth provision + sync when online. |
 | Roles | `/administration/roles` | Create/edit/duplicate custom roles. System roles cannot be deleted. Roles with assigned users cannot be deleted. Activate/deactivate. |
 | Permissions | `/administration/permissions` | Live matrix of catalog permissions × school roles. |
 | Audit logs | `/administration/audit-logs` | Paginated union of central `audit_events` plus finance and document audit tables. Append-only — no edit/delete API. |
-| Backup & Sync | `/administration/backup-sync` | Backup now + history. Restore requires typing `RESTORE`, writes a safety backup, then queues a file replace on next launch. Sync now / retry failed / conflict keep-local or keep-remote. |
+| Backup & Sync | `/administration/backup-sync` | Backup now + history. **Restore from file…** picks a `.db` / `.sqlite` backup (integrity-checked), or restore a listed backup. Both require typing `RESTORE`, write a safety backup, stage the source under userData, then replace the DB on next launch. Sync now / retry failed / conflict keep-local or keep-remote. |
 | Settings | `/administration/settings` | Timezone (default Africa/Douala), session timeout, password/lockout policy, backup retention. School identity, academics, finance numbering, and document branding stay on their existing screens. |
 
 ---
@@ -600,26 +600,38 @@ Teachers sign in with **Supabase Auth** (provisioned from desktop via Edge Funct
 | `school_id` | Tenant UUID |
 | `staff_id` | Local `staff.id` (linked when provisioning) |
 
-Desktop Sync Now pushes assignments and timetable into **`public.synced_entities`** (`table_name` = `staff_subjects`, `timetable_slots`, `classes`, `subjects`, `staff`, …). There are **no** PostgREST tables named `staff_subjects` / `timetable_slots` for the mobile app to query directly.
+Desktop Sync Now pushes teacher-relevant rows into **`public.synced_entities`** (and students into **`public.students`**). The mobile app must **not** query raw mirror tables via PostgREST — use SECURITY DEFINER RPCs only.
 
-**Teacher RPCs** (migration `20260923200000_teacher_mobile_rpcs.sql`) — `SECURITY DEFINER`, scoped only from JWT claims, `GRANT EXECUTE` to **`authenticated`** only:
+**Architecture docs:** [`docs/teacher-sync-architecture.md`](docs/teacher-sync-architecture.md), [`docs/teacher-api-contract.md`](docs/teacher-api-contract.md), [`docs/teacher-data-model.md`](docs/teacher-data-model.md), [`docs/teacher-sync-testing.md`](docs/teacher-sync-testing.md).
 
-| RPC | Returns |
-|-----|---------|
-| `get_teacher_me()` | `staff_id`, `school_id`, `full_name`, `school_name`, `email`, `employee_code` |
-| `get_teacher_assignments()` | `assignment_id`, `staff_id`, `class_id`, `class_name`, `subject_id`, `subject_name` |
-| `get_teacher_timetable(p_day_of_week int default null)` | `slot_id`, class/subject names, `day_of_week` (**1=Mon … 7=Sun**), `period_number`, `room` |
+**Teacher RPCs** — scoped from JWT; `GRANT EXECUTE` to **`authenticated`** only:
 
-**Expo client (after migration is applied):**
+| Migration | RPCs |
+|-----------|------|
+| `20260923200000_teacher_mobile_rpcs.sql` | `get_teacher_me`, `get_teacher_assignments`, `get_teacher_timetable` |
+| `20261001100000_teacher_mobile_sync_phase_ab.sql` | `get_teacher_classes`, `get_teacher_students`, `get_teacher_attendance_sessions`, `get_teacher_attendance_records`, `get_teacher_assessments`, `get_teacher_scores`, `get_teacher_announcements`, `get_teacher_config`, `get_teacher_bootstrap`, **`teacher_push_entity`** (writes: `attendance_sessions`, `attendance_records`, `ca_scores`) |
+
+Also expands `process_synced_entity` allow-list with **`school_day_breaks`** (desktop already enqueued them). Day-schedule columns and `class_teacher_id` are included in desk sync column maps (`main/sync/tables.ts`).
+
+**Expo client (after migrations applied + Sync Now):**
 
 ```ts
-const { data: me, error: meError } = await supabase.rpc('get_teacher_me')
-const { data: assignments, error } = await supabase.rpc('get_teacher_assignments')
-const { data: slots } = await supabase.rpc('get_teacher_timetable') // all days
-// or one day: await supabase.rpc('get_teacher_timetable', { p_day_of_week: 1 })
+const { data: boot } = await supabase.rpc('get_teacher_bootstrap')
+// or granular:
+const { data: me } = await supabase.rpc('get_teacher_me')
+const { data: students } = await supabase.rpc('get_teacher_students')
+const { data: slots } = await supabase.rpc('get_teacher_timetable') // day_of_week 1=Mon…7=Sun
+// Offline outbox flush (stable UUID p_id = idempotency key):
+await supabase.rpc('teacher_push_entity', {
+  p_id: opUuid,
+  p_table_name: 'ca_scores',
+  p_record_id: scoreId,
+  p_operation: 'INSERT',
+  p_payload: { id: scoreId, assessment_id, student_id, score, version: 1 },
+})
 ```
 
-**Ops:** After changing teaching assignments or the timetable on desktop, run **Sync Now**. Empty RPC results usually mean sync not pushed yet, or Auth missing `staff_id` (re-save teacher with email / re-run provision).
+**Ops:** After changing assignments, timetable, attendance, or assessments on desktop, data auto-syncs when online after teacher save; otherwise run **Sync Now**. Empty RPC results usually mean sync not pushed yet, or Auth missing `staff_id` (re-save teacher with email). Apply cloud migration `20261001100000_teacher_mobile_sync_phase_ab.sql` before using Phase A/B RPCs.
 
 **Verify in SQL Editor** (as a teacher JWT session, or check raw mirror first):
 
@@ -627,7 +639,7 @@ const { data: slots } = await supabase.rpc('get_teacher_timetable') // all days
 -- Mirror has data?
 select table_name, count(*) from synced_entities
 where school_id = '<school_uuid>'
-  and table_name in ('staff_subjects','timetable_slots','classes','subjects','staff')
+  and table_name in ('staff_subjects','timetable_slots','classes','subjects','staff','school_day_breaks')
   and deleted_at is null
 group by 1;
 
@@ -636,6 +648,10 @@ select payload from synced_entities
 where school_id = '<school_uuid>' and table_name = 'staff_subjects'
   and payload->>'staff_id' = '<staff_uuid>' and deleted_at is null;
 ```
+
+**Deferred (intentionally not synced / not writable for Teacher v1):** lesson logs (`teaching_*`), exam score writes, mobile delta cursor, FCM/APNs (desktop emits `notifyTeachers` events only).
+
+**Code paths:** domain `main/domain/teacher-sync.ts`; notification stub `main/services/teacher-notifications.ts`; registry `main/sync/tables.ts`.
 
 **Deploy:** `npx supabase db push` (or apply the migration in the Supabase SQL editor / linked project).
 
@@ -647,7 +663,7 @@ where school_id = '<school_uuid>' and table_name = 'staff_subjects'
 | How often to Sync Now | At least morning / midday / end of day on every desk; immediately after Join school on a new PC; after bulk imports. |
 | New PC | Install → open **Join existing school** → enter short code → wait for download → log in with a shared account → Sync Now once more for assets. |
 | Wipe / reinstall | Join again (or restore a local backup). Full pull starts at cursor 0. Photos/logos appear after Storage migration is applied and a desk that has the files has pushed. |
-| Health | Administration → Backup & Sync → **Queue by table** shows pending/failed per domain. Retry failed, then Sync Now. |
+| Health | Administration → Backup & Sync → **Queue by table** shows pending/failed per domain. Retry failed, then Sync Now. One Sync Now **drains** pending (batched, ~10 000 item cap; click again if more remain). Staff/assignments sync before large finance queues. |
 
 **How to add a table:** (1) add to `GENERIC_SYNC_TABLES` + column list in `main/sync/tables.ts`, (2) add name to `process_synced_entity` allow-list migration, (3) unit-test pull apply, (4) document here.
 
@@ -666,6 +682,8 @@ where school_id = '<school_uuid>' and table_name = 'staff_subjects'
   - `supabase/migrations/20260917120000_communication_synced_entities.sql` (communication allow-list)
   - `supabase/migrations/20260917130000_school_assets_storage.sql` (Storage bucket `school-assets`)
   - `supabase/migrations/20260923200000_teacher_mobile_rpcs.sql` (Sofia Teacher RPCs: `get_teacher_me`, `get_teacher_assignments`, `get_teacher_timetable`)
+  - `supabase/migrations/20261001100000_teacher_mobile_sync_phase_ab.sql` (Teacher Phase A/B: students/attendance/assessments/config/bootstrap + `teacher_push_entity`; allowlist `school_day_breaks`)
+  - Teacher sync docs: `docs/teacher-sync-architecture.md`, `docs/teacher-api-contract.md`, `docs/teacher-data-model.md`, `docs/teacher-sync-testing.md`
 - **Cloud Tables**:
   - `public.schools`: Tenant root (`id UUID PRIMARY KEY`, `name TEXT`, `school_code TEXT`, partial unique index on `school_code`).
   - `public.devices`: Registered desktop clients (`id UUID PRIMARY KEY`, `school_id UUID REFERENCES public.schools(id)`).
@@ -692,7 +710,9 @@ Push synchronization mirrors local SQLite state to Supabase. **Students / studen
    - Upon successful acknowledgement, marks local `sync_queue` record as `status = 'synced'` and updates `last_attempt_at`. **Successful records are retained for auditability and debugging, never deleted.**
    - Error classification:
      - **Network error** (`ECONNREFUSED`, timeout, 5xx): retains `status = 'pending'`, increments `retry_count`, halts batch to prevent connection churn.
-     - **Validation error** (unsupported table/operation, tenant mismatch, immutable field breach): marks `status = 'failed'` without endless retries.
+     - **Idempotent DELETE not-found** (`… not found for DELETE`): cloud already lacks the row (never pushed or already gone) — marks `synced` so retries do not loop.
+     - **Validation error** (tenant mismatch, immutable field breach): marks `status = 'failed'` without endless retries.
+     - **Unsupported Phase-1 tables** (local-only settings etc.): discarded as `synced` locally without an RPC call (do not inflate Failed).
      - **Conflict** (incoming version < cloud version): logs warning, records conflict snapshot into local SQLite `sync_conflicts` table for future resolution UI, marks `status = 'failed'`.
 2. **Stable Client Device Identity (`main/sync/device.ts`)**:
    - Generates persistent UUID via `electron-store` on first installation; remains stable across application restarts and sync runs.
@@ -750,6 +770,8 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 
 **Patterns:** Soft deletes (`deleted_at`), sync fields on every table, repositories enqueue sync, renderer talks to main via `window.ipc.invoke` only (no REST).
 
+**Main window:** `main/helpers/create-window.ts` always calls `maximize()` on create so Sofia launches full-screen on the display (window chrome kept; not exclusive kiosk fullscreen). Restored bounds still apply when the user un-maximizes.
+
 **Date display:** Human-facing dates use **Day → Month → Year** (`en-GB`) via `main/domain/date-format.ts` and `renderer/lib/date-format.ts` (`formatDisplayDate`, `formatDisplayDateTime`, etc.). Do not call `toLocaleDateString()` with the system locale in UI. HTML `<input type="date">` and DB storage remain ISO `YYYY-MM-DD`.
 
 **After schema/IPC changes:** restart the Nextron process so migrations and handlers reload.
@@ -770,7 +792,8 @@ Key libs for built modules:
 - Student ID cards: `renderer/lib/student-id-cards.ts` → `main/ipc/student-id-cards.ts`
 - Reports: `renderer/lib/reports.ts` → `main/ipc/reports.ts`
 - Documents: `renderer/lib/documents-mgmt.ts` → `main/ipc/documents-mgmt.ts` (setup templates remain `renderer/lib/documents.ts`)
-- System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts` (users soft-delete: `system-admin:users-delete` → `SystemAdminRepository.softDeleteUser` + `assertUserDeletable` in `main/domain/system-admin.ts`; RBAC `system.users.delete`)
+- System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts` (users soft-delete: `system-admin:users-delete` → `SystemAdminRepository.softDeleteUser` + `assertUserDeletable` in `main/domain/system-admin.ts`; RBAC `system.users.delete`; restore from file: `system-admin:backup-pick-restore-file` + `backup-restore-from-file` → `verifySqliteBackup` / `stageRestoreSource` in `main/db/sqlite-backup.ts` + `queueDatabaseRestore`)
+- Teacher mobile sync: domain `main/domain/teacher-sync.ts`; notifications stub `main/services/teacher-notifications.ts`; readiness `main/services/prepare-teacher-mobile.ts` + `main/sync/auto-sync.ts`; cloud RPCs in `supabase/migrations/20260923200000_teacher_mobile_rpcs.sql` + `20261001100000_teacher_mobile_sync_phase_ab.sql`; docs in `docs/teacher-*.md`
 - Auto-update (Windows): `main/updater.ts` + `main/ipc/updater.ts` (`updater:*`); UI `UpdateNotifier` in `AppShell`. **`electron-updater` must stay a runtime dynamic import** (`loadAutoUpdater()` in `main/updater.ts`) — a static import is evaluated with the main chunk and breaks packaged Windows launch. Startup still pins `userData` first via `main/pin-user-data.ts`. Recovery evaluation does not load the updater module graph for native update checks until after the window is ready.
 - Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); table registry `main/sync/tables.ts`; generic apply `main/sync/apply-generic.ts`; PostgREST RPCs `process_sync_operation`, `process_synced_entity`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
 - Teacher / staff cloud Auth: `main/services/cloud-auth.ts` (`provisionStaffAuth`) calls Edge Function `supabase/functions/provision-staff-auth` (anon key); optional local fallback via `SUPABASE_SERVICE_ROLE_KEY`. Hooked from `staff:upsert-teacher`, `staff:upsert-admin`, `staff:import-teachers`, `staff-mgmt:create`, and `system-admin:users-create` / `users-reset-password`. Deploy with `npx supabase functions deploy provision-staff-auth`.
@@ -781,6 +804,13 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-05 | **Restore from backup file:** Administration → Backup & Sync → **Restore from file…** (`system-admin:backup-pick-restore-file` / `backup-restore-from-file`). Verifies SQLite integrity, stages a copy under `userData/backups/restore-staging`, safety-backs up the live DB, queues replace on restart. |
+| 2026-10-05 | Dashboard top row shows a **Sync** button when the device is online (`useOnlineStatus` + `backup-sync:sync-now`); hidden offline. |
+| 2026-10-05 | Desktop window always launches **maximized** (`main/helpers/create-window.ts`) so Sofia opens full-screen on the display while keeping the title bar. |
+| 2026-10-01 | **Sync DELETE not-found is idempotent:** cloud `Student not found for DELETE` (row never pushed) marks the outbox item synced instead of failed, so Sync Now / Retry stop looping. Unsupported Phase-1 tables are discarded as synced (not failed) so they no longer inflate Failed. |
+| 2026-10-01 | **Sync Now drains the outbox**: loops push batches (50× up to ~10 000 items) and pull pages until empty or safety cap; prioritizes staff / assignments / classes / timetable ahead of finance. UI shows progress message when more remain. |
+| 2026-10-01 | **Teachers are mobile staff, not desktop users:** Staff → Teachers create/edit provisions Auth with `staff_id`, skips Administration user rows, and **auto-syncs** (`scheduleTeacherReadySync`) so assignments reach the Teacher app when online. Admin → Users rejects bare teacher accounts. |
+| 2026-10-01 | **Teacher mobile sync Phase A/B:** architecture docs under `docs/teacher-*.md`; RPCs for classes/students/attendance/assessments/scores/announcements/config/bootstrap + authorized `teacher_push_entity`; sync allowlist `school_day_breaks`; day-schedule + `class_teacher_id` in desk column maps; notification event stub; domain tests. |
 | 2026-09-23 | Administration **Users**: soft-delete accounts (`system-admin:users-delete`, permission `system.users.delete`). Revokes sessions and enqueues cloud DELETE. Blocked for self-delete and last active admin. Detail modal + bulk Delete selected. |
 | 2026-09-23 | Sofia Teacher mobile API: RPCs `get_teacher_me`, `get_teacher_assignments`, `get_teacher_timetable` unpack `synced_entities` for JWT teachers (`app_metadata.staff_id` / `school_id`). Migration `20260923200000_teacher_mobile_rpcs.sql`. |
 | 2026-09-23 | Teachers: **Assignment Builder** replaces the class×subject checkbox matrix on Add/Edit teacher (and Setup staff). Add assignment dialog: searchable class (grouped by section/level) → subjects offered in that class only; cards with edit / copy-to-classes / remove; summary counts; homeroom is a separate single select. Persistence unchanged (`staff_subjects` pairs). |

@@ -87,6 +87,9 @@ export function createWindow(
     },
   })
 
+  // Always open maximized (full screen within the display, title bar retained).
+  win.maximize()
+
   win.on('close', saveState)
 
   return win

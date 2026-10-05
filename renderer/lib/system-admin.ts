@@ -123,6 +123,22 @@ export async function restoreBackup(id: string, confirmation: string) {
   })) as Result<{ requires_restart?: boolean; warning?: string }>
 }
 
+export async function pickRestoreBackupFile() {
+  return (await window.ipc.invoke(
+    'system-admin:backup-pick-restore-file'
+  )) as Result<{ path: string; fileName: string; fileSize: number }>
+}
+
+export async function restoreBackupFromFile(
+  filePath: string,
+  confirmation: string
+) {
+  return (await window.ipc.invoke('system-admin:backup-restore-from-file', {
+    path: filePath,
+    confirmation,
+  })) as Result<{ requires_restart?: boolean; warning?: string }>
+}
+
 export async function fetchSyncDashboard() {
   return (await window.ipc.invoke('system-admin:sync-dashboard')) as Result<Record<string, unknown>>
 }

@@ -9,6 +9,60 @@ export const PHASE1_SYNC_TABLES = SUPPORTED_SYNC_TABLES
 const SUPPORTED_IN_LIST = SUPPORTED_SYNC_TABLES.map((t) => `'${t}'`).join(', ')
 
 /**
+ * Teacher / structure tables sync before large finance backlogs so mobile
+ * readiness is not stuck behind thousands of invoice_lines.
+ */
+const SYNC_PRIORITY_CASE = `
+  CASE table_name
+    WHEN 'schools' THEN 0
+    WHEN 'academic_years' THEN 1
+    WHEN 'academic_terms' THEN 1
+    WHEN 'academic_levels' THEN 1
+    WHEN 'sections' THEN 1
+    WHEN 'specializations' THEN 1
+    WHEN 'departments' THEN 1
+    WHEN 'classes' THEN 2
+    WHEN 'subjects' THEN 2
+    WHEN 'subject_classes' THEN 2
+    WHEN 'staff' THEN 3
+    WHEN 'staff_subjects' THEN 3
+    WHEN 'staff_classes' THEN 3
+    WHEN 'school_day_breaks' THEN 3
+    WHEN 'timetable_slots' THEN 4
+    WHEN 'grading_systems' THEN 4
+    WHEN 'assessment_types' THEN 4
+    WHEN 'grade_bands' THEN 4
+    WHEN 'students' THEN 5
+    WHEN 'student_id_settings' THEN 5
+    WHEN 'attendance_sessions' THEN 6
+    WHEN 'attendance_records' THEN 6
+    WHEN 'ca_assessments' THEN 6
+    WHEN 'ca_scores' THEN 6
+    WHEN 'announcements' THEN 7
+    ELSE 40
+  END
+`
+
+const READY_PENDING_WHERE = `
+  status = 'pending'
+    AND table_name IN (${SUPPORTED_IN_LIST})
+    AND (
+      last_attempt_at IS NULL
+      OR (
+        (julianday('now') - julianday(last_attempt_at)) * 86400.0
+        >= CASE
+          WHEN COALESCE(retry_count, 0) <= 0 THEN 0
+          WHEN retry_count = 1 THEN 5
+          WHEN retry_count = 2 THEN 15
+          WHEN retry_count = 3 THEN 60
+          WHEN retry_count = 4 THEN 300
+          ELSE 900
+        END
+      )
+    )
+`
+
+/**
  * Enqueue a full-record snapshot for future sync.
  * MUST be called on every create / update / soft-delete.
  */
@@ -39,23 +93,28 @@ export function enqueueSync(
 }
 
 /**
- * Drain Phase-1-unsupported pending rows locally without calling the cloud RPC.
- * Prevents sync storms where every Sync Now burns a batch of 50 on invoices/roles/etc.
+ * Discard Phase-1-unsupported outbox rows locally without calling the cloud RPC.
+ * Marks pending + historically failed unsupported tables as synced so they neither
+ * block Sync Now batches nor inflate the Failed counter / Retry storm.
  */
-export function markUnsupportedPendingAsFailed(
-  db: Database.Database
-): number {
+export function discardUnsupportedSyncItems(db: Database.Database): number {
   const result = db
     .prepare(
       `UPDATE sync_queue
-       SET status = 'failed',
-           retry_count = retry_count + 1,
+       SET status = 'synced',
            last_attempt_at = ?
-       WHERE status = 'pending'
+       WHERE status IN ('pending', 'failed')
          AND table_name NOT IN (${SUPPORTED_IN_LIST})`
     )
     .run(new Date().toISOString())
   return result.changes
+}
+
+/** @deprecated Prefer discardUnsupportedSyncItems — kept for call-site clarity during rename. */
+export function markUnsupportedPendingAsFailed(
+  db: Database.Database
+): number {
+  return discardUnsupportedSyncItems(db)
 }
 
 /**
@@ -80,6 +139,7 @@ export function requeueFailedSupportedTables(db: Database.Database): number {
  * Fetch pending Phase 1 sync items (used by the sync worker / push).
  * Applies exponential backoff on last_attempt_at so network failures
  * do not create a tight retry loop.
+ * Teacher/structure tables are ordered ahead of large finance backlogs.
  */
 export function getPendingSyncItems(
   db: Database.Database,
@@ -88,26 +148,21 @@ export function getPendingSyncItems(
   return db
     .prepare(
       `SELECT * FROM sync_queue
-       WHERE status = 'pending'
-         AND table_name IN (${SUPPORTED_IN_LIST})
-         AND (
-           last_attempt_at IS NULL
-           OR (
-             (julianday('now') - julianday(last_attempt_at)) * 86400.0
-             >= CASE
-               WHEN COALESCE(retry_count, 0) <= 0 THEN 0
-               WHEN retry_count = 1 THEN 5
-               WHEN retry_count = 2 THEN 15
-               WHEN retry_count = 3 THEN 60
-               WHEN retry_count = 4 THEN 300
-               ELSE 900
-             END
-           )
-         )
-       ORDER BY created_at ASC
+       WHERE ${READY_PENDING_WHERE}
+       ORDER BY ${SYNC_PRIORITY_CASE} ASC, created_at ASC
        LIMIT ?`
     )
     .all(limit) as Array<Record<string, unknown>>
+}
+
+/** Count supported pending rows that are eligible to push right now (backoff elapsed). */
+export function countReadyPendingSyncItems(db: Database.Database): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM sync_queue WHERE ${READY_PENDING_WHERE}`
+    )
+    .get() as { n: number }
+  return Number(row.n) || 0
 }
 
 /** Mark a sync_queue row as synced (simulated — no real API). */
@@ -130,8 +185,8 @@ export function markFailed(db: Database.Database, id: string): void {
 
 /**
  * Mark failed items as pending so they can be retried.
- * Bulk retry only requeues Phase 1 tables — unsupported tables stay failed
- * so "Retry failed" cannot restart the RPC storm.
+ * Bulk retry only requeues Phase 1 tables — unsupported tables are discarded
+ * as synced by discardUnsupportedSyncItems, so they never re-enter the RPC path.
  */
 export function retryFailed(db: Database.Database, ids?: string[]): number {
   if (ids?.length) {

@@ -64,6 +64,8 @@ export interface PushSyncResult {
   conflicts: number
   skipped?: boolean
   message?: string
+  /** True when more ready pending items remain (batch limit or backoff). */
+  hasMore?: boolean
 }
 
 // ----------------------------------------------------------------------------
@@ -135,6 +137,19 @@ export interface SyncWorkerOptions {
   client?: SupabaseSyncClientInterface
   skipPush?: boolean
   skipPull?: boolean
+  /** Items per push RPC batch (default 50). */
+  batchSize?: number
+  /**
+   * Keep pushing batches until the ready outbox is empty (default true).
+   * Caps via maxPushBatches to avoid unbounded runs.
+   */
+  drainPush?: boolean
+  /** Max push batches per Sync Now (default 200 ≈ 10 000 items). */
+  maxPushBatches?: number
+  /** Keep pulling while hasMore (default true). */
+  drainPull?: boolean
+  /** Max pull pages per Sync Now (default 50). */
+  maxPullBatches?: number
 }
 
 export interface SyncWorkerResult {

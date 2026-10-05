@@ -32,6 +32,42 @@ export function getSafetyBackupDir(userDataPath: string): string {
   return path.join(userDataPath, 'backups', 'safety')
 }
 
+export function getRestoreStagingDir(userDataPath: string): string {
+  return path.join(userDataPath, 'backups', 'restore-staging')
+}
+
+/**
+ * Copy an external backup into userData so the queued restore still works
+ * after restart even if the original USB/folder is gone.
+ */
+export function stageRestoreSource(
+  userDataPath: string,
+  sourcePath: string
+): { ok: true; stagedPath: string } | { ok: false; error: string } {
+  try {
+    if (!fs.existsSync(sourcePath)) {
+      return { ok: false, error: 'Backup file not found.' }
+    }
+    const dir = getRestoreStagingDir(userDataPath)
+    ensureDir(dir)
+    const ext = path.extname(sourcePath) || '.sqlite'
+    const stagedPath = path.join(
+      dir,
+      `queued-restore-${formatBackupTimestamp()}${ext}`
+    )
+    fs.copyFileSync(sourcePath, stagedPath)
+    return { ok: true, stagedPath }
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : 'Could not copy the backup file into Sofia storage.',
+    }
+  }
+}
+
 /** Compact timestamp safe for Windows filenames: 2026-09-14T061500 */
 export function formatBackupTimestamp(date = new Date()): string {
   const y = date.getUTCFullYear()

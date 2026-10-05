@@ -128,6 +128,9 @@ export function registerBackupSyncIpc(
             ...data,
             processed: result.processed,
             failed: result.failed,
+            successful: result.successful,
+            has_more: Boolean(result.push?.hasMore || result.pull?.hasMore),
+            message: result.message || null,
           },
         }
       } catch (err) {

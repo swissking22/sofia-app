@@ -387,8 +387,12 @@ export class StaffRepository extends BaseRepository<Staff> {
       email: string
       password_hash: string
       role: UserRole
+      staff_id?: string | null
     }) => { id: string },
-    findUserByEmail: (email: string) => { id: string; school_id: string } | undefined,
+    findUserByEmail: (
+      email: string
+    ) => { id: string; school_id: string; staff_id?: string | null } | undefined,
+    setUserStaffId: (userId: string, staffId: string) => void,
     staff: Staff,
     role: UserRole,
     passwordHash: string
@@ -405,6 +409,9 @@ export class StaffRepository extends BaseRepository<Staff> {
       if (staff.user_id !== existingUser.id) {
         this.update(staff.id, { user_id: existingUser.id })
       }
+      if (existingUser.staff_id !== staff.id) {
+        setUserStaffId(existingUser.id, staff.id)
+      }
       return { userId: existingUser.id, created: false }
     }
 
@@ -413,6 +420,7 @@ export class StaffRepository extends BaseRepository<Staff> {
       email: staff.email,
       password_hash: passwordHash,
       role,
+      staff_id: staff.id,
     })
     this.update(staff.id, { user_id: user.id })
     return { userId: user.id, created: true }
@@ -427,10 +435,12 @@ export class StaffRepository extends BaseRepository<Staff> {
         email: string
         password_hash: string
         role: UserRole
+        staff_id?: string | null
       }) => { id: string }
       findUserByEmail: (
         email: string
-      ) => { id: string; school_id: string } | undefined
+      ) => { id: string; school_id: string; staff_id?: string | null } | undefined
+      setUserStaffId: (userId: string, staffId: string) => void
       passwordHash: string
     }
   ): Promise<{ staff: Staff; userCreated: boolean }> {
@@ -476,6 +486,7 @@ export class StaffRepository extends BaseRepository<Staff> {
     const account = await this.ensureUserAccount(
       userHelpers.createUser,
       userHelpers.findUserByEmail,
+      userHelpers.setUserStaffId,
       staff,
       adminRoleToUserRole(input.admin_role),
       userHelpers.passwordHash
@@ -494,19 +505,26 @@ export class StaffRepository extends BaseRepository<Staff> {
     if (existing) this.delete(existing.id)
   }
 
+  /**
+   * Create/update teaching staff + assignments.
+   * Teachers are mobile staff — no desktop `users` account is created here.
+   * Cloud Auth + sync are handled by IPC (`prepareTeacherForMobile`).
+   */
   async upsertTeacher(
     schoolId: string,
     input: UpsertTeacherInput,
-    userHelpers: {
+    _userHelpers?: {
       createUser: (input: {
         school_id: string
         email: string
         password_hash: string
         role: UserRole
+        staff_id?: string | null
       }) => { id: string }
       findUserByEmail: (
         email: string
-      ) => { id: string; school_id: string } | undefined
+      ) => { id: string; school_id: string; staff_id?: string | null } | undefined
+      setUserStaffId: (userId: string, staffId: string) => void
       passwordHash: string
     }
   ): Promise<{ staff: Staff; userCreated: boolean }> {
@@ -552,16 +570,9 @@ export class StaffRepository extends BaseRepository<Staff> {
       class_ids: input.class_ids,
     })
 
-    const account = await this.ensureUserAccount(
-      userHelpers.createUser,
-      userHelpers.findUserByEmail,
-      this.findById(staff.id)!,
-      'teacher',
-      userHelpers.passwordHash
-    )
     return {
       staff: this.findById(staff.id)!,
-      userCreated: account.created,
+      userCreated: false,
     }
   }
 

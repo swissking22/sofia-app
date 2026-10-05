@@ -7,6 +7,7 @@ import type {
   NoticeAudience,
   NoticePriority,
 } from '../db/types'
+import { notifyTeachers } from '../services/teacher-notifications'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -152,6 +153,13 @@ export function registerCommunicationMgmtIpc(repos: Repositories): void {
           input.id,
           session.userId
         )
+        notifyTeachers({
+          schoolId: schoolId(repos, session),
+          event: 'announcement.published',
+          title: String((result as { title?: string })?.title || 'New announcement'),
+          entityType: 'announcement',
+          entityId: input.id,
+        })
         return { ok: true, data: result }
       } catch (err) {
         return {

@@ -252,21 +252,51 @@ export class SystemAdminRepository {
     must_change_password: number
   }): void {
     const now = new Date().toISOString()
-    this.db
-      .prepare(
-        `INSERT INTO users (
-          id, school_id, email, password_hash, role, role_id,
-          first_name, last_name, phone, status, last_login_at, staff_id,
-          failed_login_count, locked_until, must_change_password,
-          created_at, updated_at, deleted_at, sync_status, version
-        ) VALUES (
-          @id, @school_id, @email, @password_hash, @role, @role_id,
-          @first_name, @last_name, @phone, @status, NULL, @staff_id,
-          0, NULL, @must_change_password,
-          @created_at, @updated_at, NULL, 'pending', 1
-        )`
-      )
-      .run({ ...record, created_at: now, updated_at: now })
+    const row = {
+      ...record,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null as string | null,
+      sync_status: 'pending',
+      version: 1,
+      last_login_at: null as string | null,
+      failed_login_count: 0,
+      locked_until: null as string | null,
+    }
+    const tx = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO users (
+            id, school_id, email, password_hash, role, role_id,
+            first_name, last_name, phone, status, last_login_at, staff_id,
+            failed_login_count, locked_until, must_change_password,
+            created_at, updated_at, deleted_at, sync_status, version
+          ) VALUES (
+            @id, @school_id, @email, @password_hash, @role, @role_id,
+            @first_name, @last_name, @phone, @status, NULL, @staff_id,
+            0, NULL, @must_change_password,
+            @created_at, @updated_at, NULL, 'pending', 1
+          )`
+        )
+        .run(row)
+      if (record.staff_id) {
+        this.db
+          .prepare(
+            `UPDATE staff SET user_id = ?, updated_at = ?, sync_status = 'pending',
+             version = version + 1
+             WHERE id = ? AND school_id = ? AND deleted_at IS NULL`
+          )
+          .run(record.id, now, record.staff_id, record.school_id)
+        const staffRow = this.db
+          .prepare(`SELECT * FROM staff WHERE id = ?`)
+          .get(record.staff_id) as Record<string, unknown> | undefined
+        if (staffRow) {
+          enqueueSync(this.db, 'staff', record.staff_id, 'UPDATE', staffRow)
+        }
+      }
+      enqueueSync(this.db, 'users', record.id, 'INSERT', row as unknown as Record<string, unknown>)
+    })
+    tx()
   }
 
   createSession(schoolId: string, userId: string): string {

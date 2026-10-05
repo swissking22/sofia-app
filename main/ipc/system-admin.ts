@@ -1,15 +1,22 @@
 import { randomUUID } from 'crypto'
-import { ipcMain, app } from 'electron'
+import path from 'path'
+import { BrowserWindow, dialog, ipcMain, app } from 'electron'
 import { getSession, type SessionData, hashPassword } from '../auth'
 import { getDatabasePath, queueDatabaseRestore } from '../db'
 import type { Repositories } from '../db/repositories'
 import { SystemAdminService } from '../services/system-admin'
 import { tryProvisionStaffAuth, type CloudAuthRole } from '../services/cloud-auth'
+import { prepareTeacherForMobile } from '../services/prepare-teacher-mobile'
 import {
   assertUserDeletable,
   buildPermissionMatrix,
   restoreWarning,
 } from '../domain/system-admin'
+import {
+  stageRestoreSource,
+  verifySqliteBackup,
+} from '../db/sqlite-backup'
+import { scheduleTeacherReadySync } from '../sync/auto-sync'
 import { runSyncWorker } from '../sync/worker'
 import type { RoleWriteInput } from '../db/repositories/role.repository'
 import type { UserRole } from '../db/types'
@@ -144,6 +151,20 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         if (repos.users.findByEmail(shaped.email)) {
           return { ok: false, error: 'An account with this email already exists.' }
         }
+        // Teaching staff should be created under Staff → Teachers (mobile), not as desktop users.
+        if (shaped.role === 'teacher' && !input.staff_id) {
+          return {
+            ok: false,
+            error:
+              'Teachers are mobile staff accounts. Create them under Staff → Teachers (with email + assignments) instead of Administration → Users.',
+          }
+        }
+        if (input.staff_id) {
+          const staff = repos.staff.findById(input.staff_id)
+          if (!staff || staff.school_id !== schoolId) {
+            return { ok: false, error: 'Linked staff member not found.' }
+          }
+        }
         const id = randomUUID()
         admin().insertUser({
           id,
@@ -166,24 +187,34 @@ export function registerSystemAdminIpc(repos: Repositories): void {
           entity_type: 'user',
           entity_id: id,
           description: `Created user ${shaped.email}`,
-          after: { email: shaped.email, role_id: input.role_id },
+          after: { email: shaped.email, role_id: input.role_id, staff_id: input.staff_id },
         })
-        const cloudRole: CloudAuthRole =
-          shaped.role === 'teacher'
-            ? 'teacher'
-            : shaped.role === 'secretary'
-              ? 'secretary'
-              : 'admin'
-        const warning = await tryProvisionStaffAuth({
-          email: shaped.email,
-          password: input.password,
-          role: cloudRole,
-          schoolId,
-          staffId: input.staff_id || null,
-          schoolName: repos.schools.findById(schoolId)?.name ?? null,
-          displayName: `${input.first_name.trim()} ${input.last_name.trim()}`.trim(),
-          resetPassword: true,
-        })
+        let warning: string | null = null
+        if (shaped.role === 'teacher' && input.staff_id) {
+          warning = await prepareTeacherForMobile({
+            schoolId,
+            staffId: input.staff_id,
+            email: shaped.email,
+            displayName: `${input.first_name.trim()} ${input.last_name.trim()}`.trim(),
+            schoolName: repos.schools.findById(schoolId)?.name ?? null,
+            resetPassword: true,
+            password: input.password,
+          })
+        } else {
+          const cloudRole: CloudAuthRole =
+            shaped.role === 'secretary' ? 'secretary' : 'admin'
+          warning = await tryProvisionStaffAuth({
+            email: shaped.email,
+            password: input.password,
+            role: cloudRole,
+            schoolId,
+            staffId: input.staff_id || null,
+            schoolName: repos.schools.findById(schoolId)?.name ?? null,
+            displayName: `${input.first_name.trim()} ${input.last_name.trim()}`.trim(),
+            resetPassword: true,
+          })
+          scheduleTeacherReadySync(schoolId)
+        }
         return {
           ok: true,
           data: admin().getUser(schoolId, id),
@@ -334,18 +365,34 @@ export function registerSystemAdminIpc(repos: Repositories): void {
             : user.user.role === 'secretary'
               ? 'secretary'
               : 'admin'
-        const warning = await tryProvisionStaffAuth({
-          email: user.user.email,
-          password: input.password,
-          role: cloudRole,
-          schoolId,
-          staffId: user.user.staff_id || null,
-          schoolName: repos.schools.findById(schoolId)?.name ?? null,
-          displayName:
-            `${user.user.first_name || ''} ${user.user.last_name || ''}`.trim() ||
-            null,
-          resetPassword: true,
-        })
+        let warning: string | null = null
+        if (cloudRole === 'teacher' && user.user.staff_id) {
+          warning = await prepareTeacherForMobile({
+            schoolId,
+            staffId: user.user.staff_id,
+            email: user.user.email,
+            displayName:
+              `${user.user.first_name || ''} ${user.user.last_name || ''}`.trim() ||
+              user.user.email,
+            schoolName: repos.schools.findById(schoolId)?.name ?? null,
+            resetPassword: true,
+            password: input.password,
+          })
+        } else {
+          warning = await tryProvisionStaffAuth({
+            email: user.user.email,
+            password: input.password,
+            role: cloudRole,
+            schoolId,
+            staffId: user.user.staff_id || null,
+            schoolName: repos.schools.findById(schoolId)?.name ?? null,
+            displayName:
+              `${user.user.first_name || ''} ${user.user.last_name || ''}`.trim() ||
+              null,
+            resetPassword: true,
+          })
+          scheduleTeacherReadySync(schoolId)
+        }
         return {
           ok: true,
           data: { id: input.id },
@@ -544,6 +591,15 @@ export function registerSystemAdminIpc(repos: Repositories): void {
       const rec = admin().getBackup(schoolId, input.id)
       if (!rec) return { ok: false, error: 'Backup not found.' }
       try {
+        const verification = verifySqliteBackup(rec.file_path)
+        if (!verification.ok) {
+          return {
+            ok: false,
+            error:
+              verification.error ||
+              'This backup file is missing or failed the SQLite integrity check.',
+          }
+        }
         const safety = await repos.backupSync.createLocalBackup(schoolId)
         admin().recordBackup({
           school_id: schoolId,
@@ -567,6 +623,112 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Restore failed.' }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'system-admin:backup-pick-restore-file',
+    async (): Promise<Result<{ path: string; fileName: string; fileSize: number }>> => {
+      const s = session()
+      if (!s || !allow(repos, s, ['system.backup.restore'])) {
+        return { ok: false, error: 'Access denied.' }
+      }
+      const win = BrowserWindow.getFocusedWindow()
+      const result = await dialog.showOpenDialog(win ?? undefined, {
+        title: 'Choose Sofia backup file',
+        properties: ['openFile'],
+        filters: [
+          { name: 'Sofia backup', extensions: ['db', 'sqlite'] },
+          { name: 'All files', extensions: ['*'] },
+        ],
+      })
+      if (result.canceled || !result.filePaths[0]) {
+        return { ok: false, error: 'No file selected.' }
+      }
+      const filePath = result.filePaths[0]
+      const verification = verifySqliteBackup(filePath)
+      if (!verification.ok) {
+        return {
+          ok: false,
+          error:
+            verification.error ||
+            'The selected file is not a valid Sofia SQLite backup.',
+        }
+      }
+      return {
+        ok: true,
+        data: {
+          path: filePath,
+          fileName: path.basename(filePath),
+          fileSize: verification.fileSize,
+        },
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'system-admin:backup-restore-from-file',
+    async (
+      _e,
+      input: { path: string; confirmation: string }
+    ): Promise<Result<{ requires_restart?: boolean; warning?: string }>> => {
+      const s = session()
+      if (!s || !allow(repos, s, ['system.backup.restore'])) {
+        return { ok: false, error: 'Access denied.' }
+      }
+      try {
+        svc.confirmRestore(input.confirmation)
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Confirmation required.',
+        }
+      }
+      if (!input.path?.trim()) {
+        return { ok: false, error: 'No backup file selected.' }
+      }
+      const schoolId = sid(repos, s)
+      try {
+        const verification = verifySqliteBackup(input.path)
+        if (!verification.ok) {
+          return {
+            ok: false,
+            error:
+              verification.error ||
+              'The selected file is not a valid Sofia SQLite backup.',
+          }
+        }
+        const staged = stageRestoreSource(app.getPath('userData'), input.path)
+        if (!staged.ok) {
+          return { ok: false, error: staged.error }
+        }
+        const safety = await repos.backupSync.createLocalBackup(schoolId)
+        admin().recordBackup({
+          school_id: schoolId,
+          file_path: safety,
+          backup_type: 'automatic',
+          created_by: s.userId,
+          notes: 'Safety copy before restore from file',
+        })
+        queueDatabaseRestore(staged.stagedPath)
+        admin().writeAudit({
+          school_id: schoolId,
+          actor_user_id: s.userId,
+          action: 'backup.restore_file',
+          entity_type: 'backup',
+          description: `Restore from file: ${path.basename(input.path)}`,
+          after: { source: input.path, staged: staged.stagedPath },
+        })
+        return {
+          ok: true,
+          data: { requires_restart: true, warning: restoreWarning() },
+        }
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Restore failed.',
+        }
       }
     }
   )

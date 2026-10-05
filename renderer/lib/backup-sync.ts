@@ -75,10 +75,24 @@ export async function pickBackupLocation(): Promise<
 }
 
 export async function syncNow(): Promise<
-  Result<BackupSyncSetup & { processed: number; failed: number }>
+  Result<
+    BackupSyncSetup & {
+      processed: number
+      failed: number
+      successful?: number
+      has_more?: boolean
+      message?: string | null
+    }
+  >
 > {
   return (await window.ipc.invoke('backup-sync:sync-now')) as Result<
-    BackupSyncSetup & { processed: number; failed: number }
+    BackupSyncSetup & {
+      processed: number
+      failed: number
+      successful?: number
+      has_more?: boolean
+      message?: string | null
+    }
   >
 }
 
