@@ -71,6 +71,12 @@ export interface DashboardSummary {
     href: string
     available: boolean
   }
+  teachers: {
+    total: number
+    label: string
+    href: string
+    available: boolean
+  }
   attendanceToday: {
     recorded: boolean
     rate: number | null
@@ -138,6 +144,13 @@ export interface DashboardSummary {
     at: string
     label: string
     source: string
+  }>
+  pendingAdmissions: Array<{
+    id: string
+    full_name: string
+    detail: string
+    created_at: string
+    href: string
   }>
   setupProgress: SetupProgress
   errors: Partial<
@@ -273,6 +286,57 @@ export function buildDashboardSummary(
     studentsTotal = activeStudents.length
   } catch {
     errors.students = 'Could not load student counts.'
+  }
+
+  let teachersTotal = 0
+  try {
+    if (schoolId) {
+      teachersTotal = repos.staff
+        .findBySchool(schoolId)
+        .filter((s) => s.staff_type === 'teaching' && s.status === 'active')
+        .length
+    }
+  } catch {
+    // Teachers KPI falls back to 0 when staff directory is unavailable
+  }
+
+  let pendingAdmissions: DashboardSummary['pendingAdmissions'] = []
+  try {
+    if (schoolId && showAdmin) {
+      const levelName = new Map(
+        (schoolId
+          ? repos.academicLevels.findBySchool(schoolId)
+          : []
+        ).map((l) => [l.id, l.name])
+      )
+      const className = new Map(
+        (schoolId ? repos.classes.findBySchool(schoolId) : []).map((c) => [
+          c.id,
+          c.name,
+        ])
+      )
+      pendingAdmissions = repos.admissions
+        .findBySchool(schoolId)
+        .filter((a) => a.status === 'pending')
+        .slice(0, 5)
+        .map((a) => {
+          const parts = [
+            a.preferred_class_id
+              ? className.get(a.preferred_class_id)
+              : null,
+            a.academic_level_id ? levelName.get(a.academic_level_id) : null,
+          ].filter(Boolean)
+          return {
+            id: a.id,
+            full_name: a.full_name,
+            detail: parts.length ? parts.join(' · ') : 'Admission request',
+            created_at: a.created_at,
+            href: '/students/admissions',
+          }
+        })
+    }
+  } catch {
+    // Admissions widget stays empty on failure
   }
 
   const classes = schoolId
@@ -776,6 +840,12 @@ export function buildDashboardSummary(
       href: '/students',
       available: !errors.students,
     },
+    teachers: {
+      total: teachersTotal,
+      label: 'Active teachers',
+      href: '/staff/teachers',
+      available: true,
+    },
     attendanceToday,
     feesCollected,
     feesOutstanding,
@@ -795,6 +865,7 @@ export function buildDashboardSummary(
     attendanceByLevel,
     attention,
     recentActivity,
+    pendingAdmissions,
     setupProgress,
     errors,
   }

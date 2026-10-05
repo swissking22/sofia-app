@@ -41,7 +41,6 @@ import {
   downloadCsv,
   fetchStudentList,
   STATUS_LABELS,
-  type StudentDto,
   type StudentListResult,
   type StudentStatus,
 } from "../../lib/student-mgmt";

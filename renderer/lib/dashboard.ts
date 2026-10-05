@@ -104,6 +104,12 @@ export interface DashboardSummary {
     href: string
     available: boolean
   }
+  teachers: {
+    total: number
+    label: string
+    href: string
+    available: boolean
+  }
   attendanceToday: {
     recorded: boolean
     rate: number | null
@@ -171,6 +177,13 @@ export interface DashboardSummary {
     at: string
     label: string
     source: string
+  }>
+  pendingAdmissions: Array<{
+    id: string
+    full_name: string
+    detail: string
+    created_at: string
+    href: string
   }>
   setupProgress: SetupProgress
   errors: Partial<

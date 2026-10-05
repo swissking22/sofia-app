@@ -141,7 +141,12 @@ export function SofiaHorizontalBarChart({
   valueFormatter,
   onBarClick,
 }: {
-  data: Array<{ id: string; label: string; value: number; href?: string | null }>;
+  data: Array<{
+    id: string;
+    label: string;
+    value: number;
+    href?: string | null;
+  }>;
   valueFormatter?: (n: number) => string;
   onBarClick?: (id: string, href?: string | null) => void;
 }) {
@@ -160,7 +165,12 @@ export function SofiaHorizontalBarChart({
           margin={{ top: 4, right: 24, left: 8, bottom: 4 }}
         >
           <CartesianGrid stroke={GRID} horizontal={false} />
-          <XAxis type="number" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+          <XAxis
+            type="number"
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+          />
           <YAxis
             type="category"
             dataKey="short"
@@ -173,7 +183,9 @@ export function SofiaHorizontalBarChart({
             contentStyle={TOOLTIP_STYLE}
             formatter={(value) => [fmt(Number(value)), ""]}
             labelFormatter={(_, payload) => {
-              const item = payload?.[0]?.payload as { label?: string } | undefined;
+              const item = payload?.[0]?.payload as
+                | { label?: string }
+                | undefined;
               return item?.label ?? "";
             }}
           />
@@ -263,5 +275,150 @@ export function ClassBars({
         value: d.value,
       }))}
     />
+  );
+}
+
+/** Vertical monthly-style bars (financial overview). */
+export function SofiaVerticalBarChart({
+  data,
+  valueFormatter,
+  highlightLast = true,
+}: {
+  data: Array<{ label: string; value: number }>;
+  valueFormatter?: (n: number) => string;
+  highlightLast?: boolean;
+}) {
+  if (!data.length) return <ChartEmpty message="No data available." />;
+  const fmt = valueFormatter ?? ((n: number) => String(Math.round(n)));
+  return (
+    <div className="h-52 w-full" role="img" aria-label="Bar chart">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid stroke={GRID} vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+            width={44}
+            tickFormatter={(v) => fmt(Number(v))}
+          />
+          <Tooltip
+            contentStyle={TOOLTIP_STYLE}
+            formatter={(value) => [fmt(Number(value)), ""]}
+          />
+          <Bar
+            dataKey="value"
+            radius={[6, 6, 0, 0]}
+            barSize={18}
+            isAnimationActive={false}
+          >
+            {data.map((_, i) => (
+              <Cell
+                key={i}
+                fill={
+                  highlightLast && i === data.length - 1
+                    ? PRIMARY
+                    : "rgba(79, 70, 229, 0.25)"
+                }
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Semi-circle gauge for today's attendance. */
+export function SofiaAttendanceGauge({
+  rate,
+  present,
+  absent,
+  late,
+}: {
+  rate: number | null;
+  present: number;
+  absent: number;
+  late: number;
+}) {
+  if (rate == null) {
+    return <ChartEmpty message="Attendance not recorded today." />;
+  }
+  const clamped = Math.max(0, Math.min(100, rate));
+  const data = [
+    { name: "present", value: clamped },
+    { name: "rest", value: 100 - clamped },
+  ];
+  const total = present + absent + late;
+  const pct = (n: number) =>
+    total > 0 ? `${((n / total) * 100).toFixed(1)}%` : "0%";
+
+  return (
+    <div className="flex flex-col items-center">
+      <div
+        className="relative h-40 w-full max-w-xs"
+        role="img"
+        aria-label="Attendance gauge"
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="value"
+              startAngle={180}
+              endAngle={0}
+              innerRadius="70%"
+              outerRadius="95%"
+              stroke="none"
+              isAnimationActive={false}
+            >
+              <Cell fill={PRIMARY} />
+              <Cell fill="#e2e8f0" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-end pb-2">
+          <p className="text-3xl font-bold text-slate-900">{clamped}%</p>
+          <p className="text-xs font-medium text-slate-400">
+            Today&apos;s Attendance
+          </p>
+        </div>
+      </div>
+      <ul className="mt-2 w-full space-y-1.5 text-xs">
+        <li className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 text-slate-600">
+            <span className="h-2 w-2 rounded-full bg-(--sofia-primary)" />
+            Present
+          </span>
+          <span className="font-semibold text-slate-800">
+            {present} ({pct(present)})
+          </span>
+        </li>
+        <li className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 text-slate-600">
+            <span className="h-2 w-2 rounded-full bg-slate-800" />
+            Absent
+          </span>
+          <span className="font-semibold text-slate-800">
+            {absent} ({pct(absent)})
+          </span>
+        </li>
+        <li className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 text-slate-600">
+            <span className="h-2 w-2 rounded-full bg-slate-300" />
+            Late
+          </span>
+          <span className="font-semibold text-slate-800">
+            {late} ({pct(late)})
+          </span>
+        </li>
+      </ul>
+    </div>
   );
 }

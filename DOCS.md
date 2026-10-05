@@ -133,11 +133,11 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 
 | Path | Purpose |
 |------|---------|
-| `/home` | School command center: greeting + year/term filters (**All terms** covers the full academic year); **Sync** button in the top row when online (`navigator.onLine`); KPI cards (students, today’s attendance, fees collected/outstanding); attendance & fee collection **line charts**; student distribution & academic performance **horizontal bar charts**; optional department **donut** (few streams only); Needs Attention list; Recent Activity from audit logs. |
+| `/home` | School command center matching the overview layout: greeting + **Sync** (online) + year/term filters; **4 KPI cards** (students, teachers, today’s attendance, monthly revenue / fees); **Student Growth** (attendance trend) + **Financial Overview** charts; Admission requests, Recent Activity, Attendance gauge; right rail with **Sofia Setup Progress** (until complete), **Quick Actions**, and **Attention Alerts**. |
 
-**Data:** Aggregated locally via `dashboard:summary` (`main/services/dashboard.service.ts` + `main/domain/dashboard.ts`). Charts use **recharts**. Teachers see enrollment/attendance/academic (scoped to assigned classes when linked); finance KPIs/trends are admin/secretary only. Empty states are used when attendance/results/fees are missing — never fake 0%. Online Sync on the dashboard calls `backup-sync:sync-now` via `renderer/lib/backup-sync.ts` + `useOnlineStatus` (`renderer/lib/online.ts`).
+**Data:** Aggregated locally via `dashboard:summary` (`main/services/dashboard.service.ts` + `main/domain/dashboard.ts`). Charts use **recharts**. Teachers KPI counts active teaching staff; pending admissions feed the Admission Request list (admin/secretary). Finance KPIs/trends are admin/secretary only. Empty states are used when attendance/results/fees are missing — never fake 0%. Online Sync calls `backup-sync:sync-now` via `renderer/lib/backup-sync.ts` + `useOnlineStatus` (`renderer/lib/online.ts`).
 
-**Setup checklist:** Unfinished setup steps still appear in the right rail until complete.
+**Setup checklist:** Unfinished setup steps appear in the right rail until complete.
 
 ---
 
@@ -809,6 +809,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-05 | **Dashboard:** removed Export PDF from the overview header; Sync + setup progress remain. |
+| 2026-10-05 | **Dashboard redesign:** overview layout with 4 KPIs (incl. teachers + monthly revenue), growth/finance charts, admissions + activity + attendance gauge, Quick Actions & Attention rail; keeps Sofia Setup Progress + Sync; Sofia indigo primary. |
 | 2026-10-05 | **Students list:** row actions are View profile and Edit details icon buttons (`?edit=1` opens the edit modal); search + Add student on a second toolbar row; sorted by class then name. |
 | 2026-10-05 | **Nested Back:** `AppShell` auto-shows a Back control on deep routes via `resolveNestedBackHref` (`renderer/lib/nested-back.ts`); optional `backHref` / `backLabel`. |
 | 2026-10-05 | **Wide global search:** Ctrl+K / header search queries school data (students, staff, classes, subjects, departments, fee packages, invoices, users) plus pages (`search:global`), and deep-links into profiles or filtered lists. |
