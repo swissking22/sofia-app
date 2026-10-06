@@ -546,7 +546,7 @@ School-scoped control centre. There is no platform super-admin. Session role `ad
 | Roles | `/administration/roles` | Create/edit/duplicate custom roles. System roles cannot be deleted. Roles with assigned users cannot be deleted. Activate/deactivate. |
 | Permissions | `/administration/permissions` | Live matrix of catalog permissions × school roles. |
 | Audit logs | `/administration/audit-logs` | Paginated union of central `audit_events` plus finance and document audit tables. Append-only — no edit/delete API. |
-| Backup & Sync | `/administration/backup-sync` | Backup now + history. **Restore from file…** picks a `.db` / `.sqlite` backup (integrity-checked), or restore a listed backup. Both require typing `RESTORE`, write a safety backup, stage the source under userData, then replace the DB on next launch. Sync now / retry failed / conflict keep-local or keep-remote. |
+| Backup & Sync | `/administration/backup-sync` | Backup now + history. Backup folder defaults to `%APPDATA%\\sofia\\backups`; if a stored path is unwritable (e.g. after restore onto another PC/user), Sofia falls back to that default. **Restore from file…** picks a `.db` / `.sqlite` backup (integrity-checked), or restore a listed backup. Both require typing `RESTORE`, write a safety backup, stage the source under userData, then replace the DB on next launch. Sync now / retry failed / conflict keep-local or keep-remote. |
 | Settings | `/administration/settings` | Timezone (default Africa/Douala), session timeout, password/lockout policy, backup retention. School identity, academics, finance numbering, and document branding stay on their existing screens. |
 
 ---
@@ -809,6 +809,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-06 | **Local backup path:** if the configured backup folder is unwritable (common after USB restore onto another Windows user), fall back to `%APPDATA%\\sofia\\backups` and persist that path (`resolveWritableBackupLocation`). |
 | 2026-10-06 | **Sync bootstrap:** first Sync on a never-synced / USB-restored primary creates the cloud school via `bootstrap_school_tenant` when `register_device` reports missing tenant (`main/sync/push.ts` + migration `20261006143000_bootstrap_school_tenant.sql`). |
 | 2026-10-05 | **Dashboard:** removed Export PDF from the overview header; Sync + setup progress remain. |
 | 2026-10-05 | **Dashboard redesign:** overview layout with 4 KPIs (incl. teachers + monthly revenue), growth/finance charts, admissions + activity + attendance gauge, Quick Actions & Attention rail; keeps Sofia Setup Progress + Sync; Sofia indigo primary. |

@@ -11,6 +11,45 @@ export function getDefaultBackupLocation(): string {
   return path.join(app.getPath('userData'), 'backups')
 }
 
+/** True when Sofia can create the folder and write a short probe file. */
+export function canUseBackupDirectory(dir: string): boolean {
+  const trimmed = dir.trim()
+  if (!trimmed) return false
+  try {
+    fs.mkdirSync(trimmed, { recursive: true })
+    const probe = path.join(trimmed, `.sofia-write-${process.pid}.tmp`)
+    fs.writeFileSync(probe, 'ok')
+    fs.unlinkSync(probe)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Prefer the configured backup folder; if it is missing/unwritable
+ * (common after USB restore onto another Windows user profile), fall back
+ * to the current machine's userData/backups.
+ */
+export function resolveWritableBackupLocation(
+  configured: string | null | undefined
+): { dir: string; fellBack: boolean } {
+  const fallback = getDefaultBackupLocation()
+  const configuredTrim = (configured || '').trim()
+  if (configuredTrim && canUseBackupDirectory(configuredTrim)) {
+    return { dir: configuredTrim, fellBack: false }
+  }
+  if (canUseBackupDirectory(fallback)) {
+    return {
+      dir: fallback,
+      fellBack: Boolean(configuredTrim && configuredTrim !== fallback),
+    }
+  }
+  throw new Error(
+    `Cannot create a backup folder. Checked "${configuredTrim || '(empty)'}" and "${fallback}". Pick another location in Backup & Sync settings, or run Sofia as a user with write access to AppData.`
+  )
+}
+
 export const BACKUP_FREQUENCY_OPTIONS = [
   { key: 'daily' as const, label: 'Daily' },
   { key: 'weekly' as const, label: 'Weekly' },
@@ -110,8 +149,13 @@ export class BackupSyncRepository extends BaseRepository<BackupSyncSettings> {
       .get(schoolId) as BackupSyncSettings | undefined
 
     if (existing) {
-      if (!existing.backup_location) {
-        return this.patchLocation(existing, getDefaultBackupLocation())
+      try {
+        const resolved = resolveWritableBackupLocation(existing.backup_location)
+        if (resolved.fellBack || !existing.backup_location?.trim()) {
+          return this.patchLocation(existing, resolved.dir)
+        }
+      } catch {
+        // Keep stored path; createLocalBackup will surface a clear error
       }
       return existing
     }
@@ -352,8 +396,23 @@ export class BackupSyncRepository extends BaseRepository<BackupSyncSettings> {
   /** Write a local SQLite snapshot into the configured backup folder. */
   async createLocalBackup(schoolId: string): Promise<string> {
     const settings = this.ensureSettings(schoolId)
-    const dir = settings.backup_location || getDefaultBackupLocation()
-    fs.mkdirSync(dir, { recursive: true })
+    let dir: string
+    try {
+      const resolved = resolveWritableBackupLocation(settings.backup_location)
+      dir = resolved.dir
+      if (resolved.fellBack || settings.backup_location !== dir) {
+        this.patchLocation(settings, dir)
+        console.warn(
+          `[BACKUP] Backup location was not writable; using ${dir}`
+        )
+      }
+    } catch (err) {
+      throw new Error(
+        err instanceof Error
+          ? err.message
+          : 'Could not create the backup folder.'
+      )
+    }
 
     const stamp = new Date()
       .toISOString()
