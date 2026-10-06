@@ -36,6 +36,12 @@ function isPermanentSyncBarrier(error: string | undefined): boolean {
   )
 }
 
+function isMissingSchoolTenant(error: string | undefined): boolean {
+  return Boolean(
+    error && error.toLowerCase().includes('school tenant does not exist')
+  )
+}
+
 /**
  * Cloud DELETE when the row was never pushed (or already gone) — desired end state.
  * Treat as success so Retry / Sync Now stop looping on these validation errors.
@@ -43,6 +49,61 @@ function isPermanentSyncBarrier(error: string | undefined): boolean {
 function isIdempotentDeleteNotFound(error: string | undefined): boolean {
   if (!error) return false
   return /not found for delete/i.test(error)
+}
+
+/**
+ * Upsert the local school into public.schools so register_device / queue push can proceed.
+ * Used when a primary desk (or USB-restored DB) was never synced to the cloud.
+ */
+async function bootstrapCloudSchoolTenant(
+  db: Database,
+  client: SupabaseSyncClientInterface,
+  schoolId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const school = db
+    .prepare(
+      `SELECT id, name, short_code, school_code, address, phone, email
+       FROM schools
+       WHERE id = ? AND deleted_at IS NULL
+       LIMIT 1`
+    )
+    .get(schoolId) as
+    | {
+        id: string
+        name: string
+        short_code: string | null
+        school_code: string | null
+        address: string | null
+        phone: string | null
+        email: string | null
+      }
+    | undefined
+
+  if (!school) {
+    return {
+      ok: false,
+      error: 'Local school not found for cloud tenant bootstrap',
+    }
+  }
+
+  if (!client.bootstrapSchoolTenant) {
+    return {
+      ok: false,
+      error:
+        'School tenant does not exist in the cloud. Deploy bootstrap_school_tenant RPC, then Sync again.',
+    }
+  }
+
+  console.log(`[SYNC] Bootstrapping cloud school tenant ${schoolId}`)
+  return client.bootstrapSchoolTenant({
+    id: school.id,
+    name: school.name || 'School',
+    shortCode: school.short_code,
+    schoolCode: school.school_code,
+    address: school.address,
+    phone: school.phone,
+    email: school.email,
+  })
 }
 
 /** Once per process: lift historical "unsupported table" failures into the expanded allowlist. */
@@ -109,14 +170,39 @@ export async function pushPendingSync(
   // 2. Check and ensure device registration for this school
   const deviceId = getOrCreateDeviceId()
   const isRegistered = isDeviceRegisteredForSchool(schoolId)
+  let didTenantBootstrap = false
 
   if (!isRegistered) {
-    const regResult = await client.registerDevice({
+    let regResult = await client.registerDevice({
       id: deviceId,
       schoolId,
       deviceName: getDeviceName(),
       deviceFingerprint: getDeviceFingerprint(),
     })
+
+    if (!regResult.ok && isMissingSchoolTenant(regResult.error)) {
+      didTenantBootstrap = true
+      const boot = await bootstrapCloudSchoolTenant(db, client, schoolId)
+      if (!boot.ok) {
+        console.error(
+          `[SYNC] Push aborted: could not bootstrap school tenant (${boot.error})`
+        )
+        return {
+          ok: false,
+          processed: 0,
+          successful: 0,
+          failed: 0,
+          conflicts: 0,
+          message: boot.error,
+        }
+      }
+      regResult = await client.registerDevice({
+        id: deviceId,
+        schoolId,
+        deviceName: getDeviceName(),
+        deviceFingerprint: getDeviceFingerprint(),
+      })
+    }
 
     if (regResult.ok) {
       markDeviceRegisteredForSchool(schoolId)
@@ -202,7 +288,7 @@ export async function pushPendingSync(
     }
 
     // 5. Send operation to Supabase RPC
-    const response = await client.processSyncOperation({
+    let response = await client.processSyncOperation({
       id: item.id,
       schoolId,
       deviceId,
@@ -211,6 +297,50 @@ export async function pushPendingSync(
       operation: item.operation,
       payload,
     })
+
+    // Device already marked registered locally, but cloud tenant was never created
+    // (e.g. USB restore on a machine that kept electron-store device state).
+    if (
+      !response.ok &&
+      isMissingSchoolTenant(response.error) &&
+      !didTenantBootstrap
+    ) {
+      didTenantBootstrap = true
+      const boot = await bootstrapCloudSchoolTenant(db, client, schoolId)
+      if (boot.ok) {
+        if (!isDeviceRegisteredForSchool(schoolId)) {
+          const reg = await client.registerDevice({
+            id: deviceId,
+            schoolId,
+            deviceName: getDeviceName(),
+            deviceFingerprint: getDeviceFingerprint(),
+          })
+          if (reg.ok) markDeviceRegisteredForSchool(schoolId)
+        }
+        response = await client.processSyncOperation({
+          id: item.id,
+          schoolId,
+          deviceId,
+          tableName: item.table_name,
+          recordId: item.record_id,
+          operation: item.operation,
+          payload,
+        })
+      } else {
+        console.error(
+          `[SYNC] Push aborted: could not bootstrap school tenant (${boot.error})`
+        )
+        return {
+          ok: false,
+          processed,
+          successful,
+          failed: failed + 1,
+          conflicts,
+          message: boot.error,
+          hasMore: countReadyPendingSyncItems(db) > 0,
+        }
+      }
+    }
 
     if (response.ok) {
       markSynced(db, item.id)

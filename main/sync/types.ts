@@ -42,6 +42,21 @@ export interface RegisterDeviceRpcResult {
   error?: string
 }
 
+export interface BootstrapSchoolTenantParams {
+  id: string
+  name: string
+  shortCode?: string | null
+  schoolCode?: string | null
+  address?: string | null
+  phone?: string | null
+  email?: string | null
+}
+
+export interface BootstrapSchoolTenantResult {
+  ok: boolean
+  error?: string
+}
+
 export interface PushSyncOptions {
   db: import('better-sqlite3').Database
   schoolId?: string
@@ -184,6 +199,9 @@ export interface LookupSchoolByCodeResult {
 export interface SupabaseSyncClientInterface {
   processSyncOperation(params: ProcessSyncRpcParams): Promise<ProcessSyncRpcResult>
   registerDevice(params: RegisterDeviceRpcParams): Promise<RegisterDeviceRpcResult>
+  bootstrapSchoolTenant?(
+    params: BootstrapSchoolTenantParams
+  ): Promise<BootstrapSchoolTenantResult>
   pullSyncChanges(params: PullSyncRpcParams): Promise<PullSyncRpcResult>
   updateSyncCursor(params: UpdateSyncCursorRpcParams): Promise<UpdateSyncCursorRpcResult>
   lookupSchoolByCode?(code: string): Promise<LookupSchoolByCodeResult>

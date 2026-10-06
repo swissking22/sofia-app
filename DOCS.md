@@ -589,7 +589,7 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 
 **Communication notes:** Notices/announcements and parent threads sync as rows. Channel toggles and SMS provider settings travel with `communication_settings` (same-school desks share config).
 
-**Asset notes:** Object key `{school_id}/{table}/{record_id}/{field}.{ext}` in bucket `school-assets`. Upload after successful push when the local file exists; download on pull/Join/Sync Now when the path string is present but the file is missing locally. Local paths are rewritten under `userData/uploads/…`.
+**Multi-desk / first Sync:** Primary desks that were never synced (including USB-restored DBs) call `bootstrap_school_tenant` when `register_device` reports missing tenant, then register the device and drain the queue. Apply migration `20261006143000_bootstrap_school_tenant.sql` on Supabase before relying on this path.
 
 ### Sofia Teacher (Expo) mobile API
 
@@ -809,6 +809,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-06 | **Sync bootstrap:** first Sync on a never-synced / USB-restored primary creates the cloud school via `bootstrap_school_tenant` when `register_device` reports missing tenant (`main/sync/push.ts` + migration `20261006143000_bootstrap_school_tenant.sql`). |
 | 2026-10-05 | **Dashboard:** removed Export PDF from the overview header; Sync + setup progress remain. |
 | 2026-10-05 | **Dashboard redesign:** overview layout with 4 KPIs (incl. teachers + monthly revenue), growth/finance charts, admissions + activity + attendance gauge, Quick Actions & Attention rail; keeps Sofia Setup Progress + Sync; Sofia indigo primary. |
 | 2026-10-05 | **Students list:** row actions are View profile and Edit details icon buttons (`?edit=1` opens the edit modal); search + Add student on a second toolbar row; sorted by class then name. |

@@ -15,12 +15,17 @@ import type {
 class MockSupabaseSyncClient implements SupabaseSyncClientInterface {
   public receivedOperations: ProcessSyncRpcParams[] = []
   public registeredDevices: RegisterDeviceRpcParams[] = []
+  public bootstrapCalls: Array<{ id: string; name: string }> = []
   public operationHandler?: (
     params: ProcessSyncRpcParams
   ) => Promise<ProcessSyncRpcResult> | ProcessSyncRpcResult
   public deviceHandler?: (
     params: RegisterDeviceRpcParams
   ) => Promise<RegisterDeviceRpcResult> | RegisterDeviceRpcResult
+  public bootstrapHandler?: (params: {
+    id: string
+    name: string
+  }) => Promise<{ ok: boolean; error?: string }> | { ok: boolean; error?: string }
 
   async registerDevice(
     params: RegisterDeviceRpcParams
@@ -28,6 +33,17 @@ class MockSupabaseSyncClient implements SupabaseSyncClientInterface {
     this.registeredDevices.push(params)
     if (this.deviceHandler) {
       return this.deviceHandler(params)
+    }
+    return { ok: true }
+  }
+
+  async bootstrapSchoolTenant(params: {
+    id: string
+    name: string
+  }): Promise<{ ok: boolean; error?: string }> {
+    this.bootstrapCalls.push({ id: params.id, name: params.name })
+    if (this.bootstrapHandler) {
+      return this.bootstrapHandler(params)
     }
     return { ok: true }
   }
@@ -621,8 +637,8 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     expect(again[0].record_id).toBe(student.id)
   })
 
-  // 18. Missing cloud tenant aborts before processing queue items
-  test('18. Missing school tenant aborts push without processing queue', async () => {
+  // 18. Missing cloud tenant without bootstrap RPC aborts before processing queue
+  test('18. Missing school tenant without bootstrap aborts push', async () => {
     repos.students.create({
       school_id: schoolId,
       name: 'Tenant Gate',
@@ -632,15 +648,60 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     })
 
     resetDeviceStoreForTests('44444444-4444-4444-4444-444444444444')
-    mockClient.deviceHandler = async () => ({
+    let registerAttempts = 0
+    mockClient.deviceHandler = async () => {
+      registerAttempts += 1
+      return {
+        ok: false,
+        error: 'School tenant does not exist: ' + schoolId,
+      }
+    }
+    mockClient.bootstrapHandler = async () => ({
       ok: false,
-      error: 'School tenant does not exist: ' + schoolId,
+      error: 'bootstrap denied',
     })
 
     const result = await pushPendingSync({ db, schoolId, client: mockClient })
     expect(result.ok).toBe(false)
     expect(result.processed).toBe(0)
     expect(mockClient.receivedOperations.length).toBe(0)
-    expect(result.message).toContain('School tenant does not exist')
+    expect(mockClient.bootstrapCalls.length).toBe(1)
+    expect(registerAttempts).toBe(1)
+    expect(result.message).toContain('bootstrap denied')
+  })
+
+  // 19. Missing tenant bootstraps from local school, then registers and pushes
+  test('19. Missing school tenant bootstraps then pushes queue', async () => {
+    repos.students.create({
+      school_id: schoolId,
+      name: 'After Bootstrap',
+      class_id: classId,
+      student_code: 'ABC-0020',
+      sequence_number: 20,
+    })
+
+    resetDeviceStoreForTests('55555555-5555-5555-5555-555555555555')
+    let cloudHasTenant = false
+    mockClient.deviceHandler = async () => {
+      if (!cloudHasTenant) {
+        return {
+          ok: false,
+          error: 'School tenant does not exist: ' + schoolId,
+        }
+      }
+      return { ok: true }
+    }
+    mockClient.bootstrapHandler = async () => {
+      cloudHasTenant = true
+      return { ok: true }
+    }
+
+    const result = await pushPendingSync({ db, schoolId, client: mockClient })
+    expect(result.ok).toBe(true)
+    expect(mockClient.bootstrapCalls.length).toBe(1)
+    expect(mockClient.bootstrapCalls[0].id).toBe(schoolId)
+    expect(mockClient.registeredDevices.length).toBe(2)
+    expect(mockClient.receivedOperations.length).toBeGreaterThan(0)
+    expect(result.successful).toBeGreaterThan(0)
   })
 })

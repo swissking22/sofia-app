@@ -369,6 +369,40 @@ export class SupabaseSyncClient implements SupabaseSyncClientInterface {
     }
   }
 
+  async bootstrapSchoolTenant(
+    params: import('./types').BootstrapSchoolTenantParams
+  ): Promise<import('./types').BootstrapSchoolTenantResult> {
+    try {
+      const { data, error } = await this.supabase.rpc('bootstrap_school_tenant', {
+        p_id: params.id,
+        p_name: params.name,
+        p_short_code: params.shortCode ?? null,
+        p_school_code: params.schoolCode ?? null,
+        p_address: params.address ?? null,
+        p_phone: params.phone ?? null,
+        p_email: params.email ?? null,
+      })
+
+      if (error) {
+        return { ok: false, error: rpcErrorMessage(error) }
+      }
+
+      if (data && typeof data === 'object' && (data as any).success === false) {
+        return {
+          ok: false,
+          error: (data as any).error || 'School tenant bootstrap rejected',
+        }
+      }
+
+      return { ok: true }
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'School tenant bootstrap network failure',
+      }
+    }
+  }
+
   async processSyncOperation(
     params: ProcessSyncRpcParams
   ): Promise<ProcessSyncRpcResult> {
