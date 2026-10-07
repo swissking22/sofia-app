@@ -6,11 +6,20 @@ import {
   FilterBar,
   FilterField,
   InsightCard,
+  MoneyText,
   PageAlert,
   ReportSection,
   StatGrid,
   selectClass,
 } from "../../../components/reports/ui";
+import {
+  ReportChartGrid,
+  ReportChartPanel,
+  SofiaDonutChart,
+  SofiaGroupedBarChart,
+  SofiaHorizontalBarChart,
+  SofiaPercentGauge,
+} from "../../../components/reports/charts";
 import {
   downloadCsv,
   fetchReportsMeta,
@@ -18,7 +27,7 @@ import {
   toCsv,
   type ReportFilters,
 } from "../../../lib/reports";
-import { formatMoney } from "../../../lib/finance-mgmt";
+import { formatCompactMoney } from "../../../lib/finance-mgmt";
 
 export default function SchoolInsightsPage() {
   const [loading, setLoading] = React.useState(true);
@@ -79,8 +88,8 @@ export default function SchoolInsightsPage() {
   const academic = (data?.academic ?? null) as {
     overall_average: number;
     pass_rate: number;
-    best_class: { class_name: string } | null;
-    lowest_class: { class_name: string } | null;
+    best_class: { class_name: string; average: number } | null;
+    lowest_class: { class_name: string; average: number } | null;
     weak_subject: { subject_name: string } | null;
   } | null;
   const financial = (data?.financial ?? null) as {
@@ -202,21 +211,79 @@ export default function SchoolInsightsPage() {
                   { label: "Withdrawals", value: students.withdrawals },
                 ]}
               />
-              <p className="text-xs font-semibold uppercase text-slate-500">
-                Per department
-              </p>
-              <ul className="mt-2 text-sm text-slate-700">
-                {students.per_department.map((d) => (
-                  <li key={d.name}>
-                    {d.name}: {d.n}
-                  </li>
-                ))}
-              </ul>
+              <ReportChartGrid>
+                <ReportChartPanel
+                  title="Enrolment by department"
+                  description="Donut of headcount mix"
+                >
+                  <SofiaDonutChart
+                    data={students.per_department.map((d, i) => ({
+                      id: `${d.name}-${i}`,
+                      label: d.name,
+                      value: d.n,
+                    }))}
+                    totalLabel="Students"
+                  />
+                </ReportChartPanel>
+                <ReportChartPanel
+                  title="Enrolment by class"
+                  description="Horizontal bars for class sizes"
+                >
+                  <SofiaHorizontalBarChart
+                    data={students.per_class.map((c, i) => ({
+                      id: `${c.name}-${i}`,
+                      label: c.name,
+                      value: c.n,
+                    }))}
+                  />
+                </ReportChartPanel>
+              </ReportChartGrid>
             </ReportSection>
           ) : null}
 
           {academic ? (
             <ReportSection title="Academic insights">
+              <ReportChartGrid>
+                <ReportChartPanel
+                  title="Pass rate"
+                  description="Gauge of students meeting the pass mark"
+                >
+                  <SofiaPercentGauge
+                    rate={academic.pass_rate}
+                    label="Pass rate"
+                  />
+                </ReportChartPanel>
+                <ReportChartPanel
+                  title="Class spotlight"
+                  description="Best vs lowest class averages"
+                >
+                  <SofiaHorizontalBarChart
+                    data={[
+                      academic.best_class
+                        ? {
+                            id: "best",
+                            label: academic.best_class.class_name,
+                            value: academic.best_class.average,
+                          }
+                        : null,
+                      academic.lowest_class &&
+                      academic.lowest_class.class_name !==
+                        academic.best_class?.class_name
+                        ? {
+                            id: "lowest",
+                            label: academic.lowest_class.class_name,
+                            value: academic.lowest_class.average,
+                          }
+                        : null,
+                    ].filter(
+                      (
+                        row,
+                      ): row is { id: string; label: string; value: number } =>
+                        row != null,
+                    )}
+                  />
+                </ReportChartPanel>
+              </ReportChartGrid>
               <StatGrid
                 items={[
                   { label: "Overall average", value: academic.overall_average },
@@ -246,6 +313,37 @@ export default function SchoolInsightsPage() {
 
           {canFinance && financial ? (
             <ReportSection title="Financial insights">
+              <ReportChartGrid>
+                <ReportChartPanel
+                  title="Collection rate"
+                  description="Gauge of fees collected"
+                >
+                  <SofiaPercentGauge
+                    rate={financial.collection_rate}
+                    label="Collected"
+                  />
+                </ReportChartPanel>
+                <ReportChartPanel
+                  title="Revenue vs expenses"
+                  description="Grouped bars for cash flow snapshot"
+                >
+                  <SofiaGroupedBarChart
+                    data={[
+                      {
+                        label: "Period",
+                        revenue: financial.revenue,
+                        expenses: financial.expenses,
+                      },
+                    ]}
+                    series={[
+                      { key: "revenue", label: "Revenue" },
+                      { key: "expenses", label: "Expenses" },
+                    ]}
+                    valueFormatter={(n) => formatCompactMoney(n, currency)}
+                    heightClass="h-48"
+                  />
+                </ReportChartPanel>
+              </ReportChartGrid>
               <StatGrid
                 items={[
                   {
@@ -254,19 +352,36 @@ export default function SchoolInsightsPage() {
                   },
                   {
                     label: "Outstanding",
-                    value: formatMoney(financial.outstanding, currency),
+                    value: (
+                      <MoneyText
+                        amount={financial.outstanding}
+                        currency={currency}
+                      />
+                    ),
                   },
                   {
                     label: "Revenue",
-                    value: formatMoney(financial.revenue, currency),
+                    value: (
+                      <MoneyText
+                        amount={financial.revenue}
+                        currency={currency}
+                      />
+                    ),
                   },
                   {
                     label: "Expenses",
-                    value: formatMoney(financial.expenses, currency),
+                    value: (
+                      <MoneyText
+                        amount={financial.expenses}
+                        currency={currency}
+                      />
+                    ),
                   },
                   {
                     label: "Net position",
-                    value: formatMoney(financial.net, currency),
+                    value: (
+                      <MoneyText amount={financial.net} currency={currency} />
+                    ),
                   },
                   {
                     label: "Budget utilization",
@@ -285,6 +400,30 @@ export default function SchoolInsightsPage() {
 
           {attendance ? (
             <ReportSection title="Attendance insights">
+              <ReportChartGrid>
+                <ReportChartPanel
+                  title="Overall attendance"
+                  description="Gauge of school attendance"
+                >
+                  <SofiaPercentGauge
+                    rate={attendance.overall}
+                    label="Present"
+                  />
+                </ReportChartPanel>
+                <ReportChartPanel
+                  title="Lowest attendance classes"
+                  description="Horizontal bars for risk classes"
+                >
+                  <SofiaHorizontalBarChart
+                    data={attendance.lowest_classes.map((c, i) => ({
+                      id: `${c.class_name}-${i}`,
+                      label: c.class_name,
+                      value: c.attendance_rate,
+                    }))}
+                    valueFormatter={(n) => `${n}%`}
+                  />
+                </ReportChartPanel>
+              </ReportChartGrid>
               <StatGrid
                 items={[
                   {
@@ -302,12 +441,6 @@ export default function SchoolInsightsPage() {
                   },
                 ]}
               />
-              <p className="text-sm text-slate-600">
-                Lowest attendance:{" "}
-                {attendance.lowest_classes
-                  .map((c) => `${c.class_name} (${c.attendance_rate}%)`)
-                  .join(", ") || "—"}
-              </p>
               <Link
                 className="text-sm font-semibold text-(--sofia-primary)"
                 href="/reports/attendance?risk=1"
@@ -319,6 +452,37 @@ export default function SchoolInsightsPage() {
 
           {staff ? (
             <ReportSection title="Staff insights">
+              <ReportChartGrid>
+                <ReportChartPanel
+                  title="Staff attendance"
+                  description="Gauge from teacher registers"
+                >
+                  <SofiaPercentGauge
+                    rate={staff.attendance_rate}
+                    label="Staff present"
+                  />
+                </ReportChartPanel>
+                <ReportChartPanel
+                  title="Workforce mix"
+                  description="Donut of teachers vs other staff"
+                >
+                  <SofiaDonutChart
+                    data={[
+                      {
+                        id: "teachers",
+                        label: "Teachers",
+                        value: staff.teachers,
+                      },
+                      {
+                        id: "other",
+                        label: "Other staff",
+                        value: Math.max(0, staff.staff - staff.teachers),
+                      },
+                    ].filter((d) => d.value > 0)}
+                    totalLabel="Staff"
+                  />
+                </ReportChartPanel>
+              </ReportChartGrid>
               <StatGrid
                 items={[
                   { label: "Teachers", value: staff.teachers },

@@ -55,19 +55,24 @@ export function greetingForHour(hour: number): string {
   return 'Good evening'
 }
 
+/** Short dashboard amounts: K for thousands, M for millions. */
 export function formatCompactCurrency(
   amount: number,
   currency: string
 ): string {
   const abs = Math.abs(amount)
   const sign = amount < 0 ? '-' : ''
-  const symbol =
-    abs >= 1_000_000
-      ? `${round2(abs / 1_000_000)}M`
-      : abs >= 1_000
-        ? `${round2(abs / 1_000)}K`
-        : abs.toLocaleString(undefined, { maximumFractionDigits: 0 })
-  return `${sign}${symbol} ${currency}`.trim()
+  let body: string
+  if (abs >= 1_000_000) {
+    const m = abs / 1_000_000
+    body = `${Number(m.toFixed(m >= 10 ? 1 : 2))}M`.replace(/\.0+M$/, 'M')
+  } else if (abs >= 1_000) {
+    const k = abs / 1_000
+    body = `${Number(k.toFixed(k >= 100 ? 0 : 1))}K`.replace(/\.0K$/, 'K')
+  } else {
+    body = Math.round(abs).toLocaleString('en-GB', { maximumFractionDigits: 0 })
+  }
+  return `${sign}${body}${currency ? ` ${currency}` : ''}`.trim()
 }
 
 /** Present + late count as attendance (matches reports.attendanceRate). */

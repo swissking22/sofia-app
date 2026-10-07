@@ -66,6 +66,9 @@ export const GENERIC_SYNC_TABLES = [
   'exam_sessions',
   'exam_papers',
   'exam_scores',
+  'assessment_question_papers',
+  'assessment_question_paper_revisions',
+  'assessment_question_paper_events',
   'result_calculation_profiles',
   'result_calculation_profile_versions',
   'result_calculation_class_assignments',
@@ -156,6 +159,24 @@ export function preferResultRunStatus(
   const r = String(remote || 'draft')
   const lr = RESULT_RUN_STATUS_RANK[l] ?? 0
   const rr = RESULT_RUN_STATUS_RANK[r] ?? 0
+  return rr >= lr ? r : l
+}
+
+/** Question-paper review — never regress approved → pending on multi-desk pull. */
+export const ASSESSMENT_QUESTION_STATUS_RANK: Record<string, number> = {
+  pending_review: 0,
+  rejected: 1,
+  approved: 2,
+}
+
+export function preferAssessmentQuestionStatus(
+  local: unknown,
+  remote: unknown
+): string {
+  const l = String(local || 'pending_review')
+  const r = String(remote || 'pending_review')
+  const lr = ASSESSMENT_QUESTION_STATUS_RANK[l] ?? 0
+  const rr = ASSESSMENT_QUESTION_STATUS_RANK[r] ?? 0
   return rr >= lr ? r : l
 }
 
@@ -394,6 +415,23 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   ],
   exam_scores: [
     'id', 'paper_id', 'student_id', 'score', 'score_status',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  assessment_question_papers: [
+    'id', 'school_id', 'title', 'assessment_type', 'academic_year_id', 'term_id',
+    'class_id', 'subject_id', 'teacher_staff_id', 'exam_session_id', 'exam_paper_id',
+    'ca_assessment_id', 'current_revision_id', 'current_revision_number', 'current_status',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  assessment_question_paper_revisions: [
+    'id', 'school_id', 'paper_id', 'revision_number', 'file_path', 'file_name',
+    'mime_type', 'file_size', 'status', 'submitted_by_staff_id', 'submitted_at',
+    'reviewed_by_user_id', 'reviewed_at', 'rejection_note',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  assessment_question_paper_events: [
+    'id', 'school_id', 'paper_id', 'revision_id', 'action',
+    'actor_user_id', 'actor_staff_id', 'notes',
     'created_at', 'updated_at', 'deleted_at', 'version',
   ],
   result_calculation_profiles: [

@@ -9,11 +9,19 @@ import {
   FilterField,
   PageAlert,
   ReportSection,
-  ShareBar,
   StatGrid,
   StudentTable,
   selectClass,
 } from "../../../components/reports/ui";
+import {
+  ReportChartGrid,
+  ReportChartPanel,
+  SofiaAreaChart,
+  SofiaDonutChart,
+  SofiaHorizontalBarChart,
+  SofiaLineChart,
+  SofiaPercentGauge,
+} from "../../../components/reports/charts";
 import {
   downloadCsv,
   fetchAttendanceAnalytics,
@@ -250,7 +258,55 @@ export default function AttendanceAnalyticsPage() {
             ]}
           />
 
+          <ReportChartGrid>
+            <ReportChartPanel
+              title="Overall rate"
+              description="Gauge of school attendance"
+            >
+              <SofiaPercentGauge
+                rate={overall.overall_rate ?? null}
+                label="Attendance"
+              />
+            </ReportChartPanel>
+            <ReportChartPanel
+              title="Mark mix"
+              description="Donut of present / absent / late"
+            >
+              <SofiaDonutChart
+                data={[
+                  {
+                    id: "present",
+                    label: "Present",
+                    value: overall.present ?? 0,
+                  },
+                  {
+                    id: "absent",
+                    label: "Absent",
+                    value: overall.absent ?? 0,
+                  },
+                  { id: "late", label: "Late", value: overall.late ?? 0 },
+                ].filter((d) => d.value > 0)}
+                totalLabel="Marks"
+              />
+            </ReportChartPanel>
+          </ReportChartGrid>
+
           <ReportSection title="Class attendance">
+            <ReportChartPanel
+              title="Attendance by class"
+              description="Horizontal bars for class rates"
+              className="mb-4"
+            >
+              <SofiaHorizontalBarChart
+                data={(overall.by_class ?? []).map((r) => ({
+                  id: r.class_id,
+                  label: r.class_name,
+                  value: r.attendance_rate,
+                }))}
+                valueFormatter={(n) => `${n}%`}
+                onBarClick={(id) => setClassId(id)}
+              />
+            </ReportChartPanel>
             <StudentTable
               columns={["Class", "Students", "Attendance rate", "Absence rate"]}
               loading={false}
@@ -282,32 +338,32 @@ export default function AttendanceAnalyticsPage() {
           </ReportSection>
 
           <ReportSection title="Trends">
-            <p className="mb-2 text-xs font-semibold uppercase text-slate-500">
-              Monthly
-            </p>
-            <div className="grid gap-2 sm:grid-cols-4">
-              {(overall.monthly ?? []).map((m) => (
-                <div
-                  key={m.month}
-                  className="rounded-xl border border-slate-200 p-3"
-                >
-                  <div className="text-xs text-slate-500">{m.month}</div>
-                  <div className="font-semibold">{m.rate}%</div>
-                  <ShareBar value={m.rate} />
-                </div>
-              ))}
-            </div>
-            <p className="mb-2 mt-4 text-xs font-semibold uppercase text-slate-500">
-              Recent days
-            </p>
-            <StudentTable columns={["Date", "Rate"]} loading={false}>
-              {(overall.daily ?? []).slice(-14).map((d) => (
-                <tr key={d.date} className="border-t border-slate-100">
-                  <td className="px-4 py-3">{formatDisplayDate(d.date)}</td>
-                  <td className="px-4 py-3">{d.rate}%</td>
-                </tr>
-              ))}
-            </StudentTable>
+            <ReportChartGrid>
+              <ReportChartPanel
+                title="Monthly attendance"
+                description="Area chart of rate over months"
+              >
+                <SofiaAreaChart
+                  data={(overall.monthly ?? []).map((m) => ({
+                    label: m.month,
+                    value: m.rate,
+                  }))}
+                  valueSuffix="%"
+                />
+              </ReportChartPanel>
+              <ReportChartPanel
+                title="Recent daily rates"
+                description="Line chart of the last 14 days"
+              >
+                <SofiaLineChart
+                  data={(overall.daily ?? []).slice(-14).map((d) => ({
+                    label: formatDisplayDate(d.date),
+                    value: d.rate,
+                  }))}
+                  valueSuffix="%"
+                />
+              </ReportChartPanel>
+            </ReportChartGrid>
           </ReportSection>
 
           <ReportSection
@@ -351,6 +407,37 @@ export default function AttendanceAnalyticsPage() {
 
           {overall.staff ? (
             <ReportSection title="Staff attendance">
+              <ReportChartGrid>
+                <ReportChartPanel
+                  title="Staff attendance rate"
+                  description="Gauge for teacher registers"
+                >
+                  <SofiaPercentGauge
+                    rate={overall.staff.rate}
+                    label="Staff present"
+                  />
+                </ReportChartPanel>
+                <ReportChartPanel
+                  title="Staff mark mix"
+                  description="Donut of present vs absent"
+                >
+                  <SofiaDonutChart
+                    data={[
+                      {
+                        id: "present",
+                        label: "Present",
+                        value: overall.staff.present,
+                      },
+                      {
+                        id: "absent",
+                        label: "Absent",
+                        value: overall.staff.absent,
+                      },
+                    ].filter((d) => d.value > 0)}
+                    totalLabel="Marks"
+                  />
+                </ReportChartPanel>
+              </ReportChartGrid>
               <StatGrid
                 items={[
                   {

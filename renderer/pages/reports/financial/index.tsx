@@ -6,13 +6,22 @@ import {
   ExportBar,
   FilterBar,
   FilterField,
+  MoneyText,
   PageAlert,
   ReportSection,
-  ShareBar,
   StatGrid,
   StudentTable,
   selectClass,
 } from "../../../components/reports/ui";
+import {
+  ReportChartGrid,
+  ReportChartPanel,
+  SofiaAreaChart,
+  SofiaDonutChart,
+  SofiaHorizontalBarChart,
+  SofiaPercentGauge,
+  SofiaVerticalBarChart,
+} from "../../../components/reports/charts";
 import {
   downloadCsv,
   fetchFinancialAnalytics,
@@ -20,7 +29,7 @@ import {
   toCsv,
   type ReportFilters,
 } from "../../../lib/reports";
-import { formatMoney } from "../../../lib/finance-mgmt";
+import { formatCompactMoney, formatMoney } from "../../../lib/finance-mgmt";
 
 type NamedAmount = { name: string; amount: number };
 
@@ -141,8 +150,9 @@ export default function FinancialAnalyticsPage() {
     utilization: number;
   } | null;
 
-  function money(n: number) {
-    return formatMoney(n, currency);
+  /** Chart axis / tooltip — compact on screen. */
+  function moneyCompact(n: number) {
+    return formatCompactMoney(n, currency);
   }
 
   function exportCsv() {
@@ -152,12 +162,12 @@ export default function FinancialAnalyticsPage() {
       toCsv(
         ["Metric", "Value"],
         [
-          ["Billed", summary.billed],
-          ["Collected", summary.collected],
-          ["Outstanding", summary.outstanding],
-          ["Expenses", summary.expenses],
-          ["Net", summary.net],
-          ["Collection rate", summary.collection_rate],
+          ["Billed", formatMoney(summary.billed, currency)],
+          ["Collected", formatMoney(summary.collected, currency)],
+          ["Outstanding", formatMoney(summary.outstanding, currency)],
+          ["Expenses", formatMoney(summary.expenses, currency)],
+          ["Net", formatMoney(summary.net, currency)],
+          ["Collection rate", `${summary.collection_rate}%`],
         ],
       ),
     );
@@ -289,11 +299,34 @@ export default function FinancialAnalyticsPage() {
         <>
           <StatGrid
             items={[
-              { label: "Total billed", value: money(summary.billed) },
-              { label: "Total collected", value: money(summary.collected) },
-              { label: "Outstanding fees", value: money(summary.outstanding) },
-              { label: "Total expenses", value: money(summary.expenses) },
-              { label: "Net balance", value: money(summary.net) },
+              {
+                label: "Total billed",
+                value: (
+                  <MoneyText amount={summary.billed} currency={currency} />
+                ),
+              },
+              {
+                label: "Total collected",
+                value: (
+                  <MoneyText amount={summary.collected} currency={currency} />
+                ),
+              },
+              {
+                label: "Outstanding fees",
+                value: (
+                  <MoneyText amount={summary.outstanding} currency={currency} />
+                ),
+              },
+              {
+                label: "Total expenses",
+                value: (
+                  <MoneyText amount={summary.expenses} currency={currency} />
+                ),
+              },
+              {
+                label: "Net balance",
+                value: <MoneyText amount={summary.net} currency={currency} />,
+              },
               {
                 label: "Collection rate",
                 value: `${summary.collection_rate}%`,
@@ -301,39 +334,172 @@ export default function FinancialAnalyticsPage() {
             ]}
           />
 
+          <ReportChartGrid>
+            <ReportChartPanel
+              title="Collection rate"
+              description="Gauge of fees collected vs billed"
+            >
+              <SofiaPercentGauge
+                rate={summary.collection_rate}
+                label="Collected"
+                footer={
+                  <p className="mt-2 text-center text-xs text-slate-500">
+                    <MoneyText amount={summary.collected} currency={currency} />{" "}
+                    of <MoneyText amount={summary.billed} currency={currency} />
+                  </p>
+                }
+              />
+            </ReportChartPanel>
+            <ReportChartPanel
+              title="Cash position"
+              description="Donut of collected vs outstanding"
+            >
+              <SofiaDonutChart
+                data={[
+                  {
+                    id: "collected",
+                    label: "Collected",
+                    value: summary.collected,
+                  },
+                  {
+                    id: "outstanding",
+                    label: "Outstanding",
+                    value: summary.outstanding,
+                  },
+                ].filter((d) => d.value > 0)}
+                totalLabel="Fees"
+              />
+            </ReportChartPanel>
+          </ReportChartGrid>
+
           <ReportSection title="Revenue">
-            <div className="grid gap-6 md:grid-cols-2">
-              <BreakdownTable
-                title="By term"
-                rows={revenue.by_term}
-                money={money}
-              />
-              <BreakdownTable
-                title="By class"
-                rows={revenue.by_class}
-                money={money}
-              />
-              <BreakdownTable
-                title="By fee type"
-                rows={revenue.by_fee_type}
-                money={money}
-              />
-              <BreakdownTable
-                title="By payment method"
-                rows={revenue.by_method}
-                money={money}
-              />
-            </div>
+            <ReportChartGrid>
+              <ReportChartPanel
+                title="Revenue by class"
+                description="Horizontal bars for class comparison"
+              >
+                <SofiaHorizontalBarChart
+                  data={revenue.by_class.map((r, i) => ({
+                    id: `${r.name}-${i}`,
+                    label: r.name,
+                    value: r.amount,
+                  }))}
+                  valueFormatter={moneyCompact}
+                />
+              </ReportChartPanel>
+              <ReportChartPanel
+                title="Revenue by fee type"
+                description="Donut for fee mix"
+              >
+                <SofiaDonutChart
+                  data={revenue.by_fee_type.map((r, i) => ({
+                    id: `${r.name}-${i}`,
+                    label: r.name,
+                    value: r.amount,
+                  }))}
+                  totalLabel="Revenue"
+                />
+              </ReportChartPanel>
+              <ReportChartPanel
+                title="Revenue by term"
+                description="Vertical bars across terms"
+              >
+                <SofiaVerticalBarChart
+                  data={revenue.by_term.map((r) => ({
+                    label: r.name,
+                    value: r.amount,
+                  }))}
+                  valueFormatter={moneyCompact}
+                  highlightLast={false}
+                />
+              </ReportChartPanel>
+              <ReportChartPanel
+                title="Payment methods"
+                description="Donut of collection channels"
+              >
+                <SofiaDonutChart
+                  data={revenue.by_method.map((r, i) => ({
+                    id: `${r.name}-${i}`,
+                    label: r.name,
+                    value: r.amount,
+                  }))}
+                  totalLabel="Payments"
+                />
+              </ReportChartPanel>
+            </ReportChartGrid>
           </ReportSection>
 
           <ReportSection title="Outstanding fees">
+            <ReportChartPanel
+              title="Aging buckets"
+              description="Horizontal bars for arrears age"
+              className="mb-4"
+            >
+              <SofiaHorizontalBarChart
+                data={[
+                  {
+                    id: "current",
+                    label: "Current",
+                    value: summary.aging.current,
+                  },
+                  {
+                    id: "30",
+                    label: "30+ days",
+                    value: summary.aging.aging_30,
+                  },
+                  {
+                    id: "60",
+                    label: "60+ days",
+                    value: summary.aging.aging_60,
+                  },
+                  {
+                    id: "90",
+                    label: "90+ days",
+                    value: summary.aging.aging_90,
+                  },
+                ]}
+                valueFormatter={moneyCompact}
+              />
+            </ReportChartPanel>
             <StatGrid
               items={[
                 { label: "Students owing", value: summary.students_owing },
-                { label: "Current", value: money(summary.aging.current) },
-                { label: "30+ days", value: money(summary.aging.aging_30) },
-                { label: "60+ days", value: money(summary.aging.aging_60) },
-                { label: "90+ days", value: money(summary.aging.aging_90) },
+                {
+                  label: "Current",
+                  value: (
+                    <MoneyText
+                      amount={summary.aging.current}
+                      currency={currency}
+                    />
+                  ),
+                },
+                {
+                  label: "30+ days",
+                  value: (
+                    <MoneyText
+                      amount={summary.aging.aging_30}
+                      currency={currency}
+                    />
+                  ),
+                },
+                {
+                  label: "60+ days",
+                  value: (
+                    <MoneyText
+                      amount={summary.aging.aging_60}
+                      currency={currency}
+                    />
+                  ),
+                },
+                {
+                  label: "90+ days",
+                  value: (
+                    <MoneyText
+                      amount={summary.aging.aging_90}
+                      currency={currency}
+                    />
+                  ),
+                },
               ]}
             />
             <StudentTable
@@ -346,7 +512,9 @@ export default function FinancialAnalyticsPage() {
                 byClass.map((r) => (
                   <tr key={r.class_name} className="border-t border-slate-100">
                     <td className="px-4 py-3">{r.class_name}</td>
-                    <td className="px-4 py-3">{money(r.outstanding)}</td>
+                    <td className="px-4 py-3">
+                      <MoneyText amount={r.outstanding} currency={currency} />
+                    </td>
                     <td className="px-4 py-3">{r.students_owing}</td>
                   </tr>
                 ))
@@ -370,7 +538,9 @@ export default function FinancialAnalyticsPage() {
                     </Link>
                   </td>
                   <td className="px-4 py-3">{r.class_name}</td>
-                  <td className="px-4 py-3">{money(r.outstanding)}</td>
+                  <td className="px-4 py-3">
+                    <MoneyText amount={r.outstanding} currency={currency} />
+                  </td>
                 </tr>
               ))}
             </StudentTable>
@@ -383,19 +553,40 @@ export default function FinancialAnalyticsPage() {
           </ReportSection>
 
           <ReportSection title="Expenses">
-            <BreakdownTable
-              title="By category"
-              rows={expenses.by_category}
-              money={money}
-            />
-            <h3 className="mb-2 mt-4 text-xs font-semibold uppercase text-slate-500">
-              Monthly
-            </h3>
+            <ReportChartGrid>
+              <ReportChartPanel
+                title="Expenses by category"
+                description="Donut of spend mix"
+              >
+                <SofiaDonutChart
+                  data={expenses.by_category.map((r, i) => ({
+                    id: `${r.name}-${i}`,
+                    label: r.name,
+                    value: r.amount,
+                  }))}
+                  totalLabel="Spend"
+                />
+              </ReportChartPanel>
+              <ReportChartPanel
+                title="Monthly expenses"
+                description="Area chart of spend over time"
+              >
+                <SofiaAreaChart
+                  data={expenses.by_month.map((r) => ({
+                    label: r.month,
+                    value: r.amount,
+                  }))}
+                  valueFormatter={moneyCompact}
+                />
+              </ReportChartPanel>
+            </ReportChartGrid>
             <StudentTable columns={["Month", "Amount"]} loading={false}>
               {expenses.by_month.map((r) => (
                 <tr key={r.month} className="border-t border-slate-100">
                   <td className="px-4 py-3">{r.month}</td>
-                  <td className="px-4 py-3">{money(r.amount)}</td>
+                  <td className="px-4 py-3">
+                    <MoneyText amount={r.amount} currency={currency} />
+                  </td>
                 </tr>
               ))}
             </StudentTable>
@@ -407,25 +598,78 @@ export default function FinancialAnalyticsPage() {
                 items={[
                   {
                     label: "Cash collected",
-                    value: money(deposits.cash_collected),
+                    value: (
+                      <MoneyText
+                        amount={deposits.cash_collected}
+                        currency={currency}
+                      />
+                    ),
                   },
                   {
                     label: "Cash deposited",
-                    value: money(deposits.cash_deposited),
+                    value: (
+                      <MoneyText
+                        amount={deposits.cash_deposited}
+                        currency={currency}
+                      />
+                    ),
                   },
-                  { label: "Undeposited", value: money(deposits.undeposited) },
-                  { label: "Reconciled", value: money(deposits.reconciled) },
+                  {
+                    label: "Undeposited",
+                    value: (
+                      <MoneyText
+                        amount={deposits.undeposited}
+                        currency={currency}
+                      />
+                    ),
+                  },
+                  {
+                    label: "Reconciled",
+                    value: (
+                      <MoneyText
+                        amount={deposits.reconciled}
+                        currency={currency}
+                      />
+                    ),
+                  },
                   {
                     label: "Unreconciled",
-                    value: money(deposits.unreconciled),
+                    value: (
+                      <MoneyText
+                        amount={deposits.unreconciled}
+                        currency={currency}
+                      />
+                    ),
                   },
                 ]}
               />
-              <BreakdownTable
-                title="By bank"
-                rows={deposits.by_bank}
-                money={money}
-              />
+              <ReportChartGrid>
+                <ReportChartPanel
+                  title="Deposits by bank"
+                  description="Horizontal bars per bank"
+                >
+                  <SofiaHorizontalBarChart
+                    data={deposits.by_bank.map((r, i) => ({
+                      id: `${r.name}-${i}`,
+                      label: r.name,
+                      value: r.amount,
+                    }))}
+                    valueFormatter={moneyCompact}
+                  />
+                </ReportChartPanel>
+                <ReportChartPanel
+                  title="Deposit timeline"
+                  description="Area chart of deposits by month"
+                >
+                  <SofiaAreaChart
+                    data={deposits.by_period.map((r) => ({
+                      label: r.month,
+                      value: r.amount,
+                    }))}
+                    valueFormatter={moneyCompact}
+                  />
+                </ReportChartPanel>
+              </ReportChartGrid>
               <Link
                 className="mt-3 inline-block text-sm font-semibold text-(--sofia-primary)"
                 href="/finance/bank-deposits"
@@ -437,15 +681,72 @@ export default function FinancialAnalyticsPage() {
 
           {budget ? (
             <ReportSection title="Budget">
+              <ReportChartGrid>
+                <ReportChartPanel
+                  title="Budget utilization"
+                  description="Gauge of spend vs allocation"
+                >
+                  <SofiaPercentGauge
+                    rate={budget.utilization}
+                    label="Utilized"
+                    footer={
+                      <p className="mt-2 text-center text-xs text-slate-500">
+                        <MoneyText amount={budget.spent} currency={currency} />{" "}
+                        of{" "}
+                        <MoneyText
+                          amount={budget.allocated}
+                          currency={currency}
+                        />
+                      </p>
+                    }
+                  />
+                </ReportChartPanel>
+                <ReportChartPanel
+                  title="Budget composition"
+                  description="Donut of spent vs remaining"
+                >
+                  <SofiaDonutChart
+                    data={[
+                      { id: "spent", label: "Spent", value: budget.spent },
+                      {
+                        id: "remaining",
+                        label: "Remaining",
+                        value: Math.max(0, budget.remaining),
+                      },
+                    ].filter((d) => d.value > 0)}
+                    totalLabel="Budget"
+                  />
+                </ReportChartPanel>
+              </ReportChartGrid>
               <StatGrid
                 items={[
-                  { label: "Allocated", value: money(budget.allocated) },
-                  { label: "Spent", value: money(budget.spent) },
-                  { label: "Remaining", value: money(budget.remaining) },
+                  {
+                    label: "Allocated",
+                    value: (
+                      <MoneyText
+                        amount={budget.allocated}
+                        currency={currency}
+                      />
+                    ),
+                  },
+                  {
+                    label: "Spent",
+                    value: (
+                      <MoneyText amount={budget.spent} currency={currency} />
+                    ),
+                  },
+                  {
+                    label: "Remaining",
+                    value: (
+                      <MoneyText
+                        amount={budget.remaining}
+                        currency={currency}
+                      />
+                    ),
+                  },
                   { label: "Utilization", value: `${budget.utilization}%` },
                 ]}
               />
-              <ShareBar value={budget.utilization} />
               <Link
                 className="mt-3 inline-block text-sm font-semibold text-(--sofia-primary)"
                 href="/finance/budgeting"
@@ -457,39 +758,5 @@ export default function FinancialAnalyticsPage() {
         </>
       ) : null}
     </AppShell>
-  );
-}
-
-function BreakdownTable({
-  title,
-  rows,
-  money,
-}: {
-  title: string;
-  rows: NamedAmount[];
-  money: (n: number) => string;
-}) {
-  const max = Math.max(1, ...rows.map((r) => r.amount));
-  return (
-    <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase text-slate-500">
-        {title}
-      </h3>
-      {rows.length === 0 ? (
-        <p className="text-sm text-slate-500">No data.</p>
-      ) : (
-        <ul className="space-y-2">
-          {rows.map((r) => (
-            <li key={r.name}>
-              <div className="mb-1 flex justify-between text-sm">
-                <span>{r.name}</span>
-                <span className="font-medium">{money(r.amount)}</span>
-              </div>
-              <ShareBar value={r.amount} max={max} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }

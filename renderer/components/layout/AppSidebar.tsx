@@ -8,12 +8,14 @@ import {
   Logout01Icon,
 } from "@hugeicons/core-free-icons";
 import type { SessionData } from "../../lib/auth";
-import { NAV_SECTIONS, type NavItem } from "../../lib/navigation";
+import { type NavItem, type NavSection } from "../../lib/navigation";
 import { SofiaBrand } from "../brand/SofiaBrand";
 import { Icon } from "../ui/Icon";
 
 interface AppSidebarProps {
   session: SessionData;
+  /** Permission-filtered nav tree from AppShell. */
+  sections: NavSection[];
   collapsed: boolean;
   onToggle: () => void;
   onLogout: () => void;
@@ -42,6 +44,7 @@ function isNavHrefActive(
 /** Left navigation with collapsible groups — Hugeicons + primary active state. */
 export function AppSidebar({
   session,
+  sections,
   collapsed,
   onToggle,
   onLogout,
@@ -54,7 +57,7 @@ export function AppSidebar({
 
   React.useEffect(() => {
     const next: Record<string, boolean> = {};
-    for (const section of NAV_SECTIONS) {
+    for (const section of sections) {
       for (const item of section.items) {
         if (!item.children) continue;
         if (item.children.some((c) => pathMatches(router.pathname, c.href))) {
@@ -64,7 +67,7 @@ export function AppSidebar({
     }
     // Accordion: only the module that owns the current route stays open.
     setOpenGroups(next);
-  }, [router.pathname]);
+  }, [router.pathname, sections]);
 
   function toggleGroup(id: string) {
     setOpenGroups((prev) => {
@@ -124,7 +127,7 @@ export function AppSidebar({
       </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto overflow-x-visible px-3 pb-3">
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div key={section.id}>
             <p
               className={`mb-2 px-3 text-[10px] font-semibold tracking-[0.12em] text-slate-400 ${

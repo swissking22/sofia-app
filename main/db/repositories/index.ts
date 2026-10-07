@@ -48,6 +48,7 @@ import { TeachingProgressRepository } from './teaching-progress.repository'
 import { ReportsRepository } from './reports.repository'
 import { DocumentsRepository } from './documents.repository'
 import { SystemAdminRepository } from './system-admin.repository'
+import { AssessmentQuestionsRepository } from './assessment-questions.repository'
 
 /** Factory that creates all repositories from a shared DB connection. */
 export function createRepositories(db: Database.Database) {
@@ -100,6 +101,7 @@ export function createRepositories(db: Database.Database) {
     staffAttendance: new StaffAttendanceRepository(db),
     leave: new LeaveRepository(db),
     staffNotifications: new StaffNotificationRepository(db),
+    assessmentQuestions: new AssessmentQuestionsRepository(db),
   }
 }
 

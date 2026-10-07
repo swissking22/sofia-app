@@ -12,6 +12,7 @@ import {
   type RegisterSchoolInput,
 } from '../auth'
 import { joinSchoolByCode } from '../services/join-school'
+import { PERMISSION_CATALOG } from '../rbac/catalog'
 
 /**
  * Register all auth IPC handlers.
@@ -63,6 +64,13 @@ export function registerAuthIpc(repos: Repositories): void {
     const session = getSession()
     if (!session?.userId) {
       return { ok: false as const, error: 'Not authenticated.' }
+    }
+    // School owner (session role admin) sees every module regardless of role_id.
+    if (session.role === 'admin') {
+      return {
+        ok: true as const,
+        data: { permissions: PERMISSION_CATALOG.map((p) => p.name) },
+      }
     }
     const permissions = repos.roles.getPermissionNamesForUser(session.userId)
     return { ok: true as const, data: { permissions } }

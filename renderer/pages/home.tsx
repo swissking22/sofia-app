@@ -31,6 +31,7 @@ import {
 } from "../lib/dashboard";
 import { syncNow } from "../lib/backup-sync";
 import { formatDisplayDate, SOFIA_DATE_LOCALE } from "../lib/date-format";
+import { formatCompactMoney } from "../lib/finance-mgmt";
 import { useOnlineStatus } from "../lib/online";
 
 const selectClass =
@@ -73,12 +74,6 @@ function severityDot(severity: "critical" | "warning" | "info") {
   if (severity === "critical") return "bg-red-500";
   if (severity === "warning") return "bg-amber-500";
   return "bg-sky-500";
-}
-
-function compactMoney(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
-  return String(Math.round(n));
 }
 
 function initials(name: string): string {
@@ -480,7 +475,9 @@ export default function HomePage() {
                         label: p.label,
                         value: p.value,
                       }))}
-                      valueFormatter={compactMoney}
+                      valueFormatter={(n) =>
+                        formatCompactMoney(n, data?.context.currency ?? "")
+                      }
                     />
                   </>
                 ) : financeTab === "due" && data?.feesOutstanding ? (

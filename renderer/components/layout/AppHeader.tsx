@@ -1,14 +1,17 @@
 import React from "react";
 import { Notification03Icon } from "@hugeicons/core-free-icons";
+import type { NavSection } from "../../lib/navigation";
 import { Icon } from "../ui/Icon";
 import { GlobalSearch } from "./GlobalSearch";
 
 interface AppHeaderProps {
   breadcrumb: string[];
+  /** Permission-filtered nav — page hits in Ctrl+K match the sidebar. */
+  sections?: NavSection[];
 }
 
 /** Top bar: breadcrumb, search, notifications — matches reference shell. */
-export function AppHeader({ breadcrumb }: AppHeaderProps) {
+export function AppHeader({ breadcrumb, sections }: AppHeaderProps) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-4 border-b border-slate-200 bg-white px-6 print:hidden">
       <nav className="flex min-w-45 items-center gap-1.5 text-sm text-slate-500">
@@ -28,7 +31,7 @@ export function AppHeader({ breadcrumb }: AppHeaderProps) {
         ))}
       </nav>
 
-      <GlobalSearch />
+      <GlobalSearch sections={sections} />
 
       <button
         type="button"

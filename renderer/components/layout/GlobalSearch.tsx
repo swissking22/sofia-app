@@ -2,7 +2,7 @@ import React from "react";
 import { useRouter } from "next/router";
 import { Search01Icon } from "@hugeicons/core-free-icons";
 import { Icon } from "../ui/Icon";
-import { NAV_SECTIONS } from "../../lib/navigation";
+import { NAV_SECTIONS, type NavSection } from "../../lib/navigation";
 import {
   SEARCH_KIND_LABELS,
   searchGlobal,
@@ -21,9 +21,11 @@ export type SearchEntry = {
 };
 
 /** Flatten sidebar nav into searchable destinations (skips comingSoon). */
-export function getSearchablePages(): SearchEntry[] {
+export function getSearchablePages(
+  sections: NavSection[] = NAV_SECTIONS,
+): SearchEntry[] {
   const entries: SearchEntry[] = [];
-  for (const section of NAV_SECTIONS) {
+  for (const section of sections) {
     for (const item of section.items) {
       if (item.comingSoon) continue;
       if (item.href) {
@@ -99,7 +101,7 @@ function mergeResults(
 }
 
 /** Header search pill + Ctrl/Cmd+K palette: pages and school database records. */
-export function GlobalSearch() {
+export function GlobalSearch({ sections }: { sections?: NavSection[] }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -108,7 +110,10 @@ export function GlobalSearch() {
   const [dbHits, setDbHits] = React.useState<GlobalSearchHit[]>([]);
   const [searching, setSearching] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
-  const pages = React.useMemo(() => getSearchablePages(), []);
+  const pages = React.useMemo(
+    () => getSearchablePages(sections ?? NAV_SECTIONS),
+    [sections],
+  );
 
   React.useEffect(() => {
     const q = debouncedQuery.trim();

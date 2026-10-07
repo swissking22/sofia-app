@@ -7,6 +7,7 @@ import { recordSyncConflict } from './queue'
 import {
   GENERIC_TABLE_COLUMNS,
   isGenericSyncTable,
+  preferAssessmentQuestionStatus,
   preferResultRunStatus,
   SEQUENCE_MAX_BY_TABLE,
   type GenericSyncTable,
@@ -346,6 +347,17 @@ function upsertRow(
     // Never regress published/locked result runs to draft/computed
     if (table === 'result_runs' && col === 'status') {
       values.status = preferResultRunStatus(existingRow?.status, payload.status)
+      continue
+    }
+    // Never regress approved question papers / revisions
+    if (
+      (table === 'assessment_question_papers' && col === 'current_status') ||
+      (table === 'assessment_question_paper_revisions' && col === 'status')
+    ) {
+      values[col] = preferAssessmentQuestionStatus(
+        existingRow?.[col],
+        payload[col]
+      )
       continue
     }
     // Preserve local NOT NULL / existing fields when remote payload omits them

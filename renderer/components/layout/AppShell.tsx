@@ -4,6 +4,12 @@ import { useRouter } from "next/router";
 import { ArrowLeft01Icon } from "@hugeicons/core-free-icons";
 import { authGetSession, authLogout, type SessionData } from "../../lib/auth";
 import { resolveNestedBackHref } from "../../lib/nested-back";
+import {
+  filterNavSections,
+  NAV_SECTIONS,
+  type NavSection,
+} from "../../lib/navigation";
+import { fetchMyPermissions } from "../../lib/rbac";
 import { Icon } from "../ui/Icon";
 import { AppSidebar } from "./AppSidebar";
 import { AppHeader } from "./AppHeader";
@@ -39,6 +45,8 @@ export function AppShell({
 }: AppShellProps) {
   const router = useRouter();
   const [session, setSession] = React.useState<SessionData | null>(null);
+  const [navSections, setNavSections] =
+    React.useState<NavSection[]>(NAV_SECTIONS);
   const [loading, setLoading] = React.useState(true);
   const [collapsed, setCollapsed] = React.useState(false);
 
@@ -57,6 +65,14 @@ export function AppShell({
         return;
       }
       setSession(current);
+
+      if (current.role === "admin") {
+        setNavSections(NAV_SECTIONS);
+      } else {
+        const perms = await fetchMyPermissions();
+        const names = perms.ok ? perms.data.permissions : [];
+        setNavSections(filterNavSections(NAV_SECTIONS, names));
+      }
       setLoading(false);
     })();
   }, [router]);
@@ -82,12 +98,13 @@ export function AppShell({
       <div className="flex h-screen overflow-hidden bg-[#f4f5f7] print:h-auto print:overflow-visible print:bg-white">
         <AppSidebar
           session={session}
+          sections={navSections}
           collapsed={collapsed}
           onToggle={() => setCollapsed((v) => !v)}
           onLogout={handleLogout}
         />
         <div className="flex min-w-0 flex-1 flex-col print:block">
-          <AppHeader breadcrumb={breadcrumb} />
+          <AppHeader breadcrumb={breadcrumb} sections={navSections} />
           <main className="flex-1 overflow-y-auto px-6 py-5 print:overflow-visible print:p-0">
             {heading || resolvedBackHref ? (
               <div className="mb-5 animate-[fadeInUp_0.4s_ease-out] print:hidden">

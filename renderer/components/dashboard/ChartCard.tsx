@@ -4,12 +4,15 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
   CartesianGrid,
   BarChart,
   Bar,
+  Legend,
   PieChart,
   Pie,
   Cell,
@@ -83,7 +86,16 @@ const TOOLTIP_STYLE = {
 const AXIS_TICK = { fill: "#94a3b8", fontSize: 11 };
 const GRID = "#f1f5f9";
 const PRIMARY = "var(--sofia-primary, #4f46e5)";
-const DONUT_COLORS = ["#4f46e5", "#0d9488", "#f59e0b", "#6366f1", "#14b8a6"];
+const SECONDARY = "#0d9488";
+const TERTIARY = "#f59e0b";
+const DONUT_COLORS = [
+  "#4f46e5",
+  "#0d9488",
+  "#f59e0b",
+  "#6366f1",
+  "#14b8a6",
+  "#94a3b8",
+];
 
 export function SofiaLineChart({
   data,
@@ -322,7 +334,7 @@ export function SofiaVerticalBarChart({
               <Cell
                 key={i}
                 fill={
-                  highlightLast && i === data.length - 1
+                  !highlightLast || i === data.length - 1
                     ? PRIMARY
                     : "rgba(79, 70, 229, 0.25)"
                 }
@@ -331,6 +343,190 @@ export function SofiaVerticalBarChart({
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Soft area chart for rate / average trends over time. */
+export function SofiaAreaChart({
+  data,
+  valueSuffix = "",
+  valueFormatter,
+  heightClass = "h-52",
+}: {
+  data: Array<{ label: string; value: number }>;
+  valueSuffix?: string;
+  valueFormatter?: (n: number) => string;
+  heightClass?: string;
+}) {
+  if (!data.length) return <ChartEmpty message="Not enough data" />;
+  const fmt = valueFormatter ?? ((n: number) => `${n}${valueSuffix}`);
+  return (
+    <div className={`${heightClass} w-full`} role="img" aria-label="Area chart">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart
+          data={data}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+        >
+          <defs>
+            <linearGradient id="sofiaAreaFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={PRIMARY} stopOpacity={0.28} />
+              <stop offset="100%" stopColor={PRIMARY} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={GRID} vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+            width={44}
+            tickFormatter={(v) => fmt(Number(v))}
+          />
+          <Tooltip
+            contentStyle={TOOLTIP_STYLE}
+            formatter={(value) => [fmt(Number(value)), ""]}
+          />
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke={PRIMARY}
+            strokeWidth={2}
+            fill="url(#sofiaAreaFill)"
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Side-by-side bars for comparing two series (e.g. CA vs exam). */
+export function SofiaGroupedBarChart({
+  data,
+  series,
+  valueFormatter,
+  heightClass = "h-56",
+}: {
+  data: Array<{ label: string } & Record<string, string | number>>;
+  series: Array<{ key: string; label: string; color?: string }>;
+  valueFormatter?: (n: number) => string;
+  heightClass?: string;
+}) {
+  if (!data.length || !series.length) {
+    return <ChartEmpty message="No data available." />;
+  }
+  const fmt = valueFormatter ?? ((n: number) => String(n));
+  const colors = [PRIMARY, SECONDARY, TERTIARY, "#6366f1"];
+  return (
+    <div
+      className={`${heightClass} w-full`}
+      role="img"
+      aria-label="Grouped bar chart"
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+          <CartesianGrid stroke={GRID} vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+            interval={0}
+            angle={data.length > 6 ? -25 : 0}
+            textAnchor={data.length > 6 ? "end" : "middle"}
+            height={data.length > 6 ? 56 : 28}
+          />
+          <YAxis
+            tick={AXIS_TICK}
+            axisLine={false}
+            tickLine={false}
+            width={44}
+            tickFormatter={(v) => fmt(Number(v))}
+          />
+          <Tooltip
+            contentStyle={TOOLTIP_STYLE}
+            formatter={(value, name) => [
+              fmt(Number(value)),
+              series.find((s) => s.key === name)?.label ?? String(name),
+            ]}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: 12, color: "#64748b" }}
+            formatter={(value) =>
+              series.find((s) => s.key === value)?.label ?? value
+            }
+          />
+          {series.map((s, i) => (
+            <Bar
+              key={s.key}
+              dataKey={s.key}
+              name={s.key}
+              fill={s.color ?? colors[i % colors.length]}
+              radius={[4, 4, 0, 0]}
+              barSize={12}
+              isAnimationActive={false}
+            />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+/** Semi-circle percent gauge (attendance, collection, budget). */
+export function SofiaPercentGauge({
+  rate,
+  label,
+  footer,
+}: {
+  rate: number | null;
+  label: string;
+  footer?: React.ReactNode;
+}) {
+  if (rate == null) {
+    return <ChartEmpty message="No rate available." />;
+  }
+  const clamped = Math.max(0, Math.min(100, rate));
+  const data = [
+    { name: "value", value: clamped },
+    { name: "rest", value: 100 - clamped },
+  ];
+  return (
+    <div className="flex flex-col items-center">
+      <div
+        className="relative h-40 w-full max-w-xs"
+        role="img"
+        aria-label={label}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="value"
+              startAngle={180}
+              endAngle={0}
+              innerRadius="70%"
+              outerRadius="95%"
+              stroke="none"
+              isAnimationActive={false}
+            >
+              <Cell fill={PRIMARY} />
+              <Cell fill="#e2e8f0" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-end pb-2">
+          <p className="text-3xl font-bold text-slate-900">{clamped}%</p>
+          <p className="text-xs font-medium text-slate-400">{label}</p>
+        </div>
+      </div>
+      {footer}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   ExportBar,
   FilterBar,
   FilterField,
+  MoneyText,
   PageAlert,
   PrimaryButton,
   ReportSection,
@@ -15,7 +16,17 @@ import {
   StudentTable,
   selectClass,
 } from "../../../components/reports/ui";
-import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import {
+  ReportChartGrid,
+  ReportChartPanel,
+  SofiaDonutChart,
+  SofiaGroupedBarChart,
+  SofiaLineChart,
+} from "../../../components/reports/charts";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import {
   downloadCsv,
   fetchReportsMeta,
@@ -24,6 +35,7 @@ import {
   toCsv,
   type ReportFilters,
 } from "../../../lib/reports";
+import { formatMoney } from "../../../lib/finance-mgmt";
 
 type StudentHit = {
   id: string;
@@ -128,20 +140,31 @@ export default function StudentReportsPage() {
     status: string;
   }>;
 
+  const currency = meta?.currency ?? "XAF";
+
   function exportCsv() {
     if (!profile || !academic) return;
+    const rows: Array<Array<string | number | null>> = [
+      ...academic.subjects.map((s) => [
+        s.subject_name,
+        s.ca_score,
+        s.exam_score,
+        s.total,
+        s.grade,
+      ]),
+    ];
+    if (finance) {
+      rows.push(
+        [],
+        ["Fee metric", "Amount", "", "", ""],
+        ["Total billed", formatMoney(finance.billed, currency), "", "", ""],
+        ["Total paid", formatMoney(finance.paid, currency), "", "", ""],
+        ["Outstanding", formatMoney(finance.outstanding, currency), "", "", ""],
+      );
+    }
     downloadCsv(
       `student-report-${profile.student_code || profile.id}.csv`,
-      toCsv(
-        ["Subject", "CA", "Exam", "Total", "Grade"],
-        academic.subjects.map((s) => [
-          s.subject_name,
-          s.ca_score,
-          s.exam_score,
-          s.total,
-          s.grade,
-        ]),
-      ),
+      toCsv(["Subject", "CA", "Exam", "Total", "Grade"], rows),
     );
   }
 
@@ -251,6 +274,26 @@ export default function StudentReportsPage() {
                 { label: "Grade", value: academic.latest?.grade ?? "—" },
               ]}
             />
+            <ReportChartPanel
+              title="CA vs exam by subject"
+              description="Grouped bars compare continuous assessment and exam"
+              className="mb-4"
+            >
+              <SofiaGroupedBarChart
+                data={academic.subjects.map((s) => ({
+                  label:
+                    s.subject_name.length > 10
+                      ? `${s.subject_name.slice(0, 8)}…`
+                      : s.subject_name,
+                  ca: s.ca_score,
+                  exam: s.exam_score,
+                }))}
+                series={[
+                  { key: "ca", label: "CA" },
+                  { key: "exam", label: "Exam" },
+                ]}
+              />
+            </ReportChartPanel>
             <StudentTable
               columns={["Subject", "CA", "Exam", "Average", "Grade"]}
               loading={false}
@@ -277,6 +320,42 @@ export default function StudentReportsPage() {
             </StudentTable>
           </ReportSection>
 
+          <ReportChartGrid>
+            <ReportChartPanel
+              title="Attendance mix"
+              description="Donut of present / absent / late marks"
+            >
+              <SofiaDonutChart
+                data={[
+                  {
+                    id: "present",
+                    label: "Present",
+                    value: attendance.present,
+                  },
+                  { id: "absent", label: "Absent", value: attendance.absent },
+                  { id: "late", label: "Late", value: attendance.late },
+                ].filter((d) => d.value > 0)}
+                totalLabel={`${attendance.percentage}%`}
+              />
+            </ReportChartPanel>
+            <ReportChartPanel
+              title="Fee status"
+              description="Donut of paid vs outstanding"
+            >
+              <SofiaDonutChart
+                data={[
+                  { id: "paid", label: "Paid", value: finance.paid },
+                  {
+                    id: "outstanding",
+                    label: "Outstanding",
+                    value: finance.outstanding,
+                  },
+                ].filter((d) => d.value > 0)}
+                totalLabel="Fees"
+              />
+            </ReportChartPanel>
+          </ReportChartGrid>
+
           <ReportSection title="Attendance">
             <StatGrid
               items={[
@@ -297,9 +376,27 @@ export default function StudentReportsPage() {
           <ReportSection title="Finance">
             <StatGrid
               items={[
-                { label: "Total billed", value: finance.billed },
-                { label: "Total paid", value: finance.paid },
-                { label: "Outstanding", value: finance.outstanding },
+                {
+                  label: "Total billed",
+                  value: (
+                    <MoneyText amount={finance.billed} currency={currency} />
+                  ),
+                },
+                {
+                  label: "Total paid",
+                  value: (
+                    <MoneyText amount={finance.paid} currency={currency} />
+                  ),
+                },
+                {
+                  label: "Outstanding",
+                  value: (
+                    <MoneyText
+                      amount={finance.outstanding}
+                      currency={currency}
+                    />
+                  ),
+                },
               ]}
             />
             <Link
@@ -311,6 +408,18 @@ export default function StudentReportsPage() {
           </ReportSection>
 
           <ReportSection title="Academic history">
+            <ReportChartPanel
+              title="Average over terms"
+              description="Line chart of historical averages"
+              className="mb-4"
+            >
+              <SofiaLineChart
+                data={[...academic.history].reverse().map((h) => ({
+                  label: h.term_name || h.year_name || "—",
+                  value: h.average,
+                }))}
+              />
+            </ReportChartPanel>
             <StudentTable
               columns={[
                 "Year",

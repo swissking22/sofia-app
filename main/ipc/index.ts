@@ -33,6 +33,7 @@ import { registerResultsCalculationIpc } from './results-calculation'
 import { registerUpdaterIpc } from './updater'
 import { registerGateAttendanceIpc } from './gate-attendance'
 import { registerGlobalSearchIpc } from './global-search'
+import { registerAssessmentQuestionsIpc } from './assessment-questions'
 
 /** Register all IPC handlers for the main process. */
 export function registerIpcHandlers(
@@ -55,6 +56,7 @@ export function registerIpcHandlers(
   registerStudentIdIpc(repos)
   registerStudentMgmtIpc(repos)
   registerAcademicMgmtIpc(repos)
+  registerAssessmentQuestionsIpc(repos)
   registerGateAttendanceIpc(repos)
   registerFinanceIpc(repos)
   registerFinanceMgmtIpc(repos)

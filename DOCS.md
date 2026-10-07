@@ -16,7 +16,7 @@ Offline-first school management desktop app (Nextron: Electron + Next.js + SQLit
    - **Join existing school** (`/join`) — other office desks: enter the school short code, download accounts from the cloud, then log in with a shared user.
 3. Or use [seed demo logins](#seed-demo-logins) after running the seeder.
 4. Run the **Setup wizard** on the primary desk (`/setup/...`) so core school data exists before day-to-day use (skip if you loaded seed data / joined a desk).
-5. Use the sidebar for day-to-day modules (School, Students, Academic, …).
+5. Use the sidebar for day-to-day modules you are allowed to open (School, Students, Academic, …). Sidebar and Ctrl+K page hits follow your role permissions; school owners (`admin`) see everything.
 
 **Join school requirements:** Primary desk must have synced users (Administration → Backup & Sync → Sync Now). Secondary desk needs network + matching school short code. Cloud RPC: `lookup_school_by_code` (migration `20260917083000_lookup_school_by_code.sql`).
 
@@ -357,6 +357,22 @@ Class roster marking and entrance Gate Scanner (USB HID QR). Class sessions and 
 | Create | `/academic/exams/create` | Name, term, dates, status + one or more papers (subject, class, max score) |
 | Scores | `/academic/exams/scores` | Pick a paper → enter scores. Arrow Up/Down moves to the previous or next student. |
 
+### Assessment Questions (review & print)
+
+Desktop administration for teacher-submitted question paper PDFs. Teachers create/attach/submit from the mobile app; desktop reviewers approve or reject with a note; authorized staff print only after approval.
+
+| Screen | Path | How to use |
+|--------|------|------------|
+| List | `/academic/assessment-questions` | Summary cards (Pending / Approved / Rejected / Total). Default filter **Pending Review**. Filters: status, year, term, class, subject, teacher, assessment type; search by teacher/assessment/subject/class. Sync label: Pending Sync / Synced / Sync Failed. |
+| Review | `/academic/assessment-questions/[id]` | Header + submission info + embedded PDF (or Open PDF). **Approve** (confirm) or **Reject** (required note ≥ 8 chars). Submission history (revisions) + Review history (audit events). |
+| Print | `/academic/assessment-questions/[id]/print` | Print preview of the **approved** PDF only. Requires `assessment_questions.print`. |
+
+**Permissions** (catalog `assessment_questions.*`, enforced in IPC): `view`, `review`, `approve`, `reject`, `print`. Principal has all; Vice Principal is seeded with review/approve/reject/print; Secretary with view + print. Assign others via Administration → Permissions.
+
+**Data:** `assessment_question_papers` (thread) + `assessment_question_paper_revisions` (immutable PDFs) + `assessment_question_paper_events` (audit). Files under `userData/uploads/question-papers/`; path syncs via `synced_entities`, bytes via Supabase Storage (`school-assets`, PDF allowed — migration `20261007120000_assessment_question_papers_sync.sql`). Approved revisions cannot be silently edited; resubmit creates Revision N+1 after rejection.
+
+**IPC:** `assessment-questions:*` → `main/ipc/assessment-questions.ts` → `AssessmentQuestionsRepository`.
+
 ### Results processing
 
 Sofia implements a school-configurable 7-step calculation pipeline for secondary education (Anglo-Saxon system in Cameroon):
@@ -500,13 +516,15 @@ Admin and secretary can manage all communication screens; teachers have read acc
 
 Read-only analytics over live operational data (results, attendance, fees, staff). There is no second ledger or marks register. Filters always stay inside the signed-in school. Drill-down uses existing routes where they already exist. Export is CSV plus **Print / PDF** (browser print-to-PDF — Sofia does not bundle a PDF engine).
 
+Charts use **recharts** via shared helpers in `renderer/components/dashboard/ChartCard.tsx` and `renderer/components/reports/charts.tsx`. Each screen picks a chart type that matches the data (comparisons → bars, composition → donut, trends → line/area, rates → gauge).
+
 | Screen | Path | How to use |
 |--------|------|------------|
-| Academic performance | `/reports/academic-performance` | Filter year/term/department/class/subject/gender and official results vs CA vs exams. Cards: average, pass rate, students, subjects, best/lowest class. Tables: class, subject, ranking. Grade counts A–F. Click a class, subject, or student to narrow or open the student report. |
-| Student reports | `/reports/students` | Search by name or Student ID (optional class). Generate a 360° report: profile, CA/exam subject rows, attendance, billed/paid/outstanding, previous terms, promotion runs. Print/CSV. |
-| Financial reports | `/reports/financial` | Aggregates Finance & Fees: billed, collected, outstanding, expenses, net, collection rate; revenue by term/class/fee type/method; aging current / 30+ / 60+ / 90+; expenses; bank deposits vs cash collected; budget utilization. Teachers do not see this screen. Daily recording remains under Finance. |
-| Attendance analytics | `/reports/attendance` | Overall rate, present/absent/late, class rates, daily/monthly trend, at-risk list (default 75%, configurable). Staff attendance summary from existing staff registers. |
-| School insights | `/reports/school-insights` | Enrolment, academic, finance (if permitted), attendance, staff — plus generated insights only when calculations show decline, arrears growth, attendance risk, or budget pressure. |
+| Academic performance | `/reports/academic-performance` | Filter year/term/department/class/subject/gender and official results vs CA vs exams. Cards + charts: class/subject **horizontal bars**, term **line**, grade A–F **vertical bars**. Tables: class, subject, ranking. Click a class, subject, or student to narrow or open the student report. |
+| Student reports | `/reports/students` | Search by name or Student ID (optional class). 360° report with **grouped bars** (CA vs exam), attendance **donut**, fee **donut**, history **line**, plus tables. Print/CSV. |
+| Financial reports | `/reports/financial` | Aggregates Finance & Fees with **gauge** (collection/budget), **donuts** (cash position, fee types, methods, expense categories), **horizontal bars** (class revenue, aging, banks), **vertical bars** (terms), **area** (monthly expenses/deposits). Teachers do not see this screen. Daily recording remains under Finance. |
+| Attendance analytics | `/reports/attendance` | **Gauge** + **donut** for overall mix; class **horizontal bars**; monthly **area** and daily **line** trends; at-risk list (default 75%). Staff attendance summary from existing staff registers. |
+| School insights | `/reports/school-insights` | Enrolment **donut**/class **bars**; academic/finance/attendance **gauges**; revenue vs expenses **grouped bars**; staff mix **donut** — plus generated insights when calculations show decline, arrears growth, attendance risk, or budget pressure. |
 
 Operational reports under Academic Management (`/academic/reports`) and Finance (`/finance/reports`) are unchanged.
 
@@ -761,7 +779,7 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 |-------|----------|
 | UI pages | `renderer/pages/...` |
 | IPC helpers | `renderer/lib/...` |
-| Navigation | `renderer/lib/navigation.ts` (`comingSoon` until built) |
+| Navigation | `renderer/lib/navigation.ts` (`comingSoon` until built; optional `permissions` per item) |
 | IPC handlers | `main/ipc/` |
 | Repositories | `main/db/repositories/` |
 | Schema / migrations | `main/db/schema.ts` |
@@ -775,9 +793,13 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 
 **Nested Back:** `AppShell` shows a heading **Back** control on deep routes (detail, create/action, and module sub-pages). Parent href comes from `resolveNestedBackHref` (`renderer/lib/nested-back.ts`), or an explicit `backHref` / `backLabel` prop; pass `backHref={false}` to hide. Prefer this over ad-hoc page-level Back buttons.
 
+**Permission-gated sidebar:** `AppShell` loads `auth:get-permissions`, then `filterNavSections` (`renderer/lib/navigation.ts`) so each user only sees modules they have at least one required permission for. Session role `admin` is unrestricted. Empty/`permissions` omitted = visible to all signed-in users (Dashboard, Help). Ctrl+K page hits use the same filtered tree. IPC handlers remain the real authorization gate; the sidebar is visibility only.
+
 **Global search:** Header search / **Ctrl+K** (`renderer/components/layout/GlobalSearch.tsx`) searches sidebar pages and local SQLite records (students, teachers/staff, classes, subjects, departments, fee structures, invoices, users) via `search:global` (`main/ipc/global-search.ts`). Selecting a hit opens the matching profile or filtered list.
 
 **Date display:** Human-facing dates use **Day → Month → Year** (`en-GB`) via `main/domain/date-format.ts` and `renderer/lib/date-format.ts` (`formatDisplayDate`, `formatDisplayDateTime`, etc.). Do not call `toLocaleDateString()` with the system locale in UI. HTML `<input type="date">` and DB storage remain ISO `YYYY-MM-DD`.
+
+**Money display:** On the dashboard home and Reports & Analytics screens, amounts use compact **K** / **M** (`formatCompactMoney` / `formatCompactCurrency`). CSV export and Print / PDF use full figures with thousands separators (`formatMoney`, `MoneyText` print variant).
 
 **After schema/IPC changes:** restart the Nextron process so migrations and handlers reload.
 
@@ -791,6 +813,7 @@ Key libs for built modules:
 - Dashboard: `renderer/lib/dashboard.ts` → `dashboard:summary` (`main/ipc/dashboard.ts` → `main/services/dashboard.service.ts` + `main/domain/dashboard.ts`); charts via **recharts**
 - Communication: `renderer/lib/communication-mgmt.ts` → `main/ipc/communication-mgmt.ts` (setup: `communication.ts`)
 - Academic: `renderer/lib/academic-mgmt.ts` → `main/ipc/academic-mgmt.ts`; teaching progress `renderer/lib/teaching-progress.ts` → `main/ipc/teaching-progress.ts`
+- Assessment Questions: `renderer/lib/assessment-questions.ts` → `main/ipc/assessment-questions.ts` → `main/db/repositories/assessment-questions.repository.ts`; PDFs `main/helpers/assessment-questions.ts` + `SYNCED_ASSET_FIELDS.assessment_question_paper_revisions`
 - Gate Scanner: `renderer/lib/gate-attendance.ts` → `main/ipc/gate-attendance.ts` (`gate-attendance:scan`, `gate-attendance:today-summary`); service `main/services/gate-attendance.ts`; table `gate_attendance`; feedback `renderer/lib/scanner-feedback.ts`
 - Results calculation: `renderer/lib/results-calc.ts` → `main/ipc/results-calculation.ts` (`results-calc:defaults`, `results-calc:coefficients-list`, `results-calc:coefficients-save`, `results-calc:validate`, `results-calc:breakdown`, `results-calc:student-summary`); core calculation service `main/services/results/result-calculation.service.ts`; repositories `main/db/repositories/results-calculation.repository.ts` and `subject-coefficients.repository.ts`; table `result_subject_coefficients`
 - School day schedule: `renderer/lib/day-schedule.ts` → `main/ipc/day-schedule.ts` (`day-schedule:get` / `day-schedule:save`); domain `main/domain/day-schedule.ts`; stored on `schools` + `school_day_breaks`; feeds `academic:meta` period count/times for the timetable
@@ -809,6 +832,10 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-07 | **Compact money (K/M):** dashboard home and Reports & Analytics show shortened amounts; CSV export and Print use full comma-formatted values (`formatCompactMoney` / `formatMoney` / `MoneyText`). |
+| 2026-10-07 | **Assessment Questions:** Academic Management → Assessment Questions — review/approve/reject teacher PDF question papers with revision history, print when approved, RBAC (`assessment_questions.*`), offline sync + Storage PDFs (`assessment-questions:*` IPC). |
+| 2026-10-07 | **Reports charts:** each Reports & Analytics screen uses chart types suited to its data (bars, donuts, lines/areas, gauges) via shared recharts helpers (`renderer/components/reports/charts.tsx`). |
+| 2026-10-07 | **Permission-gated modules:** sidebar and Ctrl+K page hits only show modules the signed-in user can access (`filterNavSections` + `auth:get-permissions`). School owners (`admin`) see all; other roles use catalog permissions on each nav item. |
 | 2026-10-06 | **Local backup path:** if the configured backup folder is unwritable (common after USB restore onto another Windows user), fall back to `%APPDATA%\\sofia\\backups` and persist that path (`resolveWritableBackupLocation`). |
 | 2026-10-06 | **Sync bootstrap:** first Sync on a never-synced / USB-restored primary creates the cloud school via `bootstrap_school_tenant` when `register_device` reports missing tenant (`main/sync/push.ts` + migration `20261006143000_bootstrap_school_tenant.sql`). |
 | 2026-10-05 | **Dashboard:** removed Export PDF from the overview header; Sync + setup progress remain. |

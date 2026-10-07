@@ -1285,3 +1285,69 @@ export interface TeachingLog extends BaseRecord {
   remarks: string | null
   created_by: string | null
 }
+
+/** Assessment question paper workflow (desktop review / teacher PDF submit). */
+export type AssessmentQuestionType =
+  | 'exam'
+  | 'ca'
+  | 'mock'
+  | 'test'
+  | 'other'
+
+export type AssessmentQuestionPaperStatus =
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+
+export type AssessmentQuestionPaperEventAction =
+  | 'submitted'
+  | 'viewed'
+  | 'approved'
+  | 'rejected'
+  | 'resubmitted'
+  | 'printed'
+
+/** Logical paper thread (latest revision is current). */
+export interface AssessmentQuestionPaper extends BaseRecord {
+  school_id: string
+  title: string
+  assessment_type: AssessmentQuestionType
+  academic_year_id: string | null
+  term_id: string | null
+  class_id: string
+  subject_id: string
+  teacher_staff_id: string
+  exam_session_id: string | null
+  exam_paper_id: string | null
+  ca_assessment_id: string | null
+  current_revision_id: string | null
+  current_revision_number: number
+  current_status: AssessmentQuestionPaperStatus
+}
+
+/** Immutable PDF revision of a question paper. */
+export interface AssessmentQuestionPaperRevision extends BaseRecord {
+  school_id: string
+  paper_id: string
+  revision_number: number
+  file_path: string | null
+  file_name: string | null
+  mime_type: string | null
+  file_size: number | null
+  status: AssessmentQuestionPaperStatus
+  submitted_by_staff_id: string | null
+  submitted_at: string
+  reviewed_by_user_id: string | null
+  reviewed_at: string | null
+  rejection_note: string | null
+}
+
+export interface AssessmentQuestionPaperEvent extends BaseRecord {
+  school_id: string
+  paper_id: string
+  revision_id: string | null
+  action: AssessmentQuestionPaperEventAction
+  actor_user_id: string | null
+  actor_staff_id: string | null
+  notes: string | null
+}

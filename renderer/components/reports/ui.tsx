@@ -12,6 +12,7 @@ import {
   TableSelectionBar,
   selectClass,
 } from "../students/ui";
+import { formatCompactMoney, formatMoney } from "../../lib/finance-mgmt";
 
 export {
   EmptyRow,
@@ -25,6 +26,29 @@ export {
   TableSelectionBar,
   selectClass,
 };
+
+/**
+ * Screen: compact K/M. Print: full amount with commas.
+ * Use on Reports & Analytics (and any printable money surface).
+ */
+export function MoneyText({
+  amount,
+  currency,
+}: {
+  amount: number;
+  currency: string;
+}) {
+  return (
+    <>
+      <span className="print:hidden">
+        {formatCompactMoney(amount, currency)}
+      </span>
+      <span className="hidden print:inline">
+        {formatMoney(amount, currency)}
+      </span>
+    </>
+  );
+}
 
 export function ShareBar({
   value,

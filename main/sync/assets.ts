@@ -16,6 +16,7 @@ export const SYNCED_ASSET_FIELDS: Record<string, readonly string[]> = {
   schools: ['logo_path', 'stamp_path', 'principal_signature_path'],
   students: ['photo_path'],
   document_signatories: ['signature_path'],
+  assessment_question_paper_revisions: ['file_path'],
 }
 
 const FIELD_UPLOAD_DIR: Record<string, string> = {
@@ -24,8 +25,8 @@ const FIELD_UPLOAD_DIR: Record<string, string> = {
   principal_signature_path: 'signatures',
   photo_path: 'student-photos',
   signature_path: 'signatures',
+  file_path: 'question-papers',
 }
-
 export type AssetSyncResult = {
   uploaded: number
   downloaded: number

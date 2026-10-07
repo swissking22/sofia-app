@@ -71,7 +71,30 @@ export async function saveFinanceSetup(
   )) as Result<FinanceSetup>
 }
 
+/** Full amount with thousands separators — use for CSV export and print. */
 export function formatMoney(amount: number, currency: string): string {
   const n = Number.isFinite(amount) ? amount : 0
-  return `${n.toLocaleString()} ${currency}`
+  const formatted = Math.round(n).toLocaleString('en-GB', {
+    maximumFractionDigits: 0,
+  })
+  return currency ? `${formatted} ${currency}` : formatted
+}
+
+/** Short screen amounts (K / M). Prefer finance-mgmt for reports UI. */
+export function formatCompactMoney(amount: number, currency = ''): string {
+  const n = Number.isFinite(amount) ? amount : 0
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '-' : ''
+  let body: string
+  if (abs >= 1_000_000) {
+    const m = abs / 1_000_000
+    body = `${Number(m.toFixed(m >= 10 ? 1 : 2))}M`.replace(/\.0+M$/, 'M')
+  } else if (abs >= 1_000) {
+    const k = abs / 1_000
+    body = `${Number(k.toFixed(k >= 100 ? 0 : 1))}K`.replace(/\.0K$/, 'K')
+  } else {
+    body = Math.round(abs).toLocaleString('en-GB', { maximumFractionDigits: 0 })
+  }
+  const withSign = `${sign}${body}`
+  return currency ? `${withSign} ${currency}` : withSign
 }

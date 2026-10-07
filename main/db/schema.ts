@@ -630,6 +630,7 @@ export function createSchema(db: Database.Database): void {
   migrateResultsCalculationTables(db)
   migrateIdCardDesignerTables(db)
   migrateGateAttendanceTables(db)
+  migrateAssessmentQuestionPaperTables(db)
 }
 
 /** Add missing columns to schools without wiping existing data. */
@@ -3497,6 +3498,90 @@ function migrateGateAttendanceTables(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_gate_attendance_school_date
       ON gate_attendance(school_id, attendance_date)
+      WHERE deleted_at IS NULL;
+  `)
+}
+
+/** Assessment question paper review / approval (PDF metadata; bytes on disk + Storage). */
+function migrateAssessmentQuestionPaperTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS assessment_question_papers (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      assessment_type TEXT NOT NULL DEFAULT 'exam',
+      academic_year_id TEXT,
+      term_id TEXT,
+      class_id TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      teacher_staff_id TEXT NOT NULL,
+      exam_session_id TEXT,
+      exam_paper_id TEXT,
+      ca_assessment_id TEXT,
+      current_revision_id TEXT,
+      current_revision_number INTEGER NOT NULL DEFAULT 0,
+      current_status TEXT NOT NULL DEFAULT 'pending_review',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS assessment_question_paper_revisions (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      paper_id TEXT NOT NULL,
+      revision_number INTEGER NOT NULL,
+      file_path TEXT,
+      file_name TEXT,
+      mime_type TEXT,
+      file_size INTEGER,
+      status TEXT NOT NULL DEFAULT 'pending_review',
+      submitted_by_staff_id TEXT,
+      submitted_at TEXT NOT NULL,
+      reviewed_by_user_id TEXT,
+      reviewed_at TEXT,
+      rejection_note TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (paper_id) REFERENCES assessment_question_papers(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS assessment_question_paper_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      paper_id TEXT NOT NULL,
+      revision_id TEXT,
+      action TEXT NOT NULL,
+      actor_user_id TEXT,
+      actor_staff_id TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (paper_id) REFERENCES assessment_question_papers(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_aq_papers_school_status
+      ON assessment_question_papers(school_id, current_status)
+      WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_aq_papers_school_class
+      ON assessment_question_papers(school_id, class_id)
+      WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_aq_revisions_paper
+      ON assessment_question_paper_revisions(paper_id, revision_number)
+      WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_aq_events_paper
+      ON assessment_question_paper_events(paper_id, created_at)
       WHERE deleted_at IS NULL;
   `)
 }

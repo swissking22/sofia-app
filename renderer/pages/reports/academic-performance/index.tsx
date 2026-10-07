@@ -15,10 +15,16 @@ import {
   FilterBar,
   FilterField,
   PageAlert,
-  ShareBar,
   StudentTable,
   selectClass,
 } from "../../../components/reports/ui";
+import {
+  ReportChartGrid,
+  ReportChartPanel,
+  SofiaHorizontalBarChart,
+  SofiaLineChart,
+  SofiaVerticalBarChart,
+} from "../../../components/reports/charts";
 import {
   downloadCsv,
   fetchAcademicReport,
@@ -277,6 +283,58 @@ export default function AcademicPerformancePage() {
             />
           </div>
 
+          <ReportChartGrid>
+            <ReportChartPanel
+              title="Average by class"
+              description="Horizontal bars for comparing class means"
+            >
+              <SofiaHorizontalBarChart
+                data={data.by_class.map((r) => ({
+                  id: r.class_id,
+                  label: r.class_name,
+                  value: r.average,
+                }))}
+                onBarClick={(id) => setClassId(id)}
+              />
+            </ReportChartPanel>
+            <ReportChartPanel
+              title="Average by subject"
+              description="Horizontal bars for subject comparison"
+            >
+              <SofiaHorizontalBarChart
+                data={data.by_subject.map((r) => ({
+                  id: r.subject_id,
+                  label: r.subject_name,
+                  value: r.average,
+                }))}
+                onBarClick={(id) => setSubjectId(id)}
+              />
+            </ReportChartPanel>
+            <ReportChartPanel
+              title="Term trend"
+              description="Line chart of averages across terms"
+            >
+              <SofiaLineChart
+                data={data.trend.map((t) => ({
+                  label: t.term_name,
+                  value: t.average,
+                }))}
+              />
+            </ReportChartPanel>
+            <ReportChartPanel
+              title="Grade distribution"
+              description="Vertical bars for A–F counts"
+            >
+              <SofiaVerticalBarChart
+                data={["A", "B", "C", "D", "E", "F"].map((g) => ({
+                  label: g,
+                  value: data.grade_distribution[g] ?? 0,
+                }))}
+                highlightLast={false}
+              />
+            </ReportChartPanel>
+          </ReportChartGrid>
+
           <h2 className="mb-2 text-sm font-semibold">Performance by class</h2>
           <StudentTable
             columns={[
@@ -320,18 +378,11 @@ export default function AcademicPerformancePage() {
             Performance by subject
           </h2>
           <StudentTable
-            columns={[
-              "Subject",
-              "Average",
-              "Pass rate",
-              "Highest",
-              "Lowest",
-              "",
-            ]}
+            columns={["Subject", "Average", "Pass rate", "Highest", "Lowest"]}
             loading={false}
           >
             {data.by_subject.length === 0 ? (
-              <EmptyRow colSpan={6} message="No subject scores yet." />
+              <EmptyRow colSpan={5} message="No subject scores yet." />
             ) : (
               data.by_subject.map((r) => (
                 <tr key={r.subject_id} className="border-t border-slate-100">
@@ -348,48 +399,10 @@ export default function AcademicPerformancePage() {
                   <td className="px-4 py-3">{r.pass_rate}%</td>
                   <td className="px-4 py-3">{r.highest}</td>
                   <td className="px-4 py-3">{r.lowest}</td>
-                  <td className="px-4 py-3 w-40">
-                    <ShareBar value={r.average} />
-                  </td>
                 </tr>
               ))
             )}
           </StudentTable>
-
-          <h2 className="mb-2 mt-6 text-sm font-semibold">Term trend</h2>
-          <div className="mb-6 grid gap-2 sm:grid-cols-3">
-            {data.trend.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                Not enough term results to chart a trend.
-              </p>
-            ) : (
-              data.trend.map((t) => (
-                <div
-                  key={t.term_id}
-                  className="rounded-xl border border-slate-200 p-3"
-                >
-                  <div className="text-xs text-slate-500">{t.term_name}</div>
-                  <div className="text-lg font-semibold">{t.average}</div>
-                  <ShareBar value={t.average} />
-                </div>
-              ))
-            )}
-          </div>
-
-          <h2 className="mb-2 text-sm font-semibold">Grade distribution</h2>
-          <div className="mb-6 grid grid-cols-6 gap-2">
-            {["A", "B", "C", "D", "E", "F"].map((g) => (
-              <div
-                key={g}
-                className="rounded-xl border border-slate-200 p-3 text-center"
-              >
-                <div className="text-xs font-semibold text-slate-500">{g}</div>
-                <div className="text-lg font-semibold">
-                  {data.grade_distribution[g] ?? 0}
-                </div>
-              </div>
-            ))}
-          </div>
 
           <h2 className="mb-2 text-sm font-semibold">Student ranking</h2>
           <StudentTable
