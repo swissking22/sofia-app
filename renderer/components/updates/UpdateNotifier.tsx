@@ -45,7 +45,8 @@ export function UpdateNotifier() {
         if (next.phase === "preparing-backup") setPrompt("preparing");
       }),
       subscribeUpdaterEvent("updater:available", () => {
-        if (!dismissedRef.current) setPrompt("available");
+        dismissedRef.current = false;
+        setPrompt("available");
       }),
       subscribeUpdaterEvent("updater:progress", () => {
         dismissedRef.current = false;
@@ -138,8 +139,8 @@ export function UpdateNotifier() {
           Protecting your school data…
         </h3>
         <p className="mt-2 text-sm text-slate-500">
-          Sofia is creating and verifying a database backup before installing the
-          update. Please keep Sofia open.
+          Sofia is creating and verifying a database backup before installing
+          the update. Please keep Sofia open.
         </p>
       </ModalShell>
     );
@@ -238,7 +239,7 @@ export function UpdateNotifier() {
 
 function ModalShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4 print:hidden">
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/40 p-4 print:hidden">
       <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
         {children}
       </div>

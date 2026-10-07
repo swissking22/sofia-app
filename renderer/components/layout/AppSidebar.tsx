@@ -6,9 +6,11 @@ import {
   ArrowLeftRightIcon,
   MoreVerticalIcon,
   Logout01Icon,
+  RefreshIcon,
 } from "@hugeicons/core-free-icons";
 import type { SessionData } from "../../lib/auth";
 import { type NavItem, type NavSection } from "../../lib/navigation";
+import { checkAppUpdate } from "../../lib/updater";
 import { SofiaBrand } from "../brand/SofiaBrand";
 import { Icon } from "../ui/Icon";
 
@@ -54,6 +56,33 @@ export function AppSidebar({
     {},
   );
   const [flyoutId, setFlyoutId] = React.useState<string | null>(null);
+  const [updateBusy, setUpdateBusy] = React.useState(false);
+  const [updateMessage, setUpdateMessage] = React.useState<string | null>(null);
+
+  async function onCheckForUpdates() {
+    if (updateBusy) return;
+    setUpdateBusy(true);
+    setUpdateMessage(null);
+    const res = await checkAppUpdate({ force: true });
+    setUpdateBusy(false);
+    if (!res.ok) {
+      setUpdateMessage(res.error);
+      return;
+    }
+    if (res.data.phase === "available" || res.data.phase === "downloaded") {
+      setUpdateMessage(null);
+      return;
+    }
+    if (res.data.phase === "not-available" || res.data.phase === "idle") {
+      setUpdateMessage(`You're up to date (v${res.data.currentVersion}).`);
+      return;
+    }
+    if (res.data.phase === "error") {
+      setUpdateMessage(
+        res.data.errorMessage || "Could not check for updates.",
+      );
+    }
+  }
 
   React.useEffect(() => {
     const next: Record<string, boolean> = {};
@@ -333,7 +362,28 @@ export function AppSidebar({
         ))}
       </nav>
 
-      <div className="border-t border-slate-200 p-3">
+      <div className="space-y-2 border-t border-slate-200 p-3">
+        <button
+          type="button"
+          onClick={() => void onCheckForUpdates()}
+          disabled={updateBusy}
+          title="Check for updates"
+          aria-label="Check for updates"
+          className={`flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-(--sofia-primary) py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-(--sofia-primary-dark) disabled:cursor-wait disabled:opacity-70 ${
+            collapsed ? "px-0" : "px-3"
+          }`}
+        >
+          <Icon icon={RefreshIcon} size={16} />
+          {!collapsed ? (
+            <span>{updateBusy ? "Checking…" : "Check for updates"}</span>
+          ) : null}
+        </button>
+        {!collapsed && updateMessage ? (
+          <p className="px-1 text-center text-[11px] leading-snug text-slate-500">
+            {updateMessage}
+          </p>
+        ) : null}
+
         <div
           className={`flex items-center gap-3 rounded-xl px-2 py-2 ${
             collapsed ? "justify-center" : ""

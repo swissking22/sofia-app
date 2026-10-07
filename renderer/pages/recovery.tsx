@@ -125,7 +125,9 @@ export default function RecoveryPage() {
           <div className="mt-3 flex flex-col gap-2">
             <button
               type="button"
-              disabled={busy || !(data?.backupVerified || data?.backup?.verified)}
+              disabled={
+                busy || !(data?.backupVerified || data?.backup?.verified)
+              }
               onClick={() => void tryRecovery()}
               className="cursor-pointer rounded-xl bg-(--sofia-primary) px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
             >
@@ -140,7 +142,7 @@ export default function RecoveryPage() {
               Continue Without Recovery
             </button>
             <a
-              href="mailto:support@sofia.school?subject=Sofia%20update%20recovery"
+              href="mailto:cherubtech7@gmail.com?subject=Sofia%20update%20recovery"
               className="rounded-xl px-4 py-2.5 text-center text-sm font-medium text-slate-500 hover:text-slate-700"
             >
               Contact Support

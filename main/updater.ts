@@ -318,13 +318,19 @@ function getStartupRecoverySafe(): RecoverySituation | null {
   }
 }
 
-export async function checkForUpdates(): Promise<{ ok: boolean; error?: string }> {
+export async function checkForUpdates(options?: {
+  /** Manual check: clear “Later” dismiss so an available update prompts again. */
+  force?: boolean
+}): Promise<{ ok: boolean; error?: string }> {
   if (!app.isPackaged) {
     return { ok: false, error: 'Updates are only available in the installed app.' }
   }
   const persisted = readUpdateState()
   if (persisted.status === 'rollback-required' && !persisted.recoveryAcknowledged) {
     return { ok: false, error: 'Finish recovery before checking for updates.' }
+  }
+  if (options?.force) {
+    dismissedVersion = null
   }
   try {
     const autoUpdater = await loadAutoUpdater()

@@ -20,7 +20,7 @@ Offline-first school management desktop app (Nextron: Electron + Next.js + SQLit
 
 **Join school requirements:** Primary desk must have synced users (Administration → Backup & Sync → Sync Now). Secondary desk needs network + matching school short code. Cloud RPC: `lookup_school_by_code` (migration `20260917083000_lookup_school_by_code.sql`).
 
-Items marked **Coming soon** in the sidebar are placeholders and are not documented as usable yet.
+Items marked **Coming soon** in the sidebar are placeholders and are not documented as usable yet. Help → Documentation and Contact Sofia Support are available to all signed-in users.
 
 ### Seed demo logins
 
@@ -569,11 +569,14 @@ School-scoped control centre. There is no platform super-admin. Session role `ad
 
 ---
 
-## Other modules (not built yet)
+## Help & Support
 
-Sidebar placeholders only:
+Available to every signed-in user (no special permission).
 
-- **Help & Support**
+| Screen | Path | How to use |
+|--------|------|------------|
+| Documentation | `/help/docs` | Searchable in-app guides by category (Getting started, Students, Finance, Sync, …). Open an article; follow deep links into Sofia screens. Content lives in `renderer/lib/help-docs.ts`. |
+| Contact Sofia Support | `/help/support` | Choose a category, write a subject and message, then **Open email to support** (`cherubtech7@gmail.com`) or **Copy message + diagnostics**. Diagnostics include app version, school, user, and platform. Sofia does not send mail itself — it opens the system mail client. |
 
 ---
 
@@ -814,6 +817,7 @@ Key libs for built modules:
 - Communication: `renderer/lib/communication-mgmt.ts` → `main/ipc/communication-mgmt.ts` (setup: `communication.ts`)
 - Academic: `renderer/lib/academic-mgmt.ts` → `main/ipc/academic-mgmt.ts`; teaching progress `renderer/lib/teaching-progress.ts` → `main/ipc/teaching-progress.ts`
 - Assessment Questions: `renderer/lib/assessment-questions.ts` → `main/ipc/assessment-questions.ts` → `main/db/repositories/assessment-questions.repository.ts`; PDFs `main/helpers/assessment-questions.ts` + `SYNCED_ASSET_FIELDS.assessment_question_paper_revisions`
+- Help: `renderer/lib/help-docs.ts` + `renderer/lib/help-support.ts` → pages `/help/docs`, `/help/support` (no dedicated IPC; diagnostics via session + `updater:get-status`)
 - Gate Scanner: `renderer/lib/gate-attendance.ts` → `main/ipc/gate-attendance.ts` (`gate-attendance:scan`, `gate-attendance:today-summary`); service `main/services/gate-attendance.ts`; table `gate_attendance`; feedback `renderer/lib/scanner-feedback.ts`
 - Results calculation: `renderer/lib/results-calc.ts` → `main/ipc/results-calculation.ts` (`results-calc:defaults`, `results-calc:coefficients-list`, `results-calc:coefficients-save`, `results-calc:validate`, `results-calc:breakdown`, `results-calc:student-summary`); core calculation service `main/services/results/result-calculation.service.ts`; repositories `main/db/repositories/results-calculation.repository.ts` and `subject-coefficients.repository.ts`; table `result_subject_coefficients`
 - School day schedule: `renderer/lib/day-schedule.ts` → `main/ipc/day-schedule.ts` (`day-schedule:get` / `day-schedule:save`); domain `main/domain/day-schedule.ts`; stored on `schools` + `school_day_breaks`; feeds `academic:meta` period count/times for the timetable
@@ -822,7 +826,7 @@ Key libs for built modules:
 - Documents: `renderer/lib/documents-mgmt.ts` → `main/ipc/documents-mgmt.ts` (setup templates remain `renderer/lib/documents.ts`)
 - System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts` (users soft-delete: `system-admin:users-delete` → `SystemAdminRepository.softDeleteUser` + `assertUserDeletable` in `main/domain/system-admin.ts`; RBAC `system.users.delete`; restore from file: `system-admin:backup-pick-restore-file` + `backup-restore-from-file` → `verifySqliteBackup` / `stageRestoreSource` in `main/db/sqlite-backup.ts` + `queueDatabaseRestore`)
 - Teacher mobile sync: domain `main/domain/teacher-sync.ts`; notifications stub `main/services/teacher-notifications.ts`; readiness `main/services/prepare-teacher-mobile.ts` + `main/sync/auto-sync.ts`; cloud RPCs in `supabase/migrations/20260923200000_teacher_mobile_rpcs.sql` + `20261001100000_teacher_mobile_sync_phase_ab.sql`; docs in `docs/teacher-*.md`
-- Auto-update (Windows): `main/updater.ts` + `main/ipc/updater.ts` (`updater:*`); UI `UpdateNotifier` in `AppShell`. **`electron-updater` must stay a runtime dynamic import** (`loadAutoUpdater()` in `main/updater.ts`) — a static import is evaluated with the main chunk and breaks packaged Windows launch. Startup still pins `userData` first via `main/pin-user-data.ts`. Recovery evaluation does not load the updater module graph for native update checks until after the window is ready.
+- Auto-update (Windows): `main/updater.ts` + `main/ipc/updater.ts` (`updater:*`); UI `UpdateNotifier` in `AppShell`. Sidebar **Check for updates** (`AppSidebar` → `checkAppUpdate` / `updater:check` with `force: true`) re-prompts after “Later”. **`electron-updater` must stay a runtime dynamic import** (`loadAutoUpdater()` in `main/updater.ts`) — a static import is evaluated with the main chunk and breaks packaged Windows launch. Startup still pins `userData` first via `main/pin-user-data.ts`. Recovery evaluation does not load the updater module graph for native update checks until after the window is ready.
 - Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); table registry `main/sync/tables.ts`; generic apply `main/sync/apply-generic.ts`; PostgREST RPCs `process_sync_operation`, `process_synced_entity`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
 - Teacher / staff cloud Auth: `main/services/cloud-auth.ts` (`provisionStaffAuth`) calls Edge Function `supabase/functions/provision-staff-auth` (anon key); optional local fallback via `SUPABASE_SERVICE_ROLE_KEY`. Hooked from `staff:upsert-teacher`, `staff:upsert-admin`, `staff:import-teachers`, `staff-mgmt:create`, and `system-admin:users-create` / `users-reset-password`. Deploy with `npx supabase functions deploy provision-staff-auth`.
 
@@ -832,6 +836,9 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-07 | **Sidebar Check for updates:** full-width primary button above the profile footer calls `updater:check` (force) so admins can manually look for app updates; up-to-date / error feedback under the button; available updates still use `UpdateNotifier`. |
+| 2026-10-07 | **Support email:** Contact Sofia Support and recovery mailto use `cherubtech7@gmail.com` (`SUPPORT_EMAIL` in `help-support.ts`). |
+| 2026-10-07 | **Help & Support:** Documentation (`/help/docs`) and Contact Sofia Support (`/help/support`) unlocked in the sidebar — in-app guides plus mailto diagnostics to `cherubtech7@gmail.com`. |
 | 2026-10-07 | **Compact money (K/M):** dashboard home and Reports & Analytics show shortened amounts; CSV export and Print use full comma-formatted values (`formatCompactMoney` / `formatMoney` / `MoneyText`). |
 | 2026-10-07 | **Assessment Questions:** Academic Management → Assessment Questions — review/approve/reject teacher PDF question papers with revision history, print when approved, RBAC (`assessment_questions.*`), offline sync + Storage PDFs (`assessment-questions:*` IPC). |
 | 2026-10-07 | **Reports charts:** each Reports & Analytics screen uses chart types suited to its data (bars, donuts, lines/areas, gauges) via shared recharts helpers (`renderer/components/reports/charts.tsx`). |

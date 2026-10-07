@@ -22,11 +22,16 @@ export function registerUpdaterIpc(): void {
     data: getUpdaterState(),
   }))
 
-  ipcMain.handle('updater:check', async () => {
-    const result = await checkForUpdates()
-    if (!result.ok) return { ok: false as const, error: result.error || 'Update check failed.' }
-    return { ok: true as const, data: getUpdaterState() }
-  })
+  ipcMain.handle(
+    'updater:check',
+    async (_event, payload?: { force?: boolean }) => {
+      const result = await checkForUpdates({ force: payload?.force === true })
+      if (!result.ok) {
+        return { ok: false as const, error: result.error || 'Update check failed.' }
+      }
+      return { ok: true as const, data: getUpdaterState() }
+    },
+  )
 
   ipcMain.handle('updater:download', async () => {
     const result = await downloadUpdate()

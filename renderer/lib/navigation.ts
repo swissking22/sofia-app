@@ -531,13 +531,11 @@ export const NAV_SECTIONS: NavSection[] = [
             id: 'documentation',
             label: 'Documentation',
             href: '/help/docs',
-            comingSoon: true,
           },
           {
             id: 'contact-support',
             label: 'Contact Sofia Support',
             href: '/help/support',
-            comingSoon: true,
           },
         ],
       },

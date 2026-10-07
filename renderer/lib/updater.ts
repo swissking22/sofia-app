@@ -26,6 +26,15 @@ export async function getUpdaterStatus(): Promise<Result<UpdaterState>> {
   return (await window.ipc.invoke('updater:get-status')) as Result<UpdaterState>
 }
 
+/** Manual sidebar check; `force` re-prompts if the user chose Later earlier. */
+export async function checkAppUpdate(
+  options: { force?: boolean } = { force: true },
+): Promise<Result<UpdaterState>> {
+  return (await window.ipc.invoke('updater:check', {
+    force: options.force !== false,
+  })) as Result<UpdaterState>
+}
+
 export async function downloadAppUpdate(): Promise<Result<UpdaterState>> {
   return (await window.ipc.invoke('updater:download')) as Result<UpdaterState>
 }
