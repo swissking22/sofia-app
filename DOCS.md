@@ -837,6 +837,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-08 | **Release 1.0.2:** bumped `package.json` to **1.0.2** and tagged `v1.0.2` for Windows GitHub Release publish (includes second-desk Auth bootstrap, sync conflict resolve, and role permission repair). |
 | 2026-10-08 | **Role dashboard / RBAC:** every seeded system role (Principal, Vice Principal, Teacher, Bursar, Secretary, Registrar, Read Only, …) re-syncs catalog permissions on `ensureDefaults`; empty custom roles that match a seed name are repaired; custom roles cannot be saved with zero permissions; dashboard no longer crashes with “Finance settings not found”; creating a user on a zero-permission role is rejected. |
 | 2026-10-08 | **Second-desk bootstrap:** Join school no longer fails with “no user accounts were downloaded.” Join installs the school + device, then login uses Supabase Auth, checks school membership, creates/updates the local profile, and caches a local-only password hash for offline use. User `password_hash` is stripped from sync payloads. |
 | 2026-10-08 | **Sync conflict resolve:** Backup & Sync Keep local/remote now clears open conflicts from the list (open-only query), resolves duplicate open rows for the same record in one click, applies outbox side effects (`main/sync/resolve-conflict.ts`), and surfaces success/error in the UI instead of a silent no-op. |
