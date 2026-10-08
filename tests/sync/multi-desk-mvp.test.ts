@@ -2,11 +2,12 @@ import Database from 'better-sqlite3'
 import { createSchema } from '../../main/db/schema'
 import { applyGenericPulledChange } from '../../main/sync/apply-generic'
 import { applyPulledChangesTransaction } from '../../main/sync/pull'
+import { enqueueOrphanedPendingRows } from '../../main/sync/queue'
 import { SUPPORTED_SYNC_TABLES, isGenericSyncTable } from '../../main/sync/tables'
 import { getOrCreateDeviceId, resetDeviceStoreForTests } from '../../main/sync/device'
 
 describe('Multi-desk sync MVP registry', () => {
-  it('includes foundation, RBAC, and staff tables', () => {
+  it('includes foundation, RBAC, staff, finance, and ops tables for every role desk', () => {
     expect(SUPPORTED_SYNC_TABLES).toContain('students')
     expect(SUPPORTED_SYNC_TABLES).toContain('classes')
     expect(SUPPORTED_SYNC_TABLES).toContain('users')
@@ -14,6 +15,7 @@ describe('Multi-desk sync MVP registry', () => {
     expect(SUPPORTED_SYNC_TABLES).toContain('staff')
     expect(SUPPORTED_SYNC_TABLES).toContain('invoices')
     expect(SUPPORTED_SYNC_TABLES).toContain('payments')
+    expect(SUPPORTED_SYNC_TABLES).toContain('fee_structures')
     expect(SUPPORTED_SYNC_TABLES).toContain('finance_settings')
     expect(SUPPORTED_SYNC_TABLES).toContain('timetable_slots')
     expect(SUPPORTED_SYNC_TABLES).toContain('attendance_sessions')
@@ -28,8 +30,17 @@ describe('Multi-desk sync MVP registry', () => {
     expect(SUPPORTED_SYNC_TABLES).toContain('internal_notices')
     expect(SUPPORTED_SYNC_TABLES).toContain('communication_settings')
     expect(SUPPORTED_SYNC_TABLES).toContain('parent_messages')
+    expect(SUPPORTED_SYNC_TABLES).toContain('admissions')
+    expect(SUPPORTED_SYNC_TABLES).toContain('student_transfers')
+    expect(SUPPORTED_SYNC_TABLES).toContain('promotion_runs')
+    expect(SUPPORTED_SYNC_TABLES).toContain('calendar_events')
+    expect(SUPPORTED_SYNC_TABLES).toContain('leave_requests')
+    expect(SUPPORTED_SYNC_TABLES).toContain('teaching_syllabi')
+    expect(SUPPORTED_SYNC_TABLES).toContain('report_settings')
+    expect(SUPPORTED_SYNC_TABLES).toContain('student_settings')
     expect(isGenericSyncTable('backup_sync_settings')).toBe(false)
     expect(isGenericSyncTable('roles')).toBe(true)
+    expect(isGenericSyncTable('admissions')).toBe(true)
   })
 })
 
@@ -746,6 +757,115 @@ describe('Generic pull apply', () => {
       )
       .get() as { c: number }
     expect(queued.c).toBe(0)
+  })
+
+  it('applies attendance_records and role_permissions when parents are missing', () => {
+    const now = new Date().toISOString()
+    expect(
+      applyGenericPulledChange(
+        db,
+        {
+          table_name: 'attendance_records',
+          record_id: 'ar-1',
+          operation: 'INSERT',
+          version: 1,
+          payload: {
+            id: 'ar-1',
+            session_id: 'sess-missing',
+            student_id: 'stu-att-1',
+            status: 'present',
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        schoolId
+      )
+    ).toBe('applied')
+    expect(
+      db.prepare(`SELECT 1 FROM attendance_sessions WHERE id = ?`).get('sess-missing')
+    ).toBeTruthy()
+
+    expect(
+      applyGenericPulledChange(
+        db,
+        {
+          table_name: 'role_permissions',
+          record_id: 'rp-1',
+          operation: 'INSERT',
+          version: 1,
+          payload: {
+            id: 'rp-1',
+            role_id: 'role-missing',
+            permission_id: 'perm-missing',
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        schoolId
+      )
+    ).toBe('applied')
+    expect(db.prepare(`SELECT 1 FROM roles WHERE id = ?`).get('role-missing')).toBeTruthy()
+    expect(
+      db.prepare(`SELECT 1 FROM permissions WHERE id = ?`).get('perm-missing')
+    ).toBeTruthy()
+  })
+
+  it('applies admissions for secretary desks without local level/class parents', () => {
+    const now = new Date().toISOString()
+    expect(
+      applyGenericPulledChange(
+        db,
+        {
+          table_name: 'admissions',
+          record_id: 'adm-1',
+          operation: 'INSERT',
+          version: 1,
+          payload: {
+            id: 'adm-1',
+            school_id: schoolId,
+            full_name: 'New Applicant',
+            academic_level_id: 'level-adm',
+            preferred_class_id: 'class-adm',
+            status: 'pending',
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        schoolId
+      )
+    ).toBe('applied')
+    expect(
+      db.prepare(`SELECT full_name FROM admissions WHERE id = ?`).get('adm-1')
+    ).toEqual({ full_name: 'New Applicant' })
+  })
+
+  it('backfills orphaned pending domain rows into the outbox', () => {
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO academic_years (
+         id, school_id, name, start_date, end_date, is_current,
+         created_at, updated_at, sync_status, version
+       ) VALUES ('year-q', ?, 'Y', ?, ?, 1, ?, ?, 'synced', 1)`
+    ).run(schoolId, now.slice(0, 10), now.slice(0, 10), now, now)
+    db.prepare(
+      `INSERT INTO fee_structures (
+         id, school_id, name, academic_year_id, is_active, applies_to_residence,
+         created_at, updated_at, sync_status, version
+       ) VALUES ('fs-orphan-q', ?, 'Orphan Structure', 'year-q', 1, 'all', ?, ?, 'pending', 1)`
+    ).run(schoolId, now, now)
+
+    const n = enqueueOrphanedPendingRows(db, { limit: 100 })
+    expect(n).toBeGreaterThanOrEqual(1)
+    const queued = db
+      .prepare(
+        `SELECT COUNT(*) AS c FROM sync_queue
+         WHERE table_name = 'fee_structures' AND record_id = 'fs-orphan-q' AND status = 'pending'`
+      )
+      .get() as { c: number }
+    expect(queued.c).toBe(1)
   })
 
   it('applies fee_structures when academic_year is missing locally (FK stub)', () => {

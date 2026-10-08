@@ -7,6 +7,7 @@ import {
   type CalculationConfig,
   type ProfileStatus,
 } from '../../domain/results-calculation'
+import { enqueueSync } from '../../sync/queue'
 
 export interface CalculationProfileRow {
   id: string
@@ -159,6 +160,10 @@ export class ResultsCalculationRepository {
       )
     this.insertVersion(input.school_id, id, 1, input.config, input.created_by)
     this.replaceAssignments(input.school_id, id, input.assignments ?? [])
+    const profile = this.db
+      .prepare(`SELECT * FROM result_calculation_profiles WHERE id = ?`)
+      .get(id) as Record<string, unknown>
+    enqueueSync(this.db, 'result_calculation_profiles', id, 'INSERT', profile)
     const dto = this.get(input.school_id, id)
     if (!dto) throw new Error('Failed to create calculation profile.')
     return dto
@@ -171,22 +176,34 @@ export class ResultsCalculationRepository {
     config: CalculationConfig,
     createdBy?: string | null
   ): void {
+    const versionId = randomUUID()
+    const createdAt = nowIso()
+    const row = {
+      id: versionId,
+      school_id: schoolId,
+      profile_id: profileId,
+      version_number: versionNumber,
+      config_json: JSON.stringify(config),
+      config_hash: hashConfig(config),
+      created_by: createdBy ?? null,
+      created_at: createdAt,
+    }
     this.db
       .prepare(
         `INSERT INTO result_calculation_profile_versions (
           id, school_id, profile_id, version_number, config_json, config_hash, created_by, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (
+          @id, @school_id, @profile_id, @version_number, @config_json, @config_hash, @created_by, @created_at
+        )`
       )
-      .run(
-        randomUUID(),
-        schoolId,
-        profileId,
-        versionNumber,
-        JSON.stringify(config),
-        hashConfig(config),
-        createdBy ?? null,
-        nowIso()
-      )
+      .run(row)
+    enqueueSync(
+      this.db,
+      'result_calculation_profile_versions',
+      versionId,
+      'INSERT',
+      row
+    )
   }
 
   replaceAssignments(
@@ -195,32 +212,60 @@ export class ResultsCalculationRepository {
     assignments: Array<Omit<ProfileAssignment, 'id'>>
   ): void {
     const t = nowIso()
+    const softDeleted = this.db
+      .prepare(
+        `SELECT * FROM result_calculation_class_assignments
+         WHERE school_id = ? AND profile_id = ? AND deleted_at IS NULL`
+      )
+      .all(schoolId, profileId) as Array<Record<string, unknown>>
     this.db
       .prepare(
         `UPDATE result_calculation_class_assignments
-         SET deleted_at = ?, updated_at = ?
+         SET deleted_at = ?, updated_at = ?, sync_status = 'pending', version = version + 1
          WHERE school_id = ? AND profile_id = ? AND deleted_at IS NULL`
       )
       .run(t, t, schoolId, profileId)
+    for (const old of softDeleted) {
+      enqueueSync(this.db, 'result_calculation_class_assignments', String(old.id), 'DELETE', {
+        ...old,
+        deleted_at: t,
+        updated_at: t,
+      })
+    }
     for (const a of assignments) {
+      const id = randomUUID()
+      const row = {
+        id,
+        school_id: schoolId,
+        profile_id: profileId,
+        class_id: a.class_id,
+        academic_level_id: a.academic_level_id,
+        department_id: a.department_id,
+        allow_overlap: a.allow_overlap ? 1 : 0,
+        created_at: t,
+        updated_at: t,
+        deleted_at: null,
+        sync_status: 'pending',
+        version: 1,
+      }
       this.db
         .prepare(
           `INSERT INTO result_calculation_class_assignments (
             id, school_id, profile_id, class_id, academic_level_id, department_id,
             allow_overlap, created_at, updated_at, deleted_at, sync_status, version
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending', 1)`
+          ) VALUES (
+            @id, @school_id, @profile_id, @class_id, @academic_level_id, @department_id,
+            @allow_overlap, @created_at, @updated_at, @deleted_at, @sync_status, @version
+          )`
         )
-        .run(
-          randomUUID(),
-          schoolId,
-          profileId,
-          a.class_id,
-          a.academic_level_id,
-          a.department_id,
-          a.allow_overlap ? 1 : 0,
-          t,
-          t
-        )
+        .run(row)
+      enqueueSync(
+        this.db,
+        'result_calculation_class_assignments',
+        id,
+        'INSERT',
+        row
+      )
     }
   }
 
@@ -295,6 +340,16 @@ export class ResultsCalculationRepository {
     if (input.assignments) {
       this.replaceAssignments(input.school_id, input.id, input.assignments)
     }
+    const profile = this.db
+      .prepare(`SELECT * FROM result_calculation_profiles WHERE id = ?`)
+      .get(input.id) as Record<string, unknown>
+    enqueueSync(
+      this.db,
+      'result_calculation_profiles',
+      input.id,
+      'UPDATE',
+      profile
+    )
     const dto = this.get(input.school_id, input.id)
     if (!dto) throw new Error('Failed to save calculation profile.')
     return dto
@@ -309,6 +364,10 @@ export class ResultsCalculationRepository {
          WHERE id = ? AND school_id = ? AND deleted_at IS NULL`
       )
       .run(status, t, id, schoolId)
+    const profile = this.db
+      .prepare(`SELECT * FROM result_calculation_profiles WHERE id = ?`)
+      .get(id) as Record<string, unknown>
+    enqueueSync(this.db, 'result_calculation_profiles', id, 'UPDATE', profile)
     const dto = this.get(schoolId, id)
     if (!dto) throw new Error('Calculation profile not found.')
     return dto

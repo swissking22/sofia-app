@@ -488,121 +488,458 @@ function ensureReferencedParents(
     }
   }
 
-  switch (table) {
-    case 'academic_terms':
-      ensureAcademicYear(
-        payload.academic_year_id != null
-          ? String(payload.academic_year_id)
-          : null
+  const ensureStaff = (staffId: string | null | undefined) => {
+    if (!staffId || rowExists(db, 'staff', staffId)) return
+    try {
+      db.prepare(
+        `INSERT INTO staff (
+           id, school_id, full_name, staff_type, status,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 'teaching', 'active', ?, ?, 'synced', 0)`
+      ).run(staffId, schoolId, 'Staff ' + String(staffId).slice(0, 8), now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureSubject = (subjectId: string | null | undefined) => {
+    if (!subjectId || rowExists(db, 'subjects', subjectId)) return
+    const classId =
+      (payload.class_id != null && String(payload.class_id)) ||
+      `class-for-${subjectId}`
+    ensureClass(classId)
+    try {
+      db.prepare(
+        `INSERT INTO subjects (
+           id, name, class_id, school_id, coefficient,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, 1, ?, ?, 'synced', 0)`
+      ).run(
+        subjectId,
+        'Subject ' + String(subjectId).slice(0, 8),
+        classId,
+        schoolId,
+        now,
+        now
       )
-      break
-    case 'fee_structures':
-      ensureAcademicYear(
-        payload.academic_year_id != null
-          ? String(payload.academic_year_id)
-          : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureRole = (roleId: string | null | undefined) => {
+    if (!roleId || rowExists(db, 'roles', roleId)) return
+    try {
+      db.prepare(
+        `INSERT INTO roles (
+           id, school_id, name, is_system,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 0, ?, ?, 'synced', 0)`
+      ).run(roleId, schoolId, 'Role ' + String(roleId).slice(0, 8), now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensurePermission = (permissionId: string | null | undefined) => {
+    if (!permissionId || rowExists(db, 'permissions', permissionId)) return
+    try {
+      db.prepare(
+        `INSERT INTO permissions (
+           id, name, label, module_key, module_label,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, 'system', 'System', ?, ?)`
+      ).run(
+        permissionId,
+        'perm.' + String(permissionId).slice(0, 8),
+        'Permission ' + String(permissionId).slice(0, 8),
+        now,
+        now
       )
-      ensureAcademicTerm(
-        payload.academic_term_id != null
-          ? String(payload.academic_term_id)
-          : null,
-        payload.academic_year_id != null
-          ? String(payload.academic_year_id)
-          : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureSection = (sectionId: string | null | undefined) => {
+    if (!sectionId || rowExists(db, 'sections', sectionId)) return
+    try {
+      db.prepare(
+        `INSERT INTO sections (
+           id, school_id, name, is_active,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 1, ?, ?, 'synced', 0)`
+      ).run(
+        sectionId,
+        schoolId,
+        'Section ' + String(sectionId).slice(0, 8),
+        now,
+        now
       )
-      ensureAcademicLevel(
-        payload.academic_level_id != null
-          ? String(payload.academic_level_id)
-          : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureDepartment = (departmentId: string | null | undefined) => {
+    if (!departmentId || rowExists(db, 'departments', departmentId)) return
+    try {
+      db.prepare(
+        `INSERT INTO departments (
+           id, school_id, name, created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, ?, 'synced', 0)`
+      ).run(
+        departmentId,
+        schoolId,
+        'Dept ' + String(departmentId).slice(0, 8),
+        now,
+        now
       )
-      ensureClass(
-        payload.class_id != null ? String(payload.class_id) : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureAttendanceSession = (sessionId: string | null | undefined) => {
+    if (!sessionId || rowExists(db, 'attendance_sessions', sessionId)) return
+    const classId =
+      (payload.class_id != null && String(payload.class_id)) ||
+      `class-for-${sessionId}`
+    ensureClass(classId)
+    try {
+      db.prepare(
+        `INSERT INTO attendance_sessions (
+           id, school_id, class_id, session_date,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, ?, ?, 'synced', 0)`
+      ).run(sessionId, schoolId, classId, today, now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureCaAssessment = (assessmentId: string | null | undefined) => {
+    if (!assessmentId || rowExists(db, 'ca_assessments', assessmentId)) return
+    const classId =
+      (payload.class_id != null && String(payload.class_id)) ||
+      `class-for-${assessmentId}`
+    const subjectId =
+      (payload.subject_id != null && String(payload.subject_id)) ||
+      `subject-for-${assessmentId}`
+    ensureClass(classId)
+    ensureSubject(subjectId)
+    try {
+      db.prepare(
+        `INSERT INTO ca_assessments (
+           id, school_id, class_id, subject_id, name, max_score,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, ?, 20, ?, ?, 'synced', 0)`
+      ).run(
+        assessmentId,
+        schoolId,
+        classId,
+        subjectId,
+        'CA ' + String(assessmentId).slice(0, 8),
+        now,
+        now
       )
-      break
-    case 'fee_structure_lines':
-      ensureFeeStructure(
-        payload.fee_structure_id != null
-          ? String(payload.fee_structure_id)
-          : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureExamSession = (sessionId: string | null | undefined) => {
+    if (!sessionId || rowExists(db, 'exam_sessions', sessionId)) return
+    try {
+      db.prepare(
+        `INSERT INTO exam_sessions (
+           id, school_id, name, start_date, end_date, status,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, 'synced', 0)`
+      ).run(
+        sessionId,
+        schoolId,
+        'Exam ' + String(sessionId).slice(0, 8),
+        today,
+        today,
+        now,
+        now
       )
-      ensureFeeCategory(
-        payload.fee_category_id != null
-          ? String(payload.fee_category_id)
-          : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureExamPaper = (paperId: string | null | undefined) => {
+    if (!paperId || rowExists(db, 'exam_papers', paperId)) return
+    const sessionId =
+      (payload.exam_session_id != null && String(payload.exam_session_id)) ||
+      `exam-session-for-${paperId}`
+    const classId =
+      (payload.class_id != null && String(payload.class_id)) ||
+      `class-for-${paperId}`
+    const subjectId =
+      (payload.subject_id != null && String(payload.subject_id)) ||
+      `subject-for-${paperId}`
+    ensureExamSession(sessionId)
+    ensureClass(classId)
+    ensureSubject(subjectId)
+    try {
+      db.prepare(
+        `INSERT INTO exam_papers (
+           id, exam_session_id, subject_id, class_id, max_score,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, 100, ?, ?, 'synced', 0)`
+      ).run(paperId, sessionId, subjectId, classId, now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureResultRun = (runId: string | null | undefined) => {
+    if (!runId || rowExists(db, 'result_runs', runId)) return
+    const classId =
+      (payload.class_id != null && String(payload.class_id)) ||
+      `class-for-${runId}`
+    ensureClass(classId)
+    try {
+      db.prepare(
+        `INSERT INTO result_runs (
+           id, school_id, class_id, status,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 'draft', ?, ?, 'synced', 0)`
+      ).run(runId, schoolId, classId, now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureCalcProfile = (profileId: string | null | undefined) => {
+    if (!profileId || rowExists(db, 'result_calculation_profiles', profileId))
+      return
+    try {
+      db.prepare(
+        `INSERT INTO result_calculation_profiles (
+           id, school_id, name, description, period_mode, status,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, '', 'term', 'draft', ?, ?, 'synced', 0)`
+      ).run(
+        profileId,
+        schoolId,
+        'Profile ' + String(profileId).slice(0, 8),
+        now,
+        now
       )
-      break
-    case 'fee_amounts':
-      ensureAcademicLevel(
-        payload.academic_level_id != null
-          ? String(payload.academic_level_id)
-          : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureThread = (threadId: string | null | undefined) => {
+    if (!threadId || rowExists(db, 'parent_message_threads', threadId)) return
+    const studentId =
+      (payload.student_id != null && String(payload.student_id)) ||
+      `student-for-${threadId}`
+    ensureStudent(studentId)
+    try {
+      db.prepare(
+        `INSERT INTO parent_message_threads (
+           id, school_id, student_id, guardian_name,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 'Guardian', ?, ?, 'synced', 0)`
+      ).run(threadId, schoolId, studentId, now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensurePromotionRun = (runId: string | null | undefined) => {
+    if (!runId || rowExists(db, 'promotion_runs', runId)) return
+    try {
+      db.prepare(
+        `INSERT INTO promotion_runs (
+           id, school_id, from_year, to_year, status,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, 2025, 2026, 'draft', ?, ?, 'synced', 0)`
+      ).run(runId, schoolId, now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureSyllabus = (syllabusId: string | null | undefined) => {
+    if (!syllabusId || rowExists(db, 'teaching_syllabi', syllabusId)) return
+    const subjectId =
+      (payload.subject_id != null && String(payload.subject_id)) ||
+      `subject-for-${syllabusId}`
+    const yearId =
+      (payload.academic_year_id != null && String(payload.academic_year_id)) ||
+      `year-for-${syllabusId}`
+    ensureSubject(subjectId)
+    ensureAcademicYear(yearId)
+    try {
+      db.prepare(
+        `INSERT INTO teaching_syllabi (
+           id, school_id, subject_id, academic_year_id, title, term_weeks,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, ?, 12, ?, ?, 'synced', 0)`
+      ).run(
+        syllabusId,
+        schoolId,
+        subjectId,
+        yearId,
+        'Syllabus ' + String(syllabusId).slice(0, 8),
+        now,
+        now
       )
-      ensureFeeCategory(
-        payload.fee_category_id != null
-          ? String(payload.fee_category_id)
-          : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureBankDeposit = (depositId: string | null | undefined) => {
+    if (!depositId || rowExists(db, 'bank_deposits', depositId)) return
+    try {
+      db.prepare(
+        `INSERT INTO bank_deposits (
+           id, school_id, deposit_number, amount, deposit_date, bank_name, status,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 0, ?, 'Bank', 'pending_verification', ?, ?, 'synced', 0)`
+      ).run(
+        depositId,
+        schoolId,
+        'DEP-PENDING',
+        today,
+        now,
+        now
       )
-      break
-    case 'fee_discounts':
-      ensureAcademicYear(
-        payload.academic_year_id != null
-          ? String(payload.academic_year_id)
-          : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureBudgetCategory = (categoryId: string | null | undefined) => {
+    if (!categoryId || rowExists(db, 'budget_categories', categoryId)) return
+    try {
+      db.prepare(
+        `INSERT INTO budget_categories (
+           id, school_id, name, category_key, is_system, is_active, sort_order,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, 0, 1, 0, ?, ?, 'synced', 0)`
+      ).run(
+        categoryId,
+        schoolId,
+        'Budget cat ' + String(categoryId).slice(0, 8),
+        'cat_' + String(categoryId).slice(0, 8),
+        now,
+        now
       )
-      break
-    case 'student_fee_discounts':
-      ensureStudent(
-        payload.student_id != null ? String(payload.student_id) : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureBudget = (budgetId: string | null | undefined) => {
+    if (!budgetId || rowExists(db, 'budgets', budgetId)) return
+    const yearId =
+      (payload.academic_year_id != null && String(payload.academic_year_id)) ||
+      `year-for-${budgetId}`
+    const categoryId =
+      (payload.budget_category_id != null &&
+        String(payload.budget_category_id)) ||
+      `budget-cat-for-${budgetId}`
+    ensureAcademicYear(yearId)
+    ensureBudgetCategory(categoryId)
+    try {
+      db.prepare(
+        `INSERT INTO budgets (
+           id, school_id, academic_year_id, budget_category_id,
+           period_type, period_start, period_end, allocated_amount, status,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, 'annual', ?, ?, 0, 'active', ?, ?, 'synced', 0)`
+      ).run(
+        budgetId,
+        schoolId,
+        yearId,
+        categoryId,
+        today,
+        today,
+        now,
+        now
       )
-      break
-    case 'invoices':
-      ensureStudent(
-        payload.student_id != null ? String(payload.student_id) : null
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureUser = (userId: string | null | undefined) => {
+    if (!userId || rowExists(db, 'users', userId)) return
+    try {
+      db.prepare(
+        `INSERT INTO users (
+           id, school_id, email, password_hash, role, status,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, '!sofia-cloud-auth-pending', 'secretary', 'active', ?, ?, 'synced', 0)`
+      ).run(
+        userId,
+        schoolId,
+        `user-${String(userId).slice(0, 8)}@pending.local`,
+        now,
+        now
       )
-      ensureAcademicYear(
-        payload.academic_year_id != null
-          ? String(payload.academic_year_id)
-          : null
-      )
-      ensureFeeStructure(
-        payload.fee_structure_id != null
-          ? String(payload.fee_structure_id)
-          : null
-      )
-      break
-    case 'invoice_lines':
-      ensureInvoice(
-        payload.invoice_id != null ? String(payload.invoice_id) : null
-      )
-      ensureFeeCategory(
-        payload.fee_category_id != null
-          ? String(payload.fee_category_id)
-          : null
-      )
-      break
-    case 'payments':
-      ensureStudent(
-        payload.student_id != null ? String(payload.student_id) : null
-      )
-      ensureInvoice(
-        payload.invoice_id != null ? String(payload.invoice_id) : null
-      )
-      break
-    case 'receipts':
-      ensurePayment(
-        payload.payment_id != null ? String(payload.payment_id) : null
-      )
-      ensureStudent(
-        payload.student_id != null ? String(payload.student_id) : null
-      )
-      break
-    case 'student_credits':
-      ensureStudent(
-        payload.student_id != null ? String(payload.student_id) : null
-      )
-      break
-    default:
-      break
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Payload-driven stubs — cover any table that references shared parents so
+  // second-desk pulls never abort on out-of-order sync_changes pages.
+  const str = (key: string) =>
+    payload[key] != null && String(payload[key]).length > 0
+      ? String(payload[key])
+      : null
+
+  ensureAcademicYear(str('academic_year_id'))
+  ensureAcademicTerm(str('academic_term_id') || str('term_id'), str('academic_year_id'))
+  ensureAcademicLevel(str('academic_level_id'))
+  ensureClass(str('class_id') || str('from_class_id') || str('to_class_id') || str('preferred_class_id'))
+  ensureSection(str('section_id'))
+  ensureDepartment(str('department_id'))
+  ensureStudent(str('student_id'))
+  ensureStaff(str('staff_id') || str('teacher_staff_id'))
+  ensureSubject(str('subject_id'))
+  ensureRole(str('role_id'))
+  ensureFeeCategory(str('fee_category_id'))
+  ensureFeeStructure(str('fee_structure_id'))
+  ensureInvoice(str('invoice_id'))
+  ensurePayment(str('payment_id'))
+  ensureAttendanceSession(
+    table === 'attendance_records' ? str('session_id') : null
+  )
+  ensureCaAssessment(str('assessment_id'))
+  ensureExamSession(str('exam_session_id'))
+  ensureExamPaper(str('paper_id') || str('exam_paper_id'))
+  ensureResultRun(str('result_run_id') || (table.startsWith('result_') ? str('run_id') : null))
+  ensureCalcProfile(str('profile_id'))
+  ensureThread(str('thread_id'))
+  ensurePromotionRun(str('promotion_run_id'))
+  ensureSyllabus(str('syllabus_id'))
+  ensureBankDeposit(str('bank_deposit_id'))
+  ensureBudgetCategory(str('budget_category_id'))
+  ensureBudget(str('budget_id'))
+  ensureUser(str('user_id'))
+
+  if (table === 'role_permissions') {
+    ensureRole(str('role_id'))
+    ensurePermission(str('permission_id'))
+  }
+  if (table === 'subject_classes') {
+    ensureSubject(str('subject_id'))
+    ensureClass(str('class_id'))
+  }
+  if (table === 'users') {
+    ensureRole(str('role_id'))
+    ensureStaff(str('staff_id'))
   }
 }
 
