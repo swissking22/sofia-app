@@ -114,13 +114,18 @@ export class RoleRepository extends BaseRepository<Role> {
            WHERE school_id = ? AND name = ? AND deleted_at IS NULL`
         )
         .get(schoolId, seed.name) as { id: string } | undefined
+      const permIds =
+        seed.permissions === 'all'
+          ? allPerms.map((p) => p.id)
+          : seed.permissions
+              .map((n) => byName.get(n))
+              .filter((id): id is string => Boolean(id))
+
       if (existing) {
-        if (seed.permissions === 'all') {
-          this.replaceRolePermissions(
-            existing.id,
-            allPerms.map((p) => p.id)
-          )
-        }
+        // Always re-sync catalog permissions onto system roles. Older installs
+        // may have created Bursar/Teacher/etc. before the catalog grew, which
+        // left role_permissions empty and hid the whole sidebar for those users.
+        this.replaceRolePermissions(existing.id, permIds)
         continue
       }
 
@@ -149,13 +154,6 @@ export class RoleRepository extends BaseRepository<Role> {
         'INSERT',
         role as unknown as Record<string, unknown>
       )
-
-      const permIds =
-        seed.permissions === 'all'
-          ? allPerms.map((p) => p.id)
-          : seed.permissions
-              .map((n) => byName.get(n))
-              .filter((id): id is string => Boolean(id))
 
       this.replaceRolePermissions(role.id, permIds)
     }

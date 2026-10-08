@@ -72,6 +72,12 @@ export function registerAuthIpc(repos: Repositories): void {
         data: { permissions: PERMISSION_CATALOG.map((p) => p.name) },
       }
     }
+    // Repair system-role permission sets (e.g. Bursar created before catalog grew).
+    try {
+      if (session.schoolId) repos.roles.ensureDefaults(session.schoolId)
+    } catch {
+      /* non-fatal */
+    }
     const permissions = repos.roles.getPermissionNamesForUser(session.userId)
     return { ok: true as const, data: { permissions } }
   })
