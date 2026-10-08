@@ -103,10 +103,24 @@ export class RoleRepository extends BaseRepository<Role> {
     }
   }
 
+  private permissionIdsForSeed(
+    seed: (typeof SYSTEM_ROLE_SEEDS)[number],
+    allPerms: Permission[],
+    byName: Map<string, string>
+  ): string[] {
+    return seed.permissions === 'all'
+      ? allPerms.map((p) => p.id)
+      : seed.permissions
+          .map((n) => byName.get(n))
+          .filter((id): id is string => Boolean(id))
+  }
+
   private seedSystemRoles(schoolId: string): void {
     const allPerms = this.listAllPermissions()
     const byName = new Map(allPerms.map((p) => [p.name, p.id]))
 
+    // Repair / create every seeded system role (Principal, Vice Principal,
+    // Teacher, Bursar, Secretary, Registrar, Read Only, …) — not just Admin.
     for (const seed of SYSTEM_ROLE_SEEDS) {
       const existing = this.db
         .prepare(
@@ -114,17 +128,9 @@ export class RoleRepository extends BaseRepository<Role> {
            WHERE school_id = ? AND name = ? AND deleted_at IS NULL`
         )
         .get(schoolId, seed.name) as { id: string } | undefined
-      const permIds =
-        seed.permissions === 'all'
-          ? allPerms.map((p) => p.id)
-          : seed.permissions
-              .map((n) => byName.get(n))
-              .filter((id): id is string => Boolean(id))
+      const permIds = this.permissionIdsForSeed(seed, allPerms, byName)
 
       if (existing) {
-        // Always re-sync catalog permissions onto system roles. Older installs
-        // may have created Bursar/Teacher/etc. before the catalog grew, which
-        // left role_permissions empty and hid the whole sidebar for those users.
         this.replaceRolePermissions(existing.id, permIds)
         continue
       }
@@ -156,6 +162,40 @@ export class RoleRepository extends BaseRepository<Role> {
       )
 
       this.replaceRolePermissions(role.id, permIds)
+    }
+
+    // Also repair empty custom roles that share a seed name (e.g. "bursar"
+    // created before the catalog filled) — only when they currently have
+    // zero active permissions, so intentional custom sets are left alone.
+    this.repairEmptyRolesMatchingSeeds(schoolId, allPerms, byName)
+  }
+
+  private repairEmptyRolesMatchingSeeds(
+    schoolId: string,
+    allPerms: Permission[],
+    byName: Map<string, string>
+  ): void {
+    const seedByLower = new Map(
+      SYSTEM_ROLE_SEEDS.map((s) => [s.name.toLowerCase(), s] as const)
+    )
+    const emptyRoles = this.db
+      .prepare(
+        `SELECT r.id, r.name FROM roles r
+         WHERE r.school_id = ?
+           AND r.deleted_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM role_permissions rp
+             WHERE rp.role_id = r.id AND rp.deleted_at IS NULL
+           )`
+      )
+      .all(schoolId) as Array<{ id: string; name: string }>
+
+    for (const row of emptyRoles) {
+      const seed = seedByLower.get(String(row.name || '').trim().toLowerCase())
+      if (!seed) continue
+      const permIds = this.permissionIdsForSeed(seed, allPerms, byName)
+      if (permIds.length === 0) continue
+      this.replaceRolePermissions(row.id, permIds)
     }
   }
 
@@ -238,6 +278,12 @@ export class RoleRepository extends BaseRepository<Role> {
     const name = input.name.trim()
     if (!name) throw new Error('Role name is required.')
     this.assertUniqueName(schoolId, name)
+    const permissionIds = [...new Set(input.permission_ids ?? [])]
+    if (permissionIds.length === 0) {
+      throw new Error(
+        'Assign at least one permission before saving this role. Users with an empty role only see Dashboard and Help.'
+      )
+    }
 
     const role: Role = {
       ...this.buildBaseFields(),
@@ -266,7 +312,7 @@ export class RoleRepository extends BaseRepository<Role> {
         'INSERT',
         role as unknown as Record<string, unknown>
       )
-      this.replaceRolePermissions(role.id, input.permission_ids ?? [])
+      this.replaceRolePermissions(role.id, permissionIds)
     })
     tx()
 
@@ -284,6 +330,13 @@ export class RoleRepository extends BaseRepository<Role> {
     this.assertUniqueName(existing.school_id, name, roleId)
 
     const isSystem = existing.is_system === 1
+    const permissionIds = [...new Set(input.permission_ids ?? [])]
+    if (!isSystem && permissionIds.length === 0) {
+      throw new Error(
+        'Assign at least one permission before saving this role. Users with an empty role only see Dashboard and Help.'
+      )
+    }
+
     const record: Role = {
       ...existing,
       name: isSystem ? existing.name : name,
@@ -313,9 +366,9 @@ export class RoleRepository extends BaseRepository<Role> {
         record as unknown as Record<string, unknown>
       )
 
-      // System roles: permissions locked
+      // System roles: permissions locked (catalog re-applied via ensureDefaults)
       if (!isSystem) {
-        this.replaceRolePermissions(roleId, input.permission_ids ?? [])
+        this.replaceRolePermissions(roleId, permissionIds)
       }
     })
     tx()

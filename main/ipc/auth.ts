@@ -72,7 +72,7 @@ export function registerAuthIpc(repos: Repositories): void {
         data: { permissions: PERMISSION_CATALOG.map((p) => p.name) },
       }
     }
-    // Repair system-role permission sets (e.g. Bursar created before catalog grew).
+    // Repair every seeded system role (and empty name-matched custom roles).
     try {
       if (session.schoolId) repos.roles.ensureDefaults(session.schoolId)
     } catch {
