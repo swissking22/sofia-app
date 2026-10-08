@@ -127,7 +127,7 @@ describe('BillingService - generateInvoice', () => {
       school_id: 'school_1',
       student_id: 'student_1',
       fee_structure_id: 'fs_1',
-      due_date: '2026-09-30',
+      due_date: '2099-09-30',
     })
 
     expect(invoice.subtotal).toBe(100_000)

@@ -13,12 +13,12 @@ Offline-first school management desktop app (Nextron: Electron + Next.js + SQLit
 1. Launch the app (`npm run dev` in development).
 2. On a **new install**, the login screen offers:
    - **Create an account** (`/register`) — first computer for this school (full Setup wizard).
-   - **Join existing school** (`/join`) — other office desks: enter the school short code, download accounts from the cloud, then log in with a shared user.
+   - **Join existing school** (`/join`) — other office desks: enter the school short code, register this device, then **sign in** (first sign-in uses Supabase Auth online).
 3. Or use [seed demo logins](#seed-demo-logins) after running the seeder.
 4. Run the **Setup wizard** on the primary desk (`/setup/...`) so core school data exists before day-to-day use (skip if you loaded seed data / joined a desk).
 5. Use the sidebar for day-to-day modules you are allowed to open (School, Students, Academic, …). Sidebar and Ctrl+K page hits follow your role permissions; school owners (`admin`) see everything.
 
-**Join school requirements:** Primary desk must have synced users (Administration → Backup & Sync → Sync Now). Secondary desk needs network + matching school short code. Cloud RPC: `lookup_school_by_code` (migration `20260917083000_lookup_school_by_code.sql`).
+**Join school requirements:** Secondary desk needs network + matching school short code (`lookup_school_by_code`). Join installs the school tenant and registers the device; it does **not** require user password rows to already be in sync. First login on that desk authenticates with **Supabase Auth**, verifies `app_metadata.school_id` matches the joined school, then creates/updates the local profile and caches a **local-only** password hash for offline login on that device. Passwords are never included in sync payloads.
 
 Items marked **Coming soon** in the sidebar are placeholders and are not documented as usable yet. Help → Documentation and Contact Sofia Support are available to all signed-in users.
 
@@ -592,7 +592,7 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 |--------|--------|
 | Students (legacy typed) | `students`, `student_id_settings` |
 | School foundation | `schools`, `academic_years`, `academic_terms`, `academic_levels`, `sections`, `specializations`, `departments`, `classes`, `subjects`, `subject_classes`, `grading_systems`, `assessment_types`, `grade_bands` |
-| Users & RBAC | `permissions`, `roles`, `role_permissions`, `users` (password **hashes** only) |
+| Users & RBAC | `permissions`, `roles`, `role_permissions`, `users` (**no passwords** — `password_hash` stripped from outbox/push; pull keeps local hash or a pending placeholder) |
 | Staff (light) | `staff`, `staff_subjects`, `staff_classes` |
 | Finance (Step 5) | `finance_settings` (counters use **MAX** local/remote), fee catalogs/structures/discounts, `invoices`, `invoice_lines`, `payments`, `receipts`, credits, expenses, ledger, audit, reminders, budgets, online payments, bank deposits |
 | Academics & attendance (Step 6) | `timetable_slots`; class + gate + staff attendance; CA/exams/scores; calculation profiles/coefficients; `result_runs` (+ rows/summaries); `report_cards` |
@@ -828,7 +828,8 @@ Key libs for built modules:
 - Teacher mobile sync: domain `main/domain/teacher-sync.ts`; notifications stub `main/services/teacher-notifications.ts`; readiness `main/services/prepare-teacher-mobile.ts` + `main/sync/auto-sync.ts`; cloud RPCs in `supabase/migrations/20260923200000_teacher_mobile_rpcs.sql` + `20261001100000_teacher_mobile_sync_phase_ab.sql`; docs in `docs/teacher-*.md`
 - Auto-update (Windows): `main/updater.ts` + `main/ipc/updater.ts` (`updater:*`); UI `UpdateNotifier` in `AppShell`. Sidebar **Check for updates** (`AppSidebar` → `checkAppUpdate` / `updater:check` with `force: true`) re-prompts after “Later”. **`electron-updater` must stay a runtime dynamic import** (`loadAutoUpdater()` in `main/updater.ts`) — a static import is evaluated with the main chunk and breaks packaged Windows launch. Startup still pins `userData` first via `main/pin-user-data.ts`. Recovery evaluation does not load the updater module graph for native update checks until after the window is ready.
 - Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); table registry `main/sync/tables.ts`; generic apply `main/sync/apply-generic.ts`; PostgREST RPCs `process_sync_operation`, `process_synced_entity`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
-- Teacher / staff cloud Auth: `main/services/cloud-auth.ts` (`provisionStaffAuth`) calls Edge Function `supabase/functions/provision-staff-auth` (anon key); optional local fallback via `SUPABASE_SERVICE_ROLE_KEY`. Hooked from `staff:upsert-teacher`, `staff:upsert-admin`, `staff:import-teachers`, `staff-mgmt:create`, and `system-admin:users-create` / `users-reset-password`. Deploy with `npx supabase functions deploy provision-staff-auth`.
+- Secondary-desk join / Auth bootstrap: `main/services/join-school.ts` (`joinSchoolByCode` via `auth:join-school`) looks up school + registers device + pulls; `main/services/cloud-login.ts` (`signInWithSupabasePassword`) + `main/auth` `login` verify Supabase Auth membership against the joined `school_id`, upsert local profile, and prime offline hash. Wrong-school logins return a clear membership error (not “Invalid email or password”).
+- Teacher / staff cloud Auth: `main/services/cloud-auth.ts` (`provisionStaffAuth`) calls Edge Function `supabase/functions/provision-staff-auth` (anon key); optional local fallback via `SUPABASE_SERVICE_ROLE_KEY`. Hooked from primary `registerAdmin`, `staff:upsert-teacher`, `staff:upsert-admin`, `staff:import-teachers`, `staff-mgmt:create`, and `system-admin:users-create` / `users-reset-password`. Deploy with `npx supabase functions deploy provision-staff-auth`.
 
 ---
 
@@ -836,6 +837,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-08 | **Second-desk bootstrap:** Join school no longer fails with “no user accounts were downloaded.” Join installs the school + device, then login uses Supabase Auth, checks school membership, creates/updates the local profile, and caches a local-only password hash for offline use. User `password_hash` is stripped from sync payloads. |
 | 2026-10-07 | **Sidebar Check for updates:** full-width primary button above the profile footer calls `updater:check` (force) so admins can manually look for app updates; up-to-date / error feedback under the button; available updates still use `UpdateNotifier`. |
 | 2026-10-07 | **Support email:** Contact Sofia Support and recovery mailto use `cherubtech7@gmail.com` (`SUPPORT_EMAIL` in `help-support.ts`). |
 | 2026-10-07 | **Help & Support:** Documentation (`/help/docs`) and Contact Sofia Support (`/help/support`) unlocked in the sidebar — in-app guides plus mailto diagnostics to `cherubtech7@gmail.com`. |

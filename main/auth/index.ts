@@ -3,7 +3,14 @@ import Store from 'electron-store'
 import type { Repositories } from '../db/repositories'
 import type { School, User, UserRole } from '../db/types'
 import { saveSchoolLogo } from '../helpers/save-logo'
+import {
+  isCloudAuthPendingHash,
+  signInWithSupabasePassword,
+  type CloudAuthSignInFn,
+} from '../services/cloud-login'
+import { tryProvisionStaffAuth } from '../services/cloud-auth'
 import { SystemAdminService } from '../services/system-admin'
+import { pullRemoteChanges } from '../sync/pull'
 
 const BCRYPT_ROUNDS = 10
 
@@ -39,6 +46,8 @@ export interface RegisterAdminInput {
 export interface LoginInput {
   email: string
   password: string
+  /** Test seam for Supabase Auth sign-in. */
+  cloudSignIn?: CloudAuthSignInFn
 }
 
 interface AuthResultOk {
@@ -238,6 +247,17 @@ export async function registerAdmin(
     role: 'admin',
   })
 
+  // Provision Supabase Auth so secondary desks can bootstrap online.
+  await tryProvisionStaffAuth({
+    email,
+    password,
+    role: 'admin',
+    schoolId: school.id,
+    schoolName: school.name,
+    displayName: email,
+    resetPassword: true,
+  })
+
   const session: SessionData = {
     userId: user.id,
     email: user.email,
@@ -251,65 +271,101 @@ export async function registerAdmin(
   return { ok: true, user: toSafeUser(user), session }
 }
 
-/** Authenticate with email + password and persist session locally. */
-export async function login(
+function splitDisplayName(displayName: string | null, email: string): {
+  first_name: string
+  last_name: string
+} {
+  const cleaned = (displayName || '').trim()
+  if (!cleaned) {
+    const local = email.split('@')[0] || 'User'
+    return { first_name: local, last_name: '' }
+  }
+  const parts = cleaned.split(/\s+/)
+  return {
+    first_name: parts[0] || cleaned,
+    last_name: parts.slice(1).join(' '),
+  }
+}
+
+/**
+ * After Supabase Auth succeeds, create/update the local profile and cache a
+ * local password hash for offline sign-in on this device only.
+ */
+async function bootstrapLocalUserFromCloudAuth(
   repos: Repositories,
-  input: LoginInput
-): Promise<AuthResult> {
-  const email = input.email.trim().toLowerCase()
-  const password = input.password
-
-  if (!email || !password) {
-    return { ok: false, error: 'Email and password are required.' }
+  input: {
+    schoolId: string
+    email: string
+    password: string
+    authUserId: string
+    role: UserRole
+    staffId: string | null
+    displayName: string | null
   }
+): Promise<User> {
+  const password_hash = await hashPassword(input.password)
+  const names = splitDisplayName(input.displayName, input.email)
 
-  const user = repos.users.findByEmail(email)
-  if (!user) {
-    try {
-      const latest = repos.schools.findLatest()
-      if (latest) {
-        repos.systemAdmin.writeAudit({
-          school_id: latest.id,
-          actor_user_id: null,
-          action: 'auth.login_failed',
-          description: `Failed sign-in for ${email}`,
-          result: 'failure',
-        })
-      }
-    } catch {
-      /* audit table may not exist yet */
+  // Prefer a profile row already pulled via sync (may use a different id).
+  let user = repos.users.findByEmail(input.email)
+  if (user) {
+    const updated = repos.users.update(user.id, {
+      password_hash,
+      role: input.role,
+      staff_id: input.staffId ?? user.staff_id,
+      status: 'active',
+      failed_login_count: 0,
+      locked_until: null,
+      last_login_at: new Date().toISOString(),
+      first_name: user.first_name || names.first_name,
+      last_name: user.last_name || names.last_name,
+    })
+    if (!updated) {
+      throw new Error('Could not update local user profile.')
     }
-    return { ok: false, error: 'Invalid email or password.' }
+    return updated
   }
 
-  const settings = repos.systemAdmin.ensureSettings(user.school_id) as {
-    lockout_attempts: number
-    lockout_minutes: number
+  // Best-effort pull so roles/permissions land before first home screen.
+  try {
+    await pullRemoteChanges({
+      db: repos.schools.getDb(),
+      schoolId: input.schoolId,
+    })
+    user = repos.users.findByEmail(input.email)
+    if (user) {
+      const updated = repos.users.update(user.id, {
+        password_hash,
+        role: input.role,
+        staff_id: input.staffId ?? user.staff_id,
+        status: 'active',
+        failed_login_count: 0,
+        locked_until: null,
+        last_login_at: new Date().toISOString(),
+      })
+      if (updated) return updated
+    }
+  } catch {
+    /* continue with Auth metadata bootstrap */
   }
-  const gate = new SystemAdminService().assertLogin({
-    status: user.status || 'active',
-    locked_until: user.locked_until,
-    failed_count: user.failed_login_count || 0,
-    passwordOk: await verifyPassword(password, user.password_hash),
-    maxAttempts: Number(settings.lockout_attempts) || 5,
-    lockMinutes: Number(settings.lockout_minutes) || 15,
+
+  return repos.users.create({
+    id: input.authUserId,
+    school_id: input.schoolId,
+    email: input.email,
+    password_hash,
+    role: input.role,
+    first_name: names.first_name,
+    last_name: names.last_name,
+    staff_id: input.staffId,
+    status: 'active',
   })
+}
 
-  if (!gate.ok) {
-    repos.systemAdmin.patchUser(user.school_id, user.id, {
-      failed_login_count: gate.failed,
-      locked_until: gate.locked_until,
-    })
-    repos.systemAdmin.writeAudit({
-      school_id: user.school_id,
-      actor_user_id: user.id,
-      action: 'auth.login_failed',
-      description: gate.error,
-      result: 'failure',
-    })
-    return { ok: false, error: gate.error }
-  }
-
+async function finishLocalLogin(
+  repos: Repositories,
+  user: User
+): Promise<AuthResult> {
   repos.systemAdmin.patchUser(user.school_id, user.id, {
     failed_login_count: 0,
     locked_until: null,
@@ -333,8 +389,112 @@ export async function login(
   }
 
   getSessionStore().set('session', session)
-
   return { ok: true, user: toSafeUser(user), session }
+}
+
+/**
+ * Authenticate with email + password.
+ * 1) Local bcrypt when a primed offline hash exists (main desk / after bootstrap).
+ * 2) Otherwise online Supabase Auth → verify school membership → upsert local profile.
+ */
+export async function login(
+  repos: Repositories,
+  input: LoginInput
+): Promise<AuthResult> {
+  const email = input.email.trim().toLowerCase()
+  const password = input.password
+
+  if (!email || !password) {
+    return { ok: false, error: 'Email and password are required.' }
+  }
+
+  const school = repos.schools.findLatest()
+  const existing = repos.users.findByEmail(email)
+
+  // Path A — offline-capable local login (hash already primed on this device).
+  if (existing && !isCloudAuthPendingHash(existing.password_hash)) {
+    const settings = repos.systemAdmin.ensureSettings(existing.school_id) as {
+      lockout_attempts: number
+      lockout_minutes: number
+    }
+    const gate = new SystemAdminService().assertLogin({
+      status: existing.status || 'active',
+      locked_until: existing.locked_until,
+      failed_count: existing.failed_login_count || 0,
+      passwordOk: await verifyPassword(password, existing.password_hash),
+      maxAttempts: Number(settings.lockout_attempts) || 5,
+      lockMinutes: Number(settings.lockout_minutes) || 15,
+    })
+
+    if (!gate.ok) {
+      repos.systemAdmin.patchUser(existing.school_id, existing.id, {
+        failed_login_count: gate.failed,
+        locked_until: gate.locked_until,
+      })
+      repos.systemAdmin.writeAudit({
+        school_id: existing.school_id,
+        actor_user_id: existing.id,
+        action: 'auth.login_failed',
+        description: gate.error,
+        result: 'failure',
+      })
+      return { ok: false, error: gate.error }
+    }
+
+    return finishLocalLogin(repos, existing)
+  }
+
+  // Path B — first-time / secondary desk: Supabase Auth + school membership.
+  if (!school) {
+    return {
+      ok: false,
+      error:
+        'This computer has not been connected to this school yet. Join with your school code first.',
+    }
+  }
+
+  const cloud = await signInWithSupabasePassword({
+    email,
+    password,
+    expectedSchoolId: school.id,
+    signInFn: input.cloudSignIn,
+  })
+
+  if (!cloud.ok) {
+    try {
+      repos.systemAdmin.writeAudit({
+        school_id: school.id,
+        actor_user_id: null,
+        action: 'auth.login_failed',
+        description: `${cloud.code || 'cloud'}: ${cloud.error}`,
+        result: 'failure',
+      })
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, error: cloud.error }
+  }
+
+  try {
+    const user = await bootstrapLocalUserFromCloudAuth(repos, {
+      schoolId: school.id,
+      email: cloud.email,
+      password,
+      authUserId: cloud.authUserId,
+      role: cloud.role,
+      staffId: cloud.staffId,
+      displayName: cloud.displayName,
+    })
+    return finishLocalLogin(repos, user)
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? `Your account was verified, but Sofia could not finish setting up this computer. ${err.message}`
+          : 'Your account was verified, but Sofia could not finish setting up this computer. Please try again.',
+    }
+  }
 }
 
 export function logout(repos?: Repositories): void {

@@ -169,7 +169,7 @@ describe('Generic pull apply', () => {
     expect(localGone).toBeUndefined()
   })
 
-  it('applies users with password_hash via batch transaction', () => {
+  it('applies users via batch transaction without importing password_hash', () => {
     resetDeviceStoreForTests('dddddddd-dddd-dddd-dddd-dddddddddddd')
     const deviceId = getOrCreateDeviceId()
     const now = new Date().toISOString()
@@ -228,7 +228,8 @@ describe('Generic pull apply', () => {
       password_hash: string
     }
     expect(user.email).toBe('bursar@school.test')
-    expect(user.password_hash).toBe('$2a$10$hashed')
+    // Credentials are never pulled from sync — pending until Auth bootstrap.
+    expect(user.password_hash).toBe('!sofia-cloud-auth-pending')
   })
 
   it('merges finance_settings counters with MAX(local, remote)', () => {

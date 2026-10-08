@@ -89,7 +89,9 @@ export default function LoginPage() {
           Log in
         </h2>
         <p className="mt-2 text-sm text-slate-500">
-          Sign in with your school email to continue.
+          Sign in with your school email and password. A new computer needs
+          internet for the first sign-in; after that, offline login works on
+          this device.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8">

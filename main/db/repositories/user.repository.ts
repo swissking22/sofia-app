@@ -9,10 +9,16 @@ export class UserRepository extends BaseRepository<User> {
   }
 
   create(
-    input: Omit<CreateInput<User>, 'role_id'> & { role_id?: string | null }
+    input: Omit<CreateInput<User>, 'role_id'> & {
+      role_id?: string | null
+      /** Optional stable id (e.g. Supabase Auth user id on secondary-desk bootstrap). */
+      id?: string
+    }
   ): User {
+    const base = this.buildBaseFields()
     const record: User = {
-      ...this.buildBaseFields(),
+      ...base,
+      id: input.id?.trim() || base.id,
       school_id: input.school_id,
       email: input.email,
       password_hash: input.password_hash,

@@ -98,6 +98,7 @@ export type JoinSchoolResult =
       schoolCode: string
       usersPulled: number
       applied: number
+      needsSignIn: boolean
     }
   | { ok: false; error: string }
 

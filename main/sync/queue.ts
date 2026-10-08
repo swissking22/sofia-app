@@ -73,6 +73,16 @@ export function enqueueSync(
   operation: SyncOperation,
   payload: Record<string, unknown>
 ): void {
+  // Never put credentials in the outbox / cloud mirror.
+  const safePayload =
+    tableName === 'users'
+      ? (() => {
+          const copy = { ...payload }
+          delete copy.password_hash
+          return copy
+        })()
+      : payload
+
   // Payload must include id + updated_at (full record snapshot)
   const stmt = db.prepare(`
     INSERT INTO sync_queue (
@@ -87,7 +97,7 @@ export function enqueueSync(
     table_name: tableName,
     record_id: recordId,
     operation,
-    payload: JSON.stringify(payload),
+    payload: JSON.stringify(safePayload),
     created_at: new Date().toISOString(),
   })
 }
