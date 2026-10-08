@@ -22,6 +22,12 @@ import type {
 export const DEFAULT_SYNC_BATCH_SIZE = 50
 /** Safety cap: 200 × 50 = 10 000 items per Sync Now. */
 export const DEFAULT_MAX_PUSH_BATCHES = 200
+/**
+ * Max outer pull pages per Sync Now. Each page runs up to 20 inner batches
+ * (see pullRemoteChanges), so default ≈ 50 × 20 × 50 = 50 000 changes.
+ * Must honour pull.hasMore — previously pull always returned false and only
+ * one page ever ran (~1 000 changes), leaving second-desk rosters incomplete.
+ */
 export const DEFAULT_MAX_PULL_BATCHES = 50
 
 function asAssetStorage(client: unknown): AssetStorageClient | null {

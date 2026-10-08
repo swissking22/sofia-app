@@ -606,7 +606,125 @@ describe('Sofia Phase 2: Local Pull Sync Service', () => {
     expect(result.processed).toBe(2)
     expect(result.applied).toBe(2)
     expect(result.newCursor).toBe(82)
+    expect(result.hasMore).toBe(false)
     expect(getLocalSyncCursor(db, schoolId, deviceId)).toBe(82)
+  })
+
+  // 13b. Safety cap must surface hasMore so Join / Sync Now can drain
+  test('13b. returns hasMore=true when maxIterations stops with remote backlog', async () => {
+    let nextId = 100
+    mockClient.pullHandler = async (params) => {
+      const id = nextId++
+      return {
+        ok: true,
+        changes: [
+          {
+            id,
+            school_id: schoolId,
+            table_name: 'students',
+            record_id: `cap-student-${id}`,
+            operation: 'INSERT',
+            version: 1,
+            created_at: new Date().toISOString(),
+            payload: {
+              id: `cap-student-${id}`,
+              school_id: schoolId,
+              name: `Cap ${id}`,
+              class_id: classId,
+              version: 1,
+            },
+          },
+        ],
+        count: 1,
+        currentCursor: params.cursor,
+        newCursor: id,
+        hasMore: true,
+      }
+    }
+
+    const first = await pullRemoteChanges({
+      db,
+      schoolId,
+      deviceId,
+      client: mockClient,
+      maxIterations: 3,
+    })
+    expect(first.ok).toBe(true)
+    expect(first.processed).toBe(3)
+    expect(first.hasMore).toBe(true)
+
+    const second = await pullRemoteChanges({
+      db,
+      schoolId,
+      deviceId,
+      client: mockClient,
+      maxIterations: 2,
+    })
+    expect(second.ok).toBe(true)
+    expect(second.processed).toBe(2)
+    expect(second.hasMore).toBe(true)
+    expect(repos.students.findBySchool(schoolId, 'all').length).toBe(5)
+  })
+
+  // 13c. Worker drain continues while pull reports hasMore
+  test('13c. runSyncWorker keeps pulling while hasMore until backlog clears', async () => {
+    let nextId = 200
+    let remaining = 7
+    mockClient.pullHandler = async (params) => {
+      if (remaining <= 0) {
+        return {
+          ok: true,
+          changes: [],
+          count: 0,
+          currentCursor: params.cursor,
+          newCursor: params.cursor,
+          hasMore: false,
+        }
+      }
+      const id = nextId++
+      remaining -= 1
+      return {
+        ok: true,
+        changes: [
+          {
+            id,
+            school_id: schoolId,
+            table_name: 'students',
+            record_id: `drain-student-${id}`,
+            operation: 'INSERT',
+            version: 1,
+            created_at: new Date().toISOString(),
+            payload: {
+              id: `drain-student-${id}`,
+              school_id: schoolId,
+              name: `Drain ${id}`,
+              class_id: classId,
+              version: 1,
+            },
+          },
+        ],
+        count: 1,
+        currentCursor: params.cursor,
+        newCursor: id,
+        hasMore: remaining > 0,
+      }
+    }
+
+    const workerResult = await runSyncWorker(db, {
+      schoolId,
+      client: mockClient,
+      skipPush: true,
+      batchSize: 1,
+    })
+
+    expect(workerResult.ok).toBe(true)
+    expect(workerResult.pull.applied).toBe(7)
+    expect(workerResult.pull.hasMore).toBe(false)
+    expect(
+      repos.students.findBySchool(schoolId, 'all').filter((s) =>
+        s.id.startsWith('drain-student-')
+      ).length
+    ).toBe(7)
   })
 
   // 14. Integrated sync worker runs push then pull

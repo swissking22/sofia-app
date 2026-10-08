@@ -111,7 +111,14 @@ export async function joinSchoolByCode(
   markDeviceRegisteredForSchool(remote.id)
 
   const db = repos.schools.getDb()
-  const pull = await pullRemoteChanges({
+
+  // Drain remote changes across multiple pull pages. A single pullRemoteChanges
+  // call caps at ~20 batches; large schools (hundreds of students + fees) need
+  // many pages or the bursar desk would show a partial roster after Join.
+  const maxJoinPullPages = 200
+  let pages = 0
+  let totalApplied = 0
+  let pull = await pullRemoteChanges({
     db,
     schoolId: remote.id,
     deviceId,
@@ -125,6 +132,35 @@ export async function joinSchoolByCode(
         pull.message ||
         'Connected to the school but failed to download data. Try again.',
     }
+  }
+
+  totalApplied += pull.applied
+  pages += 1
+
+  while (pull.hasMore && pages < maxJoinPullPages) {
+    pull = await pullRemoteChanges({
+      db,
+      schoolId: remote.id,
+      deviceId,
+      client: syncClient,
+    })
+    if (!pull.ok) {
+      return {
+        ok: false,
+        error:
+          pull.message ||
+          'Connected to the school but failed to download data. Try again.',
+      }
+    }
+    totalApplied += pull.applied
+    pages += 1
+  }
+
+  if (pull.hasMore) {
+    console.warn(
+      `[JOIN] Pull stopped after ${pages} page(s) with more remote changes remaining. ` +
+        `Applied ${totalApplied} so far — run Sync Now after login to finish.`
+    )
   }
 
   // Best-effort branding/photo download (Storage may be empty on first join)
@@ -162,7 +198,7 @@ export async function joinSchoolByCode(
     schoolName: remote.name,
     schoolCode: remote.school_code || remote.short_code || code,
     usersPulled,
-    applied: pull.applied,
+    applied: totalApplied,
     needsSignIn: true,
   }
 }

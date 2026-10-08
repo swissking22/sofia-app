@@ -192,4 +192,48 @@ describe('joinSchoolByCode', () => {
     if (!second.ok) return
     expect(second.schoolId).toBe(client.school.id)
   })
+
+  it('drains multi-page student backlog so join does not leave a partial roster', async () => {
+    const now = new Date().toISOString()
+    const classId = 'class-join-1'
+    client.changes = Array.from({ length: 45 }, (_, i) => {
+      const id = i + 1
+      const studentId = `student-join-${String(id).padStart(3, '0')}`
+      return {
+        id,
+        school_id: client.school.id,
+        table_name: 'students',
+        record_id: studentId,
+        operation: 'INSERT' as const,
+        version: 1,
+        created_at: now,
+        payload: {
+          id: studentId,
+          school_id: client.school.id,
+          name: `Student ${id}`,
+          class_id: classId,
+          status: 'active',
+          created_at: now,
+          updated_at: now,
+          version: 1,
+        },
+      }
+    })
+
+    // Force many pull pages: batch 2 × maxIterations 3 = 6 per page → 8 pages for 45
+    const origPull = client.pullSyncChanges.bind(client)
+    client.pullSyncChanges = async (params) =>
+      origPull({ ...params, limit: 2 })
+
+    // Patch pullRemoteChanges via small batches by wrapping client only —
+    // join uses default maxIterations (20), so with limit 2 that is 40/page.
+    // 45 changes → 2 pages. Assert all students land.
+    const res = await joinSchoolByCode(repos, 'LWM', client)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.applied).toBe(45)
+    expect(
+      repos.students.findBySchool(client.school.id, 'active').length
+    ).toBe(45)
+  })
 })

@@ -451,7 +451,8 @@ export async function pullRemoteChanges(
   let totalFailed = 0
   let hasMore = true
   let iterations = 0
-  const maxIterations = 20 // Safeguard against unbounded batch loops
+  // Cap per call so callers (Join / Sync Now worker) can drain across pages.
+  const maxIterations = options.maxIterations ?? 20
 
   while (hasMore && iterations < maxIterations) {
     iterations += 1
@@ -523,12 +524,19 @@ export async function pullRemoteChanges(
       }
     }
 
-    hasMore = pullRes.hasMore
+    hasMore = Boolean(pullRes.hasMore)
   }
 
-  console.log(
-    `[SYNC] Pull completed: ${totalApplied} applied, ${totalConflicts} conflicts, new cursor: ${currentCursor}`
-  )
+  if (hasMore) {
+    console.warn(
+      `[SYNC] Pull paused at safety cap (${maxIterations} batches, ${totalApplied} applied). ` +
+        `More remote changes remain — continue Join / Sync Now.`
+    )
+  } else {
+    console.log(
+      `[SYNC] Pull completed: ${totalApplied} applied, ${totalConflicts} conflicts, new cursor: ${currentCursor}`
+    )
+  }
 
   return {
     ok: true,
@@ -537,6 +545,6 @@ export async function pullRemoteChanges(
     conflicts: totalConflicts,
     failed: totalFailed,
     newCursor: currentCursor,
-    hasMore: false,
+    hasMore,
   }
 }
