@@ -132,6 +132,12 @@ export interface PullSyncOptions {
   schoolId?: string
   deviceId?: string
   batchSize?: number
+  /**
+   * Max RPC batches inside one `pullRemoteChanges` call (default 20).
+   * When the cap is hit and the cloud still has pages, `hasMore` stays true
+   * so Join / Sync Now can continue draining.
+   */
+  maxIterations?: number
   client?: SupabaseSyncClientInterface
 }
 

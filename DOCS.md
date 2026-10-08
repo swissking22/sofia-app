@@ -135,7 +135,7 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 |------|---------|
 | `/home` | School command center matching the overview layout: greeting + **Sync** (online) + year/term filters; **4 KPI cards** (students, teachers, today’s attendance, monthly revenue / fees); **Student Growth** (attendance trend) + **Financial Overview** charts; Admission requests, Recent Activity, Attendance gauge; right rail with **Sofia Setup Progress** (until complete), **Quick Actions**, and **Attention Alerts**. |
 
-**Data:** Aggregated locally via `dashboard:summary` (`main/services/dashboard.service.ts` + `main/domain/dashboard.ts`). Charts use **recharts**. Teachers KPI counts active teaching staff; pending admissions feed the Admission Request list (admin/secretary). Finance KPIs/trends are admin/secretary only. Empty states are used when attendance/results/fees are missing — never fake 0%. Online Sync calls `backup-sync:sync-now` via `renderer/lib/backup-sync.ts` + `useOnlineStatus` (`renderer/lib/online.ts`).
+**Data:** Aggregated locally via `dashboard:summary` (`main/services/dashboard.service.ts` + `main/domain/dashboard.ts`). Charts use **recharts**. **Students enrolled** counts local active students for the school (not permission-filtered for bursars; teachers with class assignments see only their classes). Teachers KPI counts active teaching staff; pending admissions feed the Admission Request list (admin/secretary). Finance KPIs/trends are admin/secretary only. Empty states are used when attendance/results/fees are missing — never fake 0%. Online Sync calls `backup-sync:sync-now` via `renderer/lib/backup-sync.ts` + `useOnlineStatus` (`renderer/lib/online.ts`).
 
 **Setup checklist:** Unfinished setup steps appear in the right rail until complete.
 
@@ -683,15 +683,15 @@ where school_id = '<school_uuid>' and table_name = 'staff_subjects'
 |-------|----------|
 | Primary desk | One machine should own **finance numbering** day-to-day (bursar). Others may still issue invoices offline; counters merge with MAX on sync — sync soon after busy periods. |
 | How often to Sync Now | At least morning / midday / end of day on every desk; immediately after Join school on a new PC; after bulk imports. |
-| New PC | Install → open **Join existing school** → enter short code → wait for download → log in with a shared account → Sync Now once more for assets. |
+| New PC | Install → open **Join existing school** → enter short code → **wait for the full download** (large schools may take several minutes) → log in with a shared account → Sync Now once more for any leftover pages + assets. Dashboard student counts are **local** — if a new bursar desk shows far fewer than the primary, run Sync Now until the count matches. |
 | Wipe / reinstall | Join again (or restore a local backup). Full pull starts at cursor 0. Photos/logos appear after Storage migration is applied and a desk that has the files has pushed. |
-| Health | Administration → Backup & Sync → **Queue by table** shows pending/failed per domain. Retry failed, then Sync Now. One Sync Now **drains** pending (batched, ~10 000 item cap; click again if more remain). Staff/assignments sync before large finance queues. |
+| Health | Administration → Backup & Sync → **Queue by table** shows pending/failed per domain. Retry failed, then Sync Now. One Sync Now **drains** pending push (~10 000 item cap) and pull pages (~50 000 changes); click again if the UI says more remain. Staff/assignments sync before large finance queues. |
 
 **How to add a table:** (1) add to `GENERIC_SYNC_TABLES` + column list in `main/sync/tables.ts`, (2) add name to `process_synced_entity` allow-list migration, (3) unit-test pull apply, (4) document here.
 
 **Code paths:** registry `main/sync/tables.ts`; generic pull `main/sync/apply-generic.ts`; outbox allowlist `main/sync/queue.ts` (`SUPPORTED_SYNC_TABLES`); client routes generic tables to RPC `process_synced_entity` (`main/sync/supabase-client.ts`); cloud migration `supabase/migrations/20260917080000_multi_desk_synced_entities.sql` (`public.synced_entities`).
 
-**Ops:** Primary desk completes Setup → creates users/roles → **Sync Now**. Secondary desks: open **Join existing school** (`/join`), enter school short code, wait for download, then **Log in** with shared accounts. Cloud RPC: `lookup_school_by_code`.
+**Ops:** Primary desk completes Setup → creates users/roles → **Sync Now** (students must be in the cloud before a second desk can download them). Secondary desks: open **Join existing school** (`/join`), enter school short code, wait for the full download, then **Log in** with shared accounts (including Bursar). Enrollment KPIs are a local `students` count (`status = 'active'`) — not role-filtered for bursars. Cloud RPC: `lookup_school_by_code`.
 
 - **Migrations**:
   - `supabase/migrations/20260907092153_init_cloud_sync_schema.sql` (schema foundation)
@@ -766,12 +766,13 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
      - **No echo loop**: pulled changes are applied directly to local SQLite tables with `sync_status = 'synced'` and **never enqueued into `sync_queue`**.
      - **Atomic cursor advancement**: advances local SQLite `sync_cursors.last_synced_change_id` in the **same transaction**. If any mutation fails, the entire batch rolls back and the cursor remains unchanged.
    - Upon successful local transaction commit, acknowledges cursor to Supabase via `public.update_sync_cursor` RPC.
-   - Automatically paginates multi-batch backlogs until `hasMore` is false.
+   - Automatically paginates multi-batch backlogs inside one call (default 20 batches). When the per-call safety cap is hit and the cloud still has pages, **`hasMore` stays `true`** so Join / Sync Now can continue draining (do not treat a capped pull as complete).
 2. **Server-Side RPCs (`supabase/migrations/20260907100737_add_pull_sync_rpcs.sql`)**:
    - `public.pull_sync_changes(p_school_id, p_device_id, p_cursor, p_limit)`: `SECURITY DEFINER` function querying `public.sync_changes` strictly for the authorized `p_school_id` with `id > p_cursor`, returning aggregated changes JSON, counts, and `new_cursor`.
    - `public.update_sync_cursor(p_school_id, p_device_id, p_cursor)`: `SECURITY DEFINER` function upserting `public.sync_cursors` with `GREATEST(last_synced_change_id, p_cursor)`.
 3. **Two-Way Sync Coordination (`main/sync/worker.ts` - `runSyncWorker()`)**:
    - Runs Push phase first (`pushPendingSync()`), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters (`processed`, `successful`, `failed`, `conflicts`). Allows granular options (`skipPush`, `skipPull`).
+   - Pull phase loops while `pull.hasMore` (default up to 50 outer pages). Join school (`main/services/join-school.ts`) drains the same way (up to 200 pages) so a second desk does not stop after the first ~2 000 changes.
    - Wired seamlessly into existing IPC handlers (`backup-sync:sync-now`, `system-admin:sync-now`).
 
 ---
@@ -837,6 +838,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-08 | **Second-desk student undercount:** `pullRemoteChanges` no longer always returns `hasMore: false` after its per-call batch cap — Sync Now and Join keep draining remaining cloud pages. Fixes bursar/second-desk dashboards that showed far fewer than the real active roster (e.g. dozens instead of 468). |
 | 2026-10-08 | **Release 1.0.2:** bumped `package.json` to **1.0.2** and tagged `v1.0.2` for Windows GitHub Release publish (includes second-desk Auth bootstrap, sync conflict resolve, and role permission repair). |
 | 2026-10-08 | **Role dashboard / RBAC:** every seeded system role (Principal, Vice Principal, Teacher, Bursar, Secretary, Registrar, Read Only, …) re-syncs catalog permissions on `ensureDefaults`; empty custom roles that match a seed name are repaired; custom roles cannot be saved with zero permissions; dashboard no longer crashes with “Finance settings not found”; creating a user on a zero-permission role is rejected. |
 | 2026-10-08 | **Second-desk bootstrap:** Join school no longer fails with “no user accounts were downloaded.” Join installs the school + device, then login uses Supabase Auth, checks school membership, creates/updates the local profile, and caches a local-only password hash for offline use. User `password_hash` is stripped from sync payloads. |
