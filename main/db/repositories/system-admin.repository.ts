@@ -10,6 +10,7 @@ import {
   queueStatsByTable,
   retryFailed,
 } from '../../sync/queue'
+import { applyConflictResolution } from '../../sync/resolve-conflict'
 import {
   DEFAULT_CURRENCY,
   DEFAULT_TIMEZONE,
@@ -621,7 +622,10 @@ export class SystemAdminRepository {
   listConflicts(schoolId: string) {
     return this.db
       .prepare(
-        `SELECT * FROM sync_conflicts WHERE school_id = ? ORDER BY created_at DESC LIMIT 100`
+        `SELECT * FROM sync_conflicts
+         WHERE school_id = ? AND status = 'open'
+         ORDER BY created_at DESC
+         LIMIT 100`
       )
       .all(schoolId)
   }
@@ -632,15 +636,12 @@ export class SystemAdminRepository {
     resolution: 'local' | 'remote',
     userId: string | null
   ) {
-    const row = this.db
-      .prepare(`SELECT * FROM sync_conflicts WHERE id = ? AND school_id = ? AND status = 'open'`)
-      .get(id, schoolId) as { id: string } | undefined
-    if (!row) throw new Error('Conflict not found or already resolved.')
-    this.db
-      .prepare(
-        `UPDATE sync_conflicts SET status = 'resolved', resolution = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`
-      )
-      .run(resolution, userId, new Date().toISOString(), id)
+    return applyConflictResolution(this.db, {
+      schoolId,
+      conflictId: id,
+      resolution,
+      userId,
+    })
   }
 
   retryFailedSync(ids?: string[]): number {

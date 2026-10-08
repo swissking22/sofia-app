@@ -815,15 +815,23 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         return { ok: false, error: 'Access denied.' }
       }
       return wrap(() => {
-        admin().resolveConflict(sid(repos, s), input.id, input.resolution, s.userId)
+        const resolved = admin().resolveConflict(
+          sid(repos, s),
+          input.id,
+          input.resolution,
+          s.userId
+        )
         admin().writeAudit({
           school_id: sid(repos, s),
           actor_user_id: s.userId,
           action: 'sync.conflict_resolve',
           entity_id: input.id,
-          after: { resolution: input.resolution },
+          after: {
+            resolution: input.resolution,
+            resolvedCount: resolved.resolvedCount,
+          },
         })
-        return { id: input.id }
+        return resolved
       }, 'Could not resolve conflict.')
     }
   )
