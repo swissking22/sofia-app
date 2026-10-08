@@ -56,6 +56,7 @@ export default function AdminBackupSyncPage() {
   const [restoring, setRestoring] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
   const [retrying, setRetrying] = React.useState(false);
+  const [resolvingId, setResolvingId] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     const [b, s, p] = await Promise.all([
@@ -155,6 +156,37 @@ export default function AdminBackupSyncPage() {
       setError("Could not retry failed items.");
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function handleResolveConflict(
+    conflictId: string,
+    resolution: "local" | "remote",
+  ) {
+    if (resolvingId || syncBusy) return;
+    setResolvingId(conflictId);
+    setError("");
+    setSuccess("");
+    try {
+      const r = await resolveAdminConflict(conflictId, resolution);
+      if (r.ok) {
+        const count = Number(
+          (r.data as { resolvedCount?: number } | undefined)?.resolvedCount ?? 1,
+        );
+        setSuccess(
+          resolution === "local"
+            ? `Kept local for ${count} conflict(s). Run Sync Now to push.`
+            : `Kept remote for ${count} conflict(s). Local outbox for that record was abandoned.`,
+        );
+        await load();
+      } else {
+        setError(r.error);
+        await load();
+      }
+    } catch {
+      setError("Could not resolve conflict.");
+    } finally {
+      setResolvingId(null);
     }
   }
 
@@ -398,37 +430,41 @@ export default function AdminBackupSyncPage() {
           </StudentTable>
           {conflicts.length ? (
             <div className="mt-6">
-              <h3 className="mb-2 text-sm font-semibold">Conflicts</h3>
-              {conflicts.map((c) => (
-                <div
-                  key={String(c.id)}
-                  className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"
-                >
-                  <p>
-                    {String(c.table_name)} · {String(c.record_id)}
-                  </p>
-                  <div className="mt-2 flex gap-2">
-                    <SecondaryButton
-                      onClick={() =>
-                        void resolveAdminConflict(String(c.id), "local").then(
-                          () => load(),
-                        )
-                      }
-                    >
-                      Keep local
-                    </SecondaryButton>
-                    <SecondaryButton
-                      onClick={() =>
-                        void resolveAdminConflict(String(c.id), "remote").then(
-                          () => load(),
-                        )
-                      }
-                    >
-                      Keep remote
-                    </SecondaryButton>
+              <h3 className="mb-2 text-sm font-semibold">
+                Conflicts ({conflicts.length} open)
+              </h3>
+              {conflicts.map((c) => {
+                const conflictId = String(c.id);
+                const busy = resolvingId === conflictId;
+                return (
+                  <div
+                    key={conflictId}
+                    className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm"
+                  >
+                    <p>
+                      {String(c.table_name)} · {String(c.record_id)}
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      <SecondaryButton
+                        disabled={Boolean(resolvingId) || syncBusy}
+                        onClick={() =>
+                          void handleResolveConflict(conflictId, "local")
+                        }
+                      >
+                        {busy ? "Saving…" : "Keep local"}
+                      </SecondaryButton>
+                      <SecondaryButton
+                        disabled={Boolean(resolvingId) || syncBusy}
+                        onClick={() =>
+                          void handleResolveConflict(conflictId, "remote")
+                        }
+                      >
+                        {busy ? "Saving…" : "Keep remote"}
+                      </SecondaryButton>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <p className="mt-4 text-sm text-slate-500">
