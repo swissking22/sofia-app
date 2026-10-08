@@ -3,6 +3,7 @@
  * Never re-enqueues into sync_queue (echo-loop prevention).
  */
 import type { Database } from 'better-sqlite3'
+import { CLOUD_AUTH_PENDING_HASH } from '../services/cloud-login'
 import { recordSyncConflict } from './queue'
 import {
   GENERIC_TABLE_COLUMNS,
@@ -330,6 +331,16 @@ function upsertRow(
           : existingRow?.status != null
             ? String(existingRow.status)
             : 'active'
+      continue
+    }
+    // Auth passwords are never synced. Keep a local hash if present; otherwise
+    // mark the row as awaiting online bootstrap (see cloud-login).
+    if (col === 'password_hash' && table === 'users') {
+      values.password_hash =
+        existingRow?.password_hash != null &&
+        String(existingRow.password_hash).length > 0
+          ? existingRow.password_hash
+          : CLOUD_AUTH_PENDING_HASH
       continue
     }
     // Prevent sequence counter back-sliding across desks

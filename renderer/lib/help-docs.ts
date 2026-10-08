@@ -67,14 +67,15 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         type: "steps",
         items: [
-          "On the primary desk, sync users (Administration → Backup & Sync → Sync Now).",
+          "On the primary desk, create the school admin (and run Sync Now so school data is in the cloud).",
           "On the new computer, choose Join existing school and enter the school short code.",
-          "Sign in with a shared desktop account (admin or secretary).",
+          "Sign in online with your school email and password (same account as the main computer).",
+          "After that first sign-in, this computer can use offline login.",
         ],
       },
       {
         type: "tip",
-        text: "The secondary desk needs network access for the first download. After that, work continues offline.",
+        text: "A new computer needs internet for the first sign-in. Passwords are checked with Supabase Auth and are never copied between desks through sync.",
       },
     ],
   },

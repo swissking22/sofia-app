@@ -287,6 +287,11 @@ export async function pushPendingSync(
       payload.school_id = schoolId
     }
 
+    // Never push credentials — even for historical outbox rows.
+    if (item.table_name === 'users' && 'password_hash' in payload) {
+      delete payload.password_hash
+    }
+
     // 5. Send operation to Supabase RPC
     let response = await client.processSyncOperation({
       id: item.id,

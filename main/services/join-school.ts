@@ -1,5 +1,7 @@
 /**
  * Secondary-desk onboarding: look up school by code, install tenant locally, pull.
+ * Does not require user rows to already exist in sync — first login bootstraps via
+ * Supabase Auth (see auth/login + cloud-login).
  */
 import type { Repositories } from '../db/repositories'
 import {
@@ -20,6 +22,7 @@ export type JoinSchoolResult =
       schoolCode: string
       usersPulled: number
       applied: number
+      needsSignIn: boolean
     }
   | { ok: false; error: string }
 
@@ -40,14 +43,6 @@ export async function joinSchoolByCode(
     }
   }
 
-  if (repos.schools.findLatest()) {
-    return {
-      ok: false,
-      error:
-        'This device already has a school. Finish registration or log in.',
-    }
-  }
-
   const syncClient = client || getSupabaseSyncClient()
   if (!syncClient.lookupSchoolByCode) {
     return {
@@ -65,24 +60,36 @@ export async function joinSchoolByCode(
   }
 
   const remote = lookup.school
-  try {
-    repos.schools.insertJoinedSchool({
-      id: remote.id,
-      name: remote.name,
-      email: remote.email,
-      phone: remote.phone,
-      address: remote.address,
-      school_code: remote.school_code,
-      short_code: remote.short_code,
-      version: remote.version,
-    })
-  } catch (err) {
-    return {
-      ok: false,
-      error:
-        err instanceof Error
-          ? err.message
-          : 'Could not create local school record.',
+  const existingSchool = repos.schools.findLatest()
+  if (existingSchool) {
+    if (existingSchool.id !== remote.id) {
+      return {
+        ok: false,
+        error:
+          'This device already has a different school. Finish registration or clear the app data before joining another school.',
+      }
+    }
+    // Same school left from a previous join attempt — continue pull + finish.
+  } else {
+    try {
+      repos.schools.insertJoinedSchool({
+        id: remote.id,
+        name: remote.name,
+        email: remote.email,
+        phone: remote.phone,
+        address: remote.address,
+        school_code: remote.school_code,
+        short_code: remote.short_code,
+        version: remote.version,
+      })
+    } catch (err) {
+      return {
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Could not create local school record.',
+      }
     }
   }
 
@@ -142,13 +149,6 @@ export async function joinSchoolByCode(
   }
 
   const usersPulled = repos.users.findAll().length
-  if (usersPulled === 0) {
-    return {
-      ok: false,
-      error:
-        'School found, but no user accounts were downloaded yet. On the main office computer, open Administration → Backup & Sync and run Sync Now, then try joining again.',
-    }
-  }
 
   try {
     repos.setupSteps.completeAllSteps()
@@ -163,5 +163,6 @@ export async function joinSchoolByCode(
     schoolCode: remote.school_code || remote.short_code || code,
     usersPulled,
     applied: pull.applied,
+    needsSignIn: true,
   }
 }

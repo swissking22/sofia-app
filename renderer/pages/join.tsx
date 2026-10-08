@@ -117,9 +117,8 @@ export default function JoinSchoolPage() {
 
           {success ? (
             <div className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              Joined <strong>{success.schoolName}</strong>. Downloaded{" "}
-              {success.usersPulled} account
-              {success.usersPulled === 1 ? "" : "s"}. Opening log in…
+              School found. Sign in to connect this computer to{" "}
+              <strong>{success.schoolName}</strong>.
             </div>
           ) : null}
 
@@ -134,10 +133,10 @@ export default function JoinSchoolPage() {
           />
 
           <p className="mb-4 text-xs leading-relaxed text-slate-500">
-            Ask the main office for the school short code. That computer must
-            have run <span className="font-medium">Sync Now</span> at least once
-            so your accounts are in the cloud. After joining, Sync Now again to
-            pull logos and student photos when available.
+            Ask the main office for the school short code. After joining, sign
+            in with your school email and password (same credentials as the main
+            computer). Internet is required for this first sign-in on a new
+            computer.
           </p>
 
           <button

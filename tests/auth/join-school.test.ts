@@ -113,7 +113,7 @@ describe('joinSchoolByCode', () => {
     if (!res.ok) expect(res.error).toMatch(/already has user/i)
   })
 
-  it('looks up school, pulls users, and completes setup', async () => {
+  it('looks up school, pulls users when present, and completes setup', async () => {
     const now = new Date().toISOString()
     client.changes = [
       {
@@ -146,7 +146,6 @@ describe('joinSchoolByCode', () => {
           id: 'user-remote',
           school_id: client.school.id,
           email: 'bursar@lwm.test',
-          password_hash: '$2a$10$abc',
           role: 'secretary',
           role_id: 'role-1',
           first_name: 'Bea',
@@ -164,6 +163,7 @@ describe('joinSchoolByCode', () => {
     if (!res.ok) return
     expect(res.schoolName).toBe('Light World Mission')
     expect(res.usersPulled).toBe(1)
+    expect(res.needsSignIn).toBe(true)
 
     const localSchool = repos.schools.findById(client.school.id)
     expect(localSchool?.name).toBe('Light World Mission')
@@ -171,10 +171,25 @@ describe('joinSchoolByCode', () => {
     expect(repos.users.findAll()[0].email).toBe('bursar@lwm.test')
   })
 
-  it('fails clearly when cloud has no users yet', async () => {
+  it('succeeds when cloud has no user rows yet (sign-in bootstraps Auth)', async () => {
     client.changes = []
     const res = await joinSchoolByCode(repos, 'LWM', client)
-    expect(res.ok).toBe(false)
-    if (!res.ok) expect(res.error).toMatch(/no user accounts/i)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.usersPulled).toBe(0)
+    expect(res.needsSignIn).toBe(true)
+    expect(repos.schools.findById(client.school.id)?.id).toBe(client.school.id)
+    expect(repos.users.findAll()).toHaveLength(0)
+  })
+
+  it('resumes join when the same school was already installed locally', async () => {
+    client.changes = []
+    const first = await joinSchoolByCode(repos, 'LWM', client)
+    expect(first.ok).toBe(true)
+
+    const second = await joinSchoolByCode(repos, 'LWM', client)
+    expect(second.ok).toBe(true)
+    if (!second.ok) return
+    expect(second.schoolId).toBe(client.school.id)
   })
 })
