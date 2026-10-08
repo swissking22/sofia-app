@@ -109,7 +109,9 @@ export function applyPulledChangesTransaction(
           .get(recordId) as Record<string, any> | undefined
 
         if (existingStudent) {
-          const localVersion = Number(existingStudent.version) || 1
+          // Preserve version 0 (finance-pull FK stubs) so the real student row can overwrite.
+          const parsedLocal = Number(existingStudent.version)
+          const localVersion = Number.isFinite(parsedLocal) ? parsedLocal : 1
           const pendingOutbox = db
             .prepare(`SELECT id FROM sync_queue WHERE record_id = ? AND status = 'pending'`)
             .get(recordId)

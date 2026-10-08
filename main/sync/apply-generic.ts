@@ -32,9 +32,33 @@ function omittedColumnDefault(
     validity_months: 12,
     is_system: 0,
     is_active: 1,
-    is_mandatory: 0,
+    is_mandatory: table === 'fee_structure_lines' ? 1 : 0,
     is_adjustment: 0,
     is_recurring: 0,
+    sort_order: 0,
+    // Finance packages / lines — older payloads may omit these NOT NULL cols
+    applies_to_residence: 'all',
+    frequency: 'termly',
+    late_fee_mode: 'none',
+    late_fee_value: 0,
+    amount: 0,
+    billing_period: '',
+    issue_date: new Date().toISOString().slice(0, 10),
+    subtotal: 0,
+    discount_total: 0,
+    net_payable: 0,
+    amount_paid: 0,
+    balance: 0,
+    currency: 'XAF',
+    payment_methods: '[]',
+    receipt_prefix: 'RCP',
+    invoice_prefix: 'INV',
+    payment_prefix: 'PAY',
+    expense_prefix: 'EXP',
+    receipt_next_number: 1,
+    invoice_next_number: 1,
+    payment_next_number: 1,
+    expense_next_number: 1,
     header_text: '',
     footer_text: '',
     body_text: '',
@@ -48,11 +72,13 @@ function omittedColumnDefault(
     signatory_role: 'principal',
     card_kind: 'new',
     status:
-      table === 'student_id_cards' || table === 'issued_documents'
-        ? 'generated'
-        : table === 'student_id_card_templates'
-          ? 'draft'
-          : undefined,
+      table === 'invoices'
+        ? 'pending'
+        : table === 'student_id_cards' || table === 'issued_documents'
+          ? 'generated'
+          : table === 'student_id_card_templates'
+            ? 'draft'
+            : undefined,
     front_layout: 'classic',
     back_layout: 'info',
     orientation: 'landscape',
@@ -242,6 +268,342 @@ function remapPermissionIdentity(
   db.prepare(`DELETE FROM role_permissions WHERE permission_id = ?`).run(local.id)
   db.prepare(`DELETE FROM permissions WHERE id = ?`).run(local.id)
   return rps.map((r) => ({ ...r, permission_id: remoteId }))
+}
+
+function rowExists(db: Database, table: string, id: string): boolean {
+  if (!id) return false
+  try {
+    return Boolean(db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(id))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Cloud sync_changes has no cross-table FKs. Local SQLite does — a fee structure
+ * or invoice arriving before its academic year / student used to abort the whole
+ * pull batch and freeze the cursor, so bursar desks never saw finance data.
+ * Create minimal placeholder parents (same idea as student→class stubs).
+ */
+function ensureReferencedParents(
+  db: Database,
+  table: GenericSyncTable,
+  payload: Record<string, unknown>,
+  schoolId: string
+): void {
+  const now = new Date().toISOString()
+  const today = now.slice(0, 10)
+
+  const ensureAcademicYear = (yearId: string | null | undefined) => {
+    if (!yearId || rowExists(db, 'academic_years', yearId)) return
+    try {
+      db.prepare(
+        `INSERT INTO academic_years (
+           id, school_id, name, start_date, end_date, is_current,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, 'synced', 0)`
+      ).run(
+        yearId,
+        schoolId,
+        'Year ' + String(yearId).slice(0, 8),
+        today,
+        today,
+        now,
+        now
+      )
+    } catch {
+      /* concurrent stub or missing table in tests */
+    }
+  }
+
+  const ensureAcademicTerm = (termId: string | null | undefined, yearId: string | null | undefined) => {
+    if (!termId || rowExists(db, 'academic_terms', termId)) return
+    const parentYear = yearId || `year-for-${termId}`
+    ensureAcademicYear(parentYear)
+    try {
+      db.prepare(
+        `INSERT INTO academic_terms (
+           id, academic_year_id, name, term_number, start_date, end_date,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, 'synced', 0)`
+      ).run(termId, parentYear, 'Term ' + String(termId).slice(0, 8), today, today, now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureAcademicLevel = (levelId: string | null | undefined) => {
+    if (!levelId || rowExists(db, 'academic_levels', levelId)) return
+    try {
+      db.prepare(
+        `INSERT INTO academic_levels (
+           id, school_id, name, short_name, category, is_active, sort_order,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 'L', 'lower_secondary', 1, 1, ?, ?, 'synced', 0)`
+      ).run(levelId, schoolId, 'Level ' + String(levelId).slice(0, 8), now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureClass = (classId: string | null | undefined) => {
+    if (!classId || rowExists(db, 'classes', classId)) return
+    try {
+      db.prepare(
+        `INSERT INTO classes (
+           id, name, school_id, is_active, created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 1, ?, ?, 'synced', 0)`
+      ).run(classId, 'Class ' + String(classId).slice(0, 8), schoolId, now, now)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureFeeCategory = (categoryId: string | null | undefined) => {
+    if (!categoryId || rowExists(db, 'fee_categories', categoryId)) return
+    try {
+      db.prepare(
+        `INSERT INTO fee_categories (
+           id, school_id, name, category_key, is_system, is_active, sort_order,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, 0, 1, 0, ?, ?, 'synced', 0)`
+      ).run(
+        categoryId,
+        schoolId,
+        'Category ' + String(categoryId).slice(0, 8),
+        'cat_' + String(categoryId).slice(0, 8),
+        now,
+        now
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureFeeStructure = (structureId: string | null | undefined) => {
+    if (!structureId || rowExists(db, 'fee_structures', structureId)) return
+    const yearId =
+      (payload.academic_year_id != null && String(payload.academic_year_id)) ||
+      `year-for-${structureId}`
+    ensureAcademicYear(yearId)
+    try {
+      db.prepare(
+        `INSERT INTO fee_structures (
+           id, school_id, name, academic_year_id, is_active, applies_to_residence,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, 1, 'all', ?, ?, 'synced', 0)`
+      ).run(
+        structureId,
+        schoolId,
+        'Structure ' + String(structureId).slice(0, 8),
+        yearId,
+        now,
+        now
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureStudent = (studentId: string | null | undefined) => {
+    if (!studentId || rowExists(db, 'students', studentId)) return
+    const classId =
+      (payload.class_id != null && String(payload.class_id)) ||
+      `class-for-${studentId}`
+    ensureClass(classId)
+    try {
+      db.prepare(
+        `INSERT INTO students (
+           id, name, class_id, school_id, status,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, 'active', ?, ?, 'synced', 0)`
+      ).run(
+        studentId,
+        'Student ' + String(studentId).slice(0, 8),
+        classId,
+        schoolId,
+        now,
+        now
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensureInvoice = (invoiceId: string | null | undefined) => {
+    if (!invoiceId || rowExists(db, 'invoices', invoiceId)) return
+    const studentId =
+      (payload.student_id != null && String(payload.student_id)) ||
+      `student-for-${invoiceId}`
+    ensureStudent(studentId)
+    try {
+      db.prepare(
+        `INSERT INTO invoices (
+           id, school_id, student_id, invoice_number, issue_date, status,
+           subtotal, discount_total, net_payable, amount_paid, balance,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, ?, 'pending', 0, 0, 0, 0, 0, ?, ?, 'synced', 0)`
+      ).run(
+        invoiceId,
+        schoolId,
+        studentId,
+        'INV-PENDING',
+        today,
+        now,
+        now
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensurePayment = (paymentId: string | null | undefined) => {
+    if (!paymentId || rowExists(db, 'payments', paymentId)) return
+    const studentId =
+      (payload.student_id != null && String(payload.student_id)) ||
+      `student-for-${paymentId}`
+    const invoiceId =
+      (payload.invoice_id != null && String(payload.invoice_id)) ||
+      `invoice-for-${paymentId}`
+    ensureStudent(studentId)
+    ensureInvoice(invoiceId)
+    try {
+      db.prepare(
+        `INSERT INTO payments (
+           id, school_id, student_id, invoice_id, payment_number, amount, method, paid_at,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, ?, 0, 'cash', ?, ?, ?, 'synced', 0)`
+      ).run(
+        paymentId,
+        schoolId,
+        studentId,
+        invoiceId,
+        'PAY-PENDING',
+        now,
+        now,
+        now
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+
+  switch (table) {
+    case 'academic_terms':
+      ensureAcademicYear(
+        payload.academic_year_id != null
+          ? String(payload.academic_year_id)
+          : null
+      )
+      break
+    case 'fee_structures':
+      ensureAcademicYear(
+        payload.academic_year_id != null
+          ? String(payload.academic_year_id)
+          : null
+      )
+      ensureAcademicTerm(
+        payload.academic_term_id != null
+          ? String(payload.academic_term_id)
+          : null,
+        payload.academic_year_id != null
+          ? String(payload.academic_year_id)
+          : null
+      )
+      ensureAcademicLevel(
+        payload.academic_level_id != null
+          ? String(payload.academic_level_id)
+          : null
+      )
+      ensureClass(
+        payload.class_id != null ? String(payload.class_id) : null
+      )
+      break
+    case 'fee_structure_lines':
+      ensureFeeStructure(
+        payload.fee_structure_id != null
+          ? String(payload.fee_structure_id)
+          : null
+      )
+      ensureFeeCategory(
+        payload.fee_category_id != null
+          ? String(payload.fee_category_id)
+          : null
+      )
+      break
+    case 'fee_amounts':
+      ensureAcademicLevel(
+        payload.academic_level_id != null
+          ? String(payload.academic_level_id)
+          : null
+      )
+      ensureFeeCategory(
+        payload.fee_category_id != null
+          ? String(payload.fee_category_id)
+          : null
+      )
+      break
+    case 'fee_discounts':
+      ensureAcademicYear(
+        payload.academic_year_id != null
+          ? String(payload.academic_year_id)
+          : null
+      )
+      break
+    case 'student_fee_discounts':
+      ensureStudent(
+        payload.student_id != null ? String(payload.student_id) : null
+      )
+      break
+    case 'invoices':
+      ensureStudent(
+        payload.student_id != null ? String(payload.student_id) : null
+      )
+      ensureAcademicYear(
+        payload.academic_year_id != null
+          ? String(payload.academic_year_id)
+          : null
+      )
+      ensureFeeStructure(
+        payload.fee_structure_id != null
+          ? String(payload.fee_structure_id)
+          : null
+      )
+      break
+    case 'invoice_lines':
+      ensureInvoice(
+        payload.invoice_id != null ? String(payload.invoice_id) : null
+      )
+      ensureFeeCategory(
+        payload.fee_category_id != null
+          ? String(payload.fee_category_id)
+          : null
+      )
+      break
+    case 'payments':
+      ensureStudent(
+        payload.student_id != null ? String(payload.student_id) : null
+      )
+      ensureInvoice(
+        payload.invoice_id != null ? String(payload.invoice_id) : null
+      )
+      break
+    case 'receipts':
+      ensurePayment(
+        payload.payment_id != null ? String(payload.payment_id) : null
+      )
+      ensureStudent(
+        payload.student_id != null ? String(payload.student_id) : null
+      )
+      break
+    case 'student_credits':
+      ensureStudent(
+        payload.student_id != null ? String(payload.student_id) : null
+      )
+      break
+    default:
+      break
+  }
 }
 
 function upsertRow(
@@ -473,12 +835,16 @@ export function applyGenericPulledChange(
       return 'skipped'
     }
 
-    const localVersion = Number(existing.version) || 1
+    // Preserve version 0 (pull FK stubs). `Number(0) || 1` would wrongly treat stubs as v1
+    // and skip the real cloud row when it arrives with version 1.
+    const parsedLocal = Number(existing.version)
+    const localVersion = Number.isFinite(parsedLocal) ? parsedLocal : 1
     // Tables without a local version column (e.g. profile versions) always apply
     const hasLocalVersion = Object.prototype.hasOwnProperty.call(existing, 'version')
     if (hasLocalVersion && remoteVersion < localVersion) return 'skipped'
     if (hasLocalVersion && remoteVersion === localVersion) {
       if (change.operation === 'DELETE' && !existing.deleted_at) {
+        ensureReferencedParents(db, table, payload, schoolId)
         upsertRow(db, table, payload, remoteVersion, 'DELETE')
         return 'applied'
       }
@@ -498,14 +864,17 @@ export function applyGenericPulledChange(
         localJson: JSON.stringify(existing),
         remoteJson: JSON.stringify(payload),
       })
+      ensureReferencedParents(db, table, payload, schoolId)
       upsertRow(db, table, payload, remoteVersion, change.operation)
       return 'conflict'
     }
 
+    ensureReferencedParents(db, table, payload, schoolId)
     upsertRow(db, table, payload, remoteVersion, change.operation)
     return 'applied'
   }
 
+  ensureReferencedParents(db, table, payload, schoolId)
   upsertRow(db, table, payload, remoteVersion, change.operation)
   return 'applied'
 }

@@ -747,4 +747,306 @@ describe('Generic pull apply', () => {
       .get() as { c: number }
     expect(queued.c).toBe(0)
   })
+
+  it('applies fee_structures when academic_year is missing locally (FK stub)', () => {
+    const now = new Date().toISOString()
+    const result = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'fee_structures',
+        record_id: 'fs-orphan-1',
+        operation: 'INSERT',
+        version: 1,
+        payload: {
+          id: 'fs-orphan-1',
+          school_id: schoolId,
+          name: 'Form 1 Day Fees',
+          academic_year_id: 'year-not-yet-local',
+          is_active: 1,
+          // omits applies_to_residence — must default, not NULL-fail
+          created_at: now,
+          updated_at: now,
+          version: 1,
+        },
+      },
+      schoolId
+    )
+    expect(result).toBe('applied')
+    const row = db
+      .prepare(
+        `SELECT name, academic_year_id, applies_to_residence FROM fee_structures WHERE id = ?`
+      )
+      .get('fs-orphan-1') as {
+      name: string
+      academic_year_id: string
+      applies_to_residence: string
+    }
+    expect(row.name).toBe('Form 1 Day Fees')
+    expect(row.academic_year_id).toBe('year-not-yet-local')
+    expect(row.applies_to_residence).toBe('all')
+    expect(
+      db.prepare(`SELECT 1 FROM academic_years WHERE id = ?`).get('year-not-yet-local')
+    ).toBeTruthy()
+  })
+
+  it('applies invoices when student is missing locally (FK stub)', () => {
+    const now = new Date().toISOString()
+    const inv = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'invoices',
+        record_id: 'inv-orphan-1',
+        operation: 'INSERT',
+        version: 1,
+        payload: {
+          id: 'inv-orphan-1',
+          school_id: schoolId,
+          student_id: 'stu-not-yet-local',
+          invoice_number: 'INV-0099',
+          issue_date: '2026-10-01',
+          status: 'pending',
+          subtotal: 50000,
+          discount_total: 0,
+          net_payable: 50000,
+          amount_paid: 0,
+          balance: 50000,
+          created_at: now,
+          updated_at: now,
+          version: 1,
+        },
+      },
+      schoolId
+    )
+    expect(inv).toBe('applied')
+    expect(
+      db.prepare(`SELECT invoice_number FROM invoices WHERE id = ?`).get('inv-orphan-1')
+    ).toEqual({ invoice_number: 'INV-0099' })
+    const stub = db
+      .prepare(`SELECT name, version FROM students WHERE id = ?`)
+      .get('stu-not-yet-local') as { name: string; version: number }
+    expect(stub.version).toBe(0)
+    expect(stub.name).toMatch(/^Student /)
+  })
+
+  it('applies fee_structure_lines before parent structure without aborting', () => {
+    const now = new Date().toISOString()
+    const line = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'fee_structure_lines',
+        record_id: 'fsl-1',
+        operation: 'INSERT',
+        version: 1,
+        payload: {
+          id: 'fsl-1',
+          school_id: schoolId,
+          fee_structure_id: 'fs-later',
+          name: 'Tuition',
+          amount: 100000,
+          frequency: 'termly',
+          created_at: now,
+          updated_at: now,
+          version: 1,
+        },
+      },
+      schoolId
+    )
+    expect(line).toBe('applied')
+
+    const structure = applyGenericPulledChange(
+      db,
+      {
+        table_name: 'fee_structures',
+        record_id: 'fs-later',
+        operation: 'INSERT',
+        version: 1,
+        payload: {
+          id: 'fs-later',
+          school_id: schoolId,
+          name: 'Real Structure',
+          academic_year_id: 'year-fs-later',
+          is_active: 1,
+          applies_to_residence: 'day',
+          created_at: now,
+          updated_at: now,
+          version: 1,
+        },
+      },
+      schoolId
+    )
+    expect(structure).toBe('applied')
+    const row = db
+      .prepare(`SELECT name, applies_to_residence, version FROM fee_structures WHERE id = ?`)
+      .get('fs-later') as {
+      name: string
+      applies_to_residence: string
+      version: number
+    }
+    expect(row.name).toBe('Real Structure')
+    expect(row.applies_to_residence).toBe('day')
+    expect(row.version).toBe(1)
+  })
+
+  it('overwrites version-0 student stub when the real student change arrives', () => {
+    const now = new Date().toISOString()
+    const deviceId = getOrCreateDeviceId()
+    // Invoice first → creates student stub at version 0
+    applyPulledChangesTransaction(
+      db,
+      [
+        {
+          id: 601,
+          school_id: schoolId,
+          table_name: 'invoices',
+          record_id: 'inv-stub-stu',
+          operation: 'INSERT',
+          version: 1,
+          created_at: now,
+          payload: {
+            id: 'inv-stub-stu',
+            school_id: schoolId,
+            student_id: 'stu-real-later',
+            invoice_number: 'INV-0200',
+            issue_date: '2026-10-01',
+            status: 'pending',
+            subtotal: 1000,
+            discount_total: 0,
+            net_payable: 1000,
+            amount_paid: 0,
+            balance: 1000,
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+      ],
+      schoolId,
+      deviceId,
+      601
+    )
+    expect(
+      (db.prepare(`SELECT version FROM students WHERE id = ?`).get('stu-real-later') as { version: number })
+        .version
+    ).toBe(0)
+
+    applyPulledChangesTransaction(
+      db,
+      [
+        {
+          id: 602,
+          school_id: schoolId,
+          table_name: 'students',
+          record_id: 'stu-real-later',
+          operation: 'INSERT',
+          version: 1,
+          created_at: now,
+          payload: {
+            id: 'stu-real-later',
+            school_id: schoolId,
+            name: 'Ada Lovelace',
+            class_id: 'class-ada',
+            status: 'active',
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+      ],
+      schoolId,
+      deviceId,
+      602
+    )
+    const student = db
+      .prepare(`SELECT name, version FROM students WHERE id = ?`)
+      .get('stu-real-later') as { name: string; version: number }
+    expect(student.name).toBe('Ada Lovelace')
+    expect(student.version).toBe(1)
+  })
+
+  it('keeps a mixed finance pull batch applying when parents arrive out of order', () => {
+    const now = new Date().toISOString()
+    const deviceId = getOrCreateDeviceId()
+    const tx = applyPulledChangesTransaction(
+      db,
+      [
+        {
+          id: 501,
+          school_id: schoolId,
+          table_name: 'invoice_lines',
+          record_id: 'il-1',
+          operation: 'INSERT',
+          version: 1,
+          created_at: now,
+          payload: {
+            id: 'il-1',
+            school_id: schoolId,
+            invoice_id: 'inv-batch-1',
+            description: 'Tuition',
+            amount: 25000,
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        {
+          id: 502,
+          school_id: schoolId,
+          table_name: 'invoices',
+          record_id: 'inv-batch-1',
+          operation: 'INSERT',
+          version: 1,
+          created_at: now,
+          payload: {
+            id: 'inv-batch-1',
+            school_id: schoolId,
+            student_id: 'stu-batch-1',
+            invoice_number: 'INV-0100',
+            issue_date: '2026-10-01',
+            status: 'pending',
+            subtotal: 25000,
+            discount_total: 0,
+            net_payable: 25000,
+            amount_paid: 0,
+            balance: 25000,
+            fee_structure_id: 'fs-batch-1',
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+        {
+          id: 503,
+          school_id: schoolId,
+          table_name: 'fee_structures',
+          record_id: 'fs-batch-1',
+          operation: 'INSERT',
+          version: 1,
+          created_at: now,
+          payload: {
+            id: 'fs-batch-1',
+            school_id: schoolId,
+            name: 'Batch Structure',
+            academic_year_id: 'year-batch-1',
+            is_active: 1,
+            created_at: now,
+            updated_at: now,
+            version: 1,
+          },
+        },
+      ],
+      schoolId,
+      deviceId,
+      503
+    )
+    expect(tx.applied).toBeGreaterThanOrEqual(3)
+    expect(
+      db.prepare(`SELECT name FROM fee_structures WHERE id = ?`).get('fs-batch-1')
+    ).toEqual({ name: 'Batch Structure' })
+    expect(
+      db.prepare(`SELECT invoice_number FROM invoices WHERE id = ?`).get('inv-batch-1')
+    ).toEqual({ invoice_number: 'INV-0100' })
+    expect(
+      db.prepare(`SELECT description FROM invoice_lines WHERE id = ?`).get('il-1')
+    ).toEqual({ description: 'Tuition' })
+  })
 })

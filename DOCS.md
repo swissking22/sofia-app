@@ -602,7 +602,7 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 
 **Not yet synced as files:** expense receipts, bank deposit scans, ID-card template art embedded only as JSON, arbitrary student document attachments (path strings may sync; bytes not mirrored yet).
 
-**Finance notes:** Invoice/receipt/payment/expense **numbers** travel with their rows (immutable after issue). Sequence counters on `finance_settings` never move backward when desks sync.
+**Finance notes:** Invoice/receipt/payment/expense **numbers** travel with their rows (immutable after issue). Sequence counters on `finance_settings` never move backward when desks sync. Push priority sends fee catalogs/structures (priority 8) before invoices/lines (9) and payments/receipts (10). On pull, missing local FK parents (`academic_years`, `students`, parent `fee_structures` / `invoices`, etc.) get temporary version-0 stubs so a bursar desk is not stuck when cloud pages arrive out of order — real rows overwrite the stubs when they land.
 
 **Academics notes:** Result-run status never regresses (`draft` → `computed` → `published` → `locked`). Locked runs ignore remote DELETE. Child score/attendance rows without a local `school_id` column still sync (push attaches tenant id in the cloud payload).
 
@@ -838,6 +838,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-08 | **Finance pull FK hardening:** second-desk pull no longer aborts when fee structures/invoices arrive before their academic year or student — generic apply creates version-0 parent stubs; fee catalogs push ahead of invoices. Fixes bursar desks that never received structures/invoices from the primary. |
 | 2026-10-08 | **Release 1.0.3:** bumped `package.json` to **1.0.3** and tagged `v1.0.3` for Windows GitHub Release publish (includes second-desk pull drain fix so Join/Sync Now finish downloading large student/fee backlogs). |
 | 2026-10-08 | **Second-desk student undercount:** `pullRemoteChanges` no longer always returns `hasMore: false` after its per-call batch cap — Sync Now and Join keep draining remaining cloud pages. Fixes bursar/second-desk dashboards that showed far fewer than the real active roster (e.g. dozens instead of 468). |
 | 2026-10-08 | **Release 1.0.2:** bumped `package.json` to **1.0.2** and tagged `v1.0.2` for Windows GitHub Release publish (includes second-desk Auth bootstrap, sync conflict resolve, and role permission repair). |

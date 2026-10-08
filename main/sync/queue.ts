@@ -39,6 +39,18 @@ const SYNC_PRIORITY_CASE = `
     WHEN 'ca_assessments' THEN 6
     WHEN 'ca_scores' THEN 6
     WHEN 'announcements' THEN 7
+    WHEN 'finance_settings' THEN 8
+    WHEN 'fee_categories' THEN 8
+    WHEN 'fee_amounts' THEN 8
+    WHEN 'fee_structures' THEN 8
+    WHEN 'fee_structure_lines' THEN 8
+    WHEN 'fee_discounts' THEN 8
+    WHEN 'student_fee_discounts' THEN 9
+    WHEN 'invoices' THEN 9
+    WHEN 'invoice_lines' THEN 9
+    WHEN 'payments' THEN 10
+    WHEN 'receipts' THEN 10
+    WHEN 'student_credits' THEN 10
     ELSE 40
   END
 `
