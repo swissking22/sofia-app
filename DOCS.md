@@ -838,6 +838,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-08 | **Release 1.0.3:** bumped `package.json` to **1.0.3** and tagged `v1.0.3` for Windows GitHub Release publish (includes second-desk pull drain fix so Join/Sync Now finish downloading large student/fee backlogs). |
 | 2026-10-08 | **Second-desk student undercount:** `pullRemoteChanges` no longer always returns `hasMore: false` after its per-call batch cap — Sync Now and Join keep draining remaining cloud pages. Fixes bursar/second-desk dashboards that showed far fewer than the real active roster (e.g. dozens instead of 468). |
 | 2026-10-08 | **Release 1.0.2:** bumped `package.json` to **1.0.2** and tagged `v1.0.2` for Windows GitHub Release publish (includes second-desk Auth bootstrap, sync conflict resolve, and role permission repair). |
 | 2026-10-08 | **Role dashboard / RBAC:** every seeded system role (Principal, Vice Principal, Teacher, Bursar, Secretary, Registrar, Read Only, …) re-syncs catalog permissions on `ensureDefaults`; empty custom roles that match a seed name are repaired; custom roles cannot be saved with zero permissions; dashboard no longer crashes with “Finance settings not found”; creating a user on a zero-permission role is rejected. |
