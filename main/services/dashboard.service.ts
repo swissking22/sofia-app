@@ -246,8 +246,17 @@ export function buildDashboardSummary(
   const periodTo = term?.end_date ?? yearRow?.end_date ?? today
   const contextTermId = allTerms ? 'all' : termId
 
-  const currency =
-    (schoolId && repos.financeMgmt.getSettings(schoolId)?.currency) || 'XAF'
+  let currency = 'XAF'
+  if (schoolId) {
+    try {
+      // Auto-create finance_settings when setup never ran / second desk has not
+      // pulled them yet — dashboard must not hard-fail for bursars.
+      repos.finance.ensureDefaults(schoolId)
+      currency = repos.financeMgmt.getSettings(schoolId).currency || 'XAF'
+    } catch {
+      currency = 'XAF'
+    }
+  }
 
   // Teacher scope: limit to assigned classes when available
   let teacherClassIds: Set<string> | null = null

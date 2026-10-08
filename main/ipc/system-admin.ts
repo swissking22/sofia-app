@@ -126,8 +126,16 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         return { ok: false, error: 'Access denied.' }
       }
       const schoolId = sid(repos, s)
+      repos.roles.ensureDefaults(schoolId)
       const role = repos.roles.getDetail(input.role_id)
       if (!role || role.school_id !== schoolId) return { ok: false, error: 'Role not found.' }
+      if (!role.permission_names.length) {
+        return {
+          ok: false,
+          error:
+            'That role has no permissions assigned. Open Roles, grant the needed access (or use the system Bursar role), then try again.',
+        }
+      }
       const settings = admin().ensureSettings(schoolId) as {
         password_min_length: number
         password_require_upper: number
