@@ -16,16 +16,23 @@ import type {
   LateFeeMode,
   LedgerEntry,
   Payment,
+  PaymentAllocation,
   PaymentMethod,
   Receipt,
   ResidenceApplies,
   StudentCredit,
 } from '../types'
 import {
+  aggregateFeeLineSituation,
+  computeInvoiceLineBalances,
+  fifoPaymentAllocations,
+  normalizePaymentLineAllocations,
   padNum,
   resolveInvoiceStatus as invoiceStatus,
   round2,
   todayIso,
+  type InvoiceLineBalance,
+  type NormalizedPaymentAllocation,
 } from '../../domain/finance'
 import {
   feeStructureMismatch,
@@ -625,6 +632,59 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
 
   getInvoice(id: string): Invoice | undefined {
     return this.findById(id)
+  }
+
+  getPaymentAllocations(paymentId: string): PaymentAllocation[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM payment_allocations
+         WHERE payment_id = ? AND deleted_at IS NULL
+         ORDER BY created_at ASC, id ASC`
+      )
+      .all(paymentId) as PaymentAllocation[]
+  }
+
+  getInvoiceLineBalances(invoiceId: string): InvoiceLineBalance[] {
+    const lines = this.getInvoiceLines(invoiceId)
+    const invoice = this.getInvoice(invoiceId)
+    if (!invoice) return []
+    const payments = this.listPayments(invoice.school_id).filter(
+      (p) => p.invoice_id === invoiceId
+    )
+    payments.sort((a, b) => {
+      if (a.paid_at !== b.paid_at) return a.paid_at < b.paid_at ? -1 : 1
+      return a.created_at < b.created_at ? -1 : 1
+    })
+    return computeInvoiceLineBalances(
+      lines.map((l) => ({
+        id: l.id,
+        description: l.description,
+        amount: l.amount,
+      })),
+      payments.map((p) => ({
+        amount: round2(Number(p.amount) || 0),
+        allocations: this.getPaymentAllocations(p.id).map((a) => ({
+          invoice_line_id: a.invoice_line_id,
+          amount: a.amount,
+        })),
+      }))
+    )
+  }
+
+  /** Fee-line billed / paid / remaining for a student across all invoices. */
+  getStudentFeeSituation(schoolId: string, studentId: string) {
+    const invoices = this.listInvoices(schoolId, { studentId }).filter(
+      (i) => i.status !== 'cancelled'
+    )
+    const balances: InvoiceLineBalance[] = []
+    for (const inv of invoices) {
+      balances.push(...this.getInvoiceLineBalances(inv.id))
+    }
+    const fee_lines = aggregateFeeLineSituation(balances)
+    const billed = round2(fee_lines.reduce((s, l) => s + l.charged, 0))
+    const paid = round2(fee_lines.reduce((s, l) => s + l.paid, 0))
+    const remaining = round2(fee_lines.reduce((s, l) => s + l.remaining, 0))
+    return { fee_lines, billed, paid, remaining }
   }
 
   getInvoiceLines(invoiceId: string): InvoiceLine[] {
@@ -1241,6 +1301,8 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
     paid_at?: string | null
     notes?: string | null
     use_credit?: boolean
+    /** Cashier-selected fee lines; FIFO when omitted. */
+    allocations?: Array<{ invoice_line_id: string; amount: number }> | null
     userId: string | null
   }): { payment: Payment; receipt: Receipt } {
     const invoice = this.getInvoice(input.invoice_id)
@@ -1280,6 +1342,33 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
     const applied = round2(fromCash + credit_applied)
     if (applied <= 0 && overpay <= 0) {
       throw new Error('Nothing to apply.')
+    }
+
+    const invoiceLines = this.getInvoiceLines(invoice.id)
+    const lineBalances = this.getInvoiceLineBalances(invoice.id)
+    const remainingByLineId: Record<string, number> = {}
+    for (const bal of lineBalances) {
+      remainingByLineId[bal.id] = bal.remaining
+    }
+
+    let normalizedAllocations: NormalizedPaymentAllocation[] = []
+    if (applied > 0 && invoiceLines.length > 0) {
+      const allocInput = {
+        lines: invoiceLines.map((l) => ({
+          id: l.id,
+          description: l.description,
+          amount: l.amount,
+        })),
+        remainingByLineId,
+        appliedAmount: applied,
+      }
+      normalizedAllocations =
+        input.allocations && input.allocations.length > 0
+          ? normalizePaymentLineAllocations({
+              ...allocInput,
+              allocations: input.allocations,
+            })
+          : fifoPaymentAllocations(allocInput)
     }
 
     const payment_number = this.bumpCounter(input.school_id, 'payment')
@@ -1324,6 +1413,35 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
         'INSERT',
         payment as unknown as Record<string, unknown>
       )
+
+      for (const alloc of normalizedAllocations) {
+        const row: PaymentAllocation = {
+          ...this.buildBaseFields(),
+          school_id: input.school_id,
+          payment_id: payment.id,
+          invoice_line_id: alloc.invoice_line_id,
+          description: alloc.description,
+          amount: alloc.amount,
+        }
+        this.db
+          .prepare(
+            `INSERT INTO payment_allocations (
+               id, school_id, payment_id, invoice_line_id, description, amount,
+               created_at, updated_at, deleted_at, sync_status, version
+             ) VALUES (
+               @id, @school_id, @payment_id, @invoice_line_id, @description, @amount,
+               @created_at, @updated_at, @deleted_at, @sync_status, @version
+             )`
+          )
+          .run(row)
+        enqueueSync(
+          this.db,
+          'payment_allocations',
+          row.id,
+          'INSERT',
+          row as unknown as Record<string, unknown>
+        )
+      }
 
       if (credit_applied > 0) {
         this.consumeCredit(

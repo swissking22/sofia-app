@@ -1,7 +1,11 @@
 import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
 import { enqueueSync } from '../../sync/queue'
-import { round2 } from '../../domain/finance'
+import {
+  allocatePaymentToLines,
+  aggregateNamedAmounts,
+  round2,
+} from '../../domain/finance'
 import {
   EXPENSE_TO_BUDGET_KEY,
   remainingAmount as budgetRemaining,
@@ -298,9 +302,13 @@ export class ReportsRepository {
       expenses,
       todayIso()
     )
+    const revenue = revenueBreakdowns(schoolId, payments)
     return {
       summary,
-      revenue: revenueBreakdowns(schoolId, payments),
+      revenue: {
+        ...revenue,
+        by_fee_line: this.feeLineCollections(schoolId, filters),
+      },
       expenses: expenseBreakdowns(schoolId, expenses),
       outstanding_by_class: this.outstandingByClass(invoices),
       outstanding_by_student: this.outstandingByStudent(invoices),
@@ -632,6 +640,117 @@ export class ReportsRepository {
           'to',
         ])
       ) as InvoiceFact[]
+  }
+
+  /**
+   * Collections by invoice fee-line description (Tuition, PTA, …).
+   * Uses payment_allocations when present; otherwise FIFO across invoice lines.
+   */
+  private feeLineCollections(
+    schoolId: string,
+    filters: ReportFilters
+  ): Array<{ name: string; amount: number }> {
+    const params = this.filterParams(schoolId, filters, [
+      'academic_year_id',
+      'term_id',
+      'class_id',
+      'from',
+      'to',
+      'payment_method',
+    ])
+    if (filters.fee_type) params.push(filters.fee_type, filters.fee_type)
+
+    const filterSql = `
+           ${filters.academic_year_id ? 'AND i.academic_year_id = ?' : ''}
+           ${filters.term_id ? 'AND i.academic_term_id = ?' : ''}
+           ${filters.class_id ? 'AND st.class_id = ?' : ''}
+           ${filters.from ? 'AND p.paid_at >= ?' : ''}
+           ${filters.to ? 'AND p.paid_at <= ?' : ''}
+           ${filters.payment_method ? 'AND p.method = ?' : ''}
+           ${filters.fee_type ? 'AND (fc.category_key = ? OR fc.id = ?)' : ''}`
+
+    const fromStored = this.db
+      .prepare(
+        `SELECT pa.description AS name, SUM(pa.amount) AS amount
+         FROM payment_allocations pa
+         JOIN payments p ON p.id = pa.payment_id AND p.deleted_at IS NULL
+         JOIN invoices i ON i.id = p.invoice_id
+         JOIN students st ON st.id = p.student_id
+         LEFT JOIN invoice_lines il ON il.id = pa.invoice_line_id
+         LEFT JOIN fee_categories fc ON fc.id = il.fee_category_id
+         WHERE pa.school_id = ? AND pa.deleted_at IS NULL
+           ${filterSql}
+         GROUP BY pa.description`
+      )
+      .all(...params) as Array<{ name: string; amount: number }>
+
+    const unallocatedPayments = this.db
+      .prepare(
+        `SELECT p.id, p.amount, p.invoice_id
+         FROM payments p
+         JOIN invoices i ON i.id = p.invoice_id
+         JOIN students st ON st.id = p.student_id
+         LEFT JOIN invoice_lines il0 ON il0.invoice_id = i.id AND il0.deleted_at IS NULL AND il0.is_adjustment = 0
+         LEFT JOIN fee_categories fc ON fc.id = il0.fee_category_id
+         WHERE p.school_id = ? AND p.deleted_at IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM payment_allocations pa
+             WHERE pa.payment_id = p.id AND pa.deleted_at IS NULL
+           )
+           ${filterSql}
+         GROUP BY p.id`
+      )
+      .all(...params) as Array<{ id: string; amount: number; invoice_id: string }>
+
+    const fifoRows: Array<{ name: string; amount: number }> = []
+    for (const payment of unallocatedPayments) {
+      const lines = this.db
+        .prepare(
+          `SELECT description, amount FROM invoice_lines
+           WHERE invoice_id = ? AND deleted_at IS NULL
+           ORDER BY sort_order ASC`
+        )
+        .all(payment.invoice_id) as Array<{ description: string; amount: number }>
+      const priorPaid = Number(
+        (
+          this.db
+            .prepare(
+              `SELECT IFNULL(SUM(amount), 0) AS total FROM payments
+               WHERE invoice_id = ? AND deleted_at IS NULL AND id != ?
+                 AND (
+                   paid_at < (SELECT paid_at FROM payments WHERE id = ?)
+                   OR (
+                     paid_at = (SELECT paid_at FROM payments WHERE id = ?)
+                     AND created_at < (SELECT created_at FROM payments WHERE id = ?)
+                   )
+                 )`
+            )
+            .get(
+              payment.invoice_id,
+              payment.id,
+              payment.id,
+              payment.id,
+              payment.id
+            ) as { total: number }
+        )?.total || 0
+      )
+      for (const line of allocatePaymentToLines(
+        lines,
+        Number(payment.amount) || 0,
+        priorPaid
+      )) {
+        if (line.paid <= 0) continue
+        fifoRows.push({ name: line.description, amount: line.paid })
+      }
+    }
+
+    return aggregateNamedAmounts([
+      ...fromStored.map((r) => ({
+        name: r.name || 'Other',
+        amount: Number(r.amount) || 0,
+      })),
+      ...fifoRows,
+    ])
   }
 
   private loadPayments(schoolId: string, filters: ReportFilters): PaymentFact[] {

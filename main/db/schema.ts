@@ -2217,6 +2217,23 @@ function migrateFinanceManagementTables(db: Database.Database): void {
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
     );
 
+    CREATE TABLE IF NOT EXISTS payment_allocations (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      payment_id TEXT NOT NULL,
+      invoice_line_id TEXT NOT NULL,
+      description TEXT NOT NULL,
+      amount REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (payment_id) REFERENCES payments(id),
+      FOREIGN KEY (invoice_line_id) REFERENCES invoice_lines(id)
+    );
+
     CREATE TABLE IF NOT EXISTS receipts (
       id TEXT PRIMARY KEY NOT NULL,
       school_id TEXT NOT NULL,
@@ -2334,6 +2351,8 @@ function migrateFinanceManagementTables(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice ON invoice_lines(invoice_id);
     CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id);
     CREATE INDEX IF NOT EXISTS idx_payments_student ON payments(student_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_allocations_payment ON payment_allocations(payment_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_allocations_line ON payment_allocations(invoice_line_id);
     CREATE INDEX IF NOT EXISTS idx_receipts_school ON receipts(school_id);
     CREATE INDEX IF NOT EXISTS idx_student_credits_student ON student_credits(student_id);
     CREATE INDEX IF NOT EXISTS idx_expenses_school ON expenses(school_id, expense_date);

@@ -222,6 +222,10 @@ export interface InvoiceLineDto {
   amount: number;
   is_adjustment: number;
   fee_category_id: string | null;
+  /** Amount already allocated to this line from prior payments. */
+  paid?: number;
+  /** Remaining due on this fee line. */
+  remaining?: number;
 }
 
 export interface InvoiceDetailDto extends InvoiceDto {
@@ -242,6 +246,8 @@ export interface PaymentDto {
   credit_applied: number;
   student_name?: string;
   invoice_number?: string | null;
+  /** Fee lines covered by this payment (for list/export). */
+  paid_for?: string | null;
 }
 
 export interface ReceiptDto {
@@ -337,11 +343,24 @@ export interface FinanceReportDto {
   payment_count: number;
 }
 
+export interface StudentFeeLineSituation {
+  description: string;
+  charged: number;
+  paid: number;
+  remaining: number;
+}
+
 export interface StudentFinanceSummary {
   invoices: InvoiceDto[];
   payments: PaymentDto[];
   credit_balance: number;
   outstanding: number;
+  /** Total billed across fee lines (non-cancelled invoices). */
+  billed?: number;
+  /** Total paid toward fee lines. */
+  paid?: number;
+  /** Per fee-line billed / paid / remaining. */
+  fee_lines?: StudentFeeLineSituation[];
 }
 
 export const FREQUENCY_LABELS: Record<FeeFrequency, string> = {
@@ -595,6 +614,7 @@ export async function recordPayment(input: {
   paid_at?: string | null;
   notes?: string | null;
   use_credit?: boolean;
+  allocations?: Array<{ invoice_line_id: string; amount: number }> | null;
 }): Promise<Result<{ payment: PaymentDto; receipt: ReceiptDto }>> {
   return (await window.ipc.invoke(
     "finance-mgmt:payments-record",

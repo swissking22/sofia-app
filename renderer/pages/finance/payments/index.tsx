@@ -30,12 +30,14 @@ import { formatDisplayDateTime } from "../../../lib/date-format";
 import {
   PAYMENT_METHOD_LABELS,
   fetchFinanceMeta,
+  fetchInvoice,
   fetchInvoices,
   fetchPayments,
   formatMoney,
   recordPayment,
   type FinanceMeta,
   type InvoiceDto,
+  type InvoiceLineDto,
   type PaymentDto,
   type PaymentMethod,
 } from "../../../lib/finance-mgmt";
@@ -67,6 +69,12 @@ export default function PaymentsPage() {
   const [reference, setReference] = React.useState("");
   const [useCredit, setUseCredit] = React.useState(false);
   const [lastReceiptId, setLastReceiptId] = React.useState<string | null>(null);
+  const [invoiceLines, setInvoiceLines] = React.useState<InvoiceLineDto[]>([]);
+  const [lineSelections, setLineSelections] = React.useState<
+    Record<string, { selected: boolean; amount: string }>
+  >({});
+  const [linesLoading, setLinesLoading] = React.useState(false);
+  const [creditBalance, setCreditBalance] = React.useState(0);
   const studentSearchRef = React.useRef<HTMLDivElement | null>(null);
 
   const canManage = meta?.can_manage ?? false;
@@ -83,8 +91,6 @@ export default function PaymentsPage() {
   const openOnline = onlineTxns.filter(
     (t) => t.status === "pending" || t.status === "processing",
   );
-
-  const selectedInvoice = outstanding.find((i) => i.id === invoiceId);
 
   const studentsWithBalance = React.useMemo(() => {
     const byId = new Map<
@@ -151,6 +157,12 @@ export default function PaymentsPage() {
       .join(" ");
   }
 
+  function clearLineSelections() {
+    setInvoiceLines([]);
+    setLineSelections({});
+    setCreditBalance(0);
+  }
+
   function pickStudent(s: {
     id: string;
     name: string;
@@ -162,6 +174,7 @@ export default function PaymentsPage() {
     setStudentMenuOpen(false);
     setInvoiceId("");
     setAmount("");
+    clearLineSelections();
   }
 
   function clearStudentSelection() {
@@ -169,7 +182,23 @@ export default function PaymentsPage() {
     setStudentQuery("");
     setInvoiceId("");
     setAmount("");
+    clearLineSelections();
   }
+
+  const selectedLineTotal = React.useMemo(() => {
+    let total = 0;
+    for (const line of invoiceLines) {
+      const sel = lineSelections[line.id];
+      if (!sel?.selected) continue;
+      total += Number(sel.amount) || 0;
+    }
+    return Math.round(total * 100) / 100;
+  }, [invoiceLines, lineSelections]);
+
+  const payableLines = React.useMemo(
+    () => invoiceLines.filter((l) => (l.remaining ?? l.amount ?? 0) > 0.009),
+    [invoiceLines],
+  );
 
   React.useEffect(() => {
     if (!open && !onlineOpen) return;
@@ -235,6 +264,7 @@ export default function PaymentsPage() {
         "Student",
         "Invoice #",
         "Amount",
+        "Paid for",
         "Method",
         "Date",
         "Reference",
@@ -245,6 +275,7 @@ export default function PaymentsPage() {
           `"${p.student_name || ""}"`,
           `"${p.invoice_number || ""}"`,
           p.amount,
+          `"${(p.paid_for || "").replace(/"/g, '""')}"`,
           `"${PAYMENT_METHOD_LABELS[p.method] ?? p.method}"`,
           `"${formatDisplayDateTime(p.paid_at, "")}"`,
           `"${p.reference || ""}"`,
@@ -296,32 +327,145 @@ export default function PaymentsPage() {
   }, [load]);
 
   React.useEffect(() => {
-    if (selectedInvoice) {
-      setAmount(String(selectedInvoice.balance));
+    if (!invoiceId || !open) {
+      clearLineSelections();
+      return;
     }
-  }, [selectedInvoice]);
+    let cancelled = false;
+    setLinesLoading(true);
+    void fetchInvoice(invoiceId).then((res) => {
+      if (cancelled) return;
+      setLinesLoading(false);
+      if (!res.ok) {
+        setError(res.error);
+        clearLineSelections();
+        return;
+      }
+      const lines = res.data.lines ?? [];
+      setInvoiceLines(lines);
+      setCreditBalance(Number(res.data.credit_balance) || 0);
+      const next: Record<string, { selected: boolean; amount: string }> = {};
+      let total = 0;
+      for (const line of lines) {
+        const remaining =
+          Math.round((line.remaining ?? line.amount ?? 0) * 100) / 100;
+        const selected = remaining > 0;
+        next[line.id] = {
+          selected,
+          amount: selected ? String(remaining) : "0",
+        };
+        if (selected) total += remaining;
+      }
+      setLineSelections(next);
+      setAmount(total > 0 ? String(Math.round(total * 100) / 100) : "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [invoiceId, open]);
+
+  React.useEffect(() => {
+    if (!open || !invoiceId || payableLines.length === 0) return;
+    const creditApplied = useCredit
+      ? Math.min(creditBalance, selectedLineTotal)
+      : 0;
+    const cashNeeded =
+      Math.round((selectedLineTotal - creditApplied) * 100) / 100;
+    setAmount(
+      cashNeeded > 0 ? String(cashNeeded) : selectedLineTotal > 0 ? "0" : "",
+    );
+  }, [
+    selectedLineTotal,
+    open,
+    invoiceId,
+    payableLines.length,
+    useCredit,
+    creditBalance,
+  ]);
+
+  function toggleFeeLine(lineId: string, remaining: number) {
+    setLineSelections((prev) => {
+      const current = prev[lineId];
+      const selected = !(current?.selected ?? false);
+      return {
+        ...prev,
+        [lineId]: {
+          selected,
+          amount: selected
+            ? current?.amount && Number(current.amount) > 0
+              ? current.amount
+              : String(remaining)
+            : "0",
+        },
+      };
+    });
+  }
+
+  function setFeeLineAmount(lineId: string, value: string) {
+    setLineSelections((prev) => ({
+      ...prev,
+      [lineId]: {
+        selected: true,
+        amount: value,
+      },
+    }));
+  }
 
   async function handleRecord(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setSuccess("");
     setLastReceiptId(null);
-    if (!invoiceId || !amount || Number(amount) <= 0) {
+    if (!invoiceId) {
       setError(
         !studentId
           ? "Select a student from the search suggestions."
-          : "Select an invoice and enter a positive amount.",
+          : "Select an invoice.",
       );
       return;
     }
+    const allocations = payableLines
+      .map((line) => {
+        const sel = lineSelections[line.id];
+        if (!sel?.selected) return null;
+        const lineAmount = Number(sel.amount) || 0;
+        if (lineAmount <= 0) return null;
+        return { invoice_line_id: line.id, amount: lineAmount };
+      })
+      .filter(Boolean) as Array<{ invoice_line_id: string; amount: number }>;
+
+    if (payableLines.length > 0 && allocations.length === 0) {
+      setError("Select at least one fee line being paid for.");
+      return;
+    }
+
+    const allocSum =
+      Math.round(allocations.reduce((s, a) => s + a.amount, 0) * 100) / 100;
+    const creditApplied = useCredit
+      ? Math.min(creditBalance, allocSum || Number(amount) || 0)
+      : 0;
+    const cashAmount =
+      allocations.length > 0
+        ? Math.round(Math.max(0, allocSum - creditApplied) * 100) / 100
+        : Number(amount);
+
+    if (
+      cashAmount <= 0 &&
+      !(useCredit && (allocSum > 0 || creditApplied > 0))
+    ) {
+      setError("Enter a positive amount or use student credit.");
+      return;
+    }
+
     setBusy(true);
     try {
       const res = await recordPayment({
         invoice_id: invoiceId,
-        amount: Number(amount),
+        amount: cashAmount > 0 ? cashAmount : useCredit ? 0 : Number(amount),
         method,
         reference: reference.trim() || null,
         use_credit: useCredit,
+        allocations: allocations.length ? allocations : null,
       });
       if (!res.ok) {
         setError(res.error);
@@ -576,6 +720,7 @@ export default function PaymentsPage() {
           "Student",
           "Invoice",
           "Amount",
+          "Paid for",
           "Method",
           "Date",
           "Reference",
@@ -583,7 +728,7 @@ export default function PaymentsPage() {
         loading={loading}
       >
         {payments.length === 0 ? (
-          <EmptyRow colSpan={8} message="No payments recorded." />
+          <EmptyRow colSpan={9} message="No payments recorded." />
         ) : (
           payments.map((p) => (
             <tr
@@ -608,6 +753,12 @@ export default function PaymentsPage() {
               </td>
               <td className="px-4 py-3 font-medium">
                 {formatMoney(p.amount, currency)}
+              </td>
+              <td
+                className="max-w-48 truncate px-4 py-3 text-slate-600"
+                title={p.paid_for || undefined}
+              >
+                {p.paid_for || "—"}
               </td>
               <td className="px-4 py-3 text-slate-600">
                 {PAYMENT_METHOD_LABELS[p.method] ?? p.method}
@@ -641,7 +792,7 @@ export default function PaymentsPage() {
       <FormModal
         open={open}
         title="Record payment"
-        subtitle="Apply payment against an outstanding invoice."
+        subtitle="Choose which fee lines this payment covers, then record it."
         onClose={() => setOpen(false)}
         footer={
           <div className="flex gap-2">
@@ -747,6 +898,7 @@ export default function PaymentsPage() {
               onChange={(e) => {
                 setInvoiceId(e.target.value);
                 setAmount("");
+                clearLineSelections();
               }}
               required
               disabled={!studentId}
@@ -766,16 +918,98 @@ export default function PaymentsPage() {
               ))}
             </select>
           </FormField>
-          <FormField label="Amount" required>
+          {invoiceId ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+              <p className="text-sm font-semibold text-slate-800">
+                Fee lines being paid
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Select components so the receipt shows what this payment covers.
+              </p>
+              {linesLoading ? (
+                <p className="mt-3 text-sm text-slate-500">
+                  Loading fee lines…
+                </p>
+              ) : payableLines.length === 0 ? (
+                <p className="mt-3 text-sm text-slate-500">
+                  No open fee lines on this invoice.
+                </p>
+              ) : (
+                <ul className="mt-3 space-y-2">
+                  {payableLines.map((line) => {
+                    const remaining =
+                      Math.round((line.remaining ?? line.amount) * 100) / 100;
+                    const sel = lineSelections[line.id];
+                    const selected = sel?.selected ?? false;
+                    return (
+                      <li
+                        key={line.id}
+                        className="flex flex-wrap items-center gap-2 rounded-lg bg-white px-2.5 py-2"
+                      >
+                        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleFeeLine(line.id, remaining)}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="font-medium">
+                              {line.description}
+                            </span>
+                            <span className="block text-xs text-slate-500">
+                              Remaining {formatMoney(remaining, currency)}
+                              {line.amount !== remaining
+                                ? ` · Charged ${formatMoney(line.amount, currency)}`
+                                : ""}
+                            </span>
+                          </span>
+                        </label>
+                        <input
+                          type="number"
+                          min={0.01}
+                          max={remaining}
+                          step="0.01"
+                          disabled={!selected}
+                          className={`${fieldClass} w-28 shrink-0 py-1.5 text-right disabled:bg-slate-100`}
+                          value={selected ? (sel?.amount ?? "") : ""}
+                          onChange={(e) =>
+                            setFeeLineAmount(line.id, e.target.value)
+                          }
+                          aria-label={`Amount for ${line.description}`}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {payableLines.length > 0 ? (
+                <p className="mt-2 text-right text-xs font-medium text-slate-600">
+                  Selected total {formatMoney(selectedLineTotal, currency)}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          <FormField
+            label={useCredit ? "Cash to collect" : "Amount"}
+            required={!useCredit || Number(amount) > 0}
+          >
             <input
               type="number"
-              min={0.01}
+              min={0}
               step="0.01"
               className={fieldClass}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              required
+              required={!useCredit}
+              readOnly={payableLines.length > 0}
             />
+            {payableLines.length > 0 ? (
+              <p className="mt-1 text-xs text-slate-500">
+                {useCredit && creditBalance > 0
+                  ? `Selected fee lines ${formatMoney(selectedLineTotal, currency)}; up to ${formatMoney(Math.min(creditBalance, selectedLineTotal), currency)} from credit.`
+                  : "Matches the selected fee lines. Uncheck or edit line amounts to change it."}
+              </p>
+            ) : null}
           </FormField>
           <FormField label="Method" required>
             <select
@@ -803,8 +1037,12 @@ export default function PaymentsPage() {
               type="checkbox"
               checked={useCredit}
               onChange={(e) => setUseCredit(e.target.checked)}
+              disabled={creditBalance <= 0}
             />
-            Use student credit balance first
+            Use student credit first
+            {creditBalance > 0
+              ? ` (${formatMoney(creditBalance, currency)} available)`
+              : ""}
           </label>
         </form>
       </FormModal>

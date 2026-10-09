@@ -501,6 +501,14 @@ export interface Payment extends BaseRecord {
   credit_applied: number
 }
 
+export interface PaymentAllocation extends BaseRecord {
+  school_id: string
+  payment_id: string
+  invoice_line_id: string
+  description: string
+  amount: number
+}
+
 export interface Receipt extends BaseRecord {
   school_id: string
   payment_id: string

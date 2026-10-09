@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { getSession, type SessionData } from '../auth'
 import type { Repositories } from '../db/repositories'
-import { daysPastDue, allocatePaymentToLines } from '../domain/finance'
+import { daysPastDue, receiptPaidForLines } from '../domain/finance'
 import { feeStructuresForBulkStudent } from '../domain/fee-structure-scope'
 import type {
   ExpenseCategory,
@@ -396,13 +396,22 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
       const inv = fm().getInvoice(input.id)
       if (!inv) return { ok: false, error: 'Invoice not found.' }
       const student = repos.students.findById(inv.student_id)
+      const balances = fm().getInvoiceLineBalances(inv.id)
+      const remainingById = new Map(balances.map((b) => [b.id, b]))
       return {
         ok: true,
         data: {
           ...inv,
           student_name: student?.name ?? '—',
           student_code: student?.student_code ?? null,
-          lines: fm().getInvoiceLines(inv.id),
+          lines: fm().getInvoiceLines(inv.id).map((line) => {
+            const bal = remainingById.get(line.id)
+            return {
+              ...line,
+              paid: bal?.paid ?? 0,
+              remaining: bal?.remaining ?? line.amount,
+            }
+          }),
           credit_balance: fm().studentCreditTotal(inv.school_id, inv.student_id),
         },
       }
@@ -631,11 +640,21 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
       )
       const rows = fm()
         .listPayments(sid, input?.studentId)
-        .map((p) => ({
-          ...p,
-          student_name: students.get(p.student_id) ?? '—',
-          invoice_number: fm().getInvoice(p.invoice_id)?.invoice_number ?? null,
-        }))
+        .map((p) => {
+          const allocs = fm().getPaymentAllocations(p.id)
+          const paid_for = allocs.length
+            ? allocs
+                .map((a) => `${a.description} (${a.amount})`)
+                .join('; ')
+            : null
+          return {
+            ...p,
+            student_name: students.get(p.student_id) ?? '—',
+            invoice_number:
+              fm().getInvoice(p.invoice_id)?.invoice_number ?? null,
+            paid_for,
+          }
+        })
       return { ok: true, data: rows }
     }
   )
@@ -652,6 +671,7 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         paid_at?: string | null
         notes?: string | null
         use_credit?: boolean
+        allocations?: Array<{ invoice_line_id: string; amount: number }> | null
       }
     ): Result<unknown> => {
       const session = requireSession()
@@ -729,14 +749,19 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
             )
             .reduce((sum, p) => sum + Number(p.amount || 0), 0)
         : 0
-      const lines = allocatePaymentToLines(
-        invoiceLines.map((l) => ({
+      const storedAllocations = payment
+        ? fm().getPaymentAllocations(payment.id)
+        : []
+      const lines = receiptPaidForLines({
+        lines: invoiceLines.map((l) => ({
+          id: l.id,
           description: l.description,
           amount: l.amount,
         })),
-        Number(receipt.amount) || 0,
-        priorPaid
-      )
+        paymentAmount: Number(receipt.amount) || 0,
+        priorPaidTowardInvoice: priorPaid,
+        storedAllocations,
+      })
       const school = repos.schools.findById(receipt.school_id)
       const template = repos.documentTemplates
         .listBySchool(receipt.school_id)
@@ -1094,7 +1119,16 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
       const sid = schoolId(repos, session)
       const invoices = fm()
         .listInvoices(sid, { studentId: input.student_id })
-      const payments = fm().listPayments(sid, input.student_id)
+      const payments = fm().listPayments(sid, input.student_id).map((p) => {
+        const allocs = fm().getPaymentAllocations(p.id)
+        return {
+          ...p,
+          paid_for: allocs.length
+            ? allocs.map((a) => `${a.description} (${a.amount})`).join('; ')
+            : null,
+        }
+      })
+      const feeSituation = fm().getStudentFeeSituation(sid, input.student_id)
       return {
         ok: true,
         data: {
@@ -1104,6 +1138,9 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
           outstanding: invoices
             .filter((i) => i.balance > 0)
             .reduce((s, i) => s + i.balance, 0),
+          billed: feeSituation.billed,
+          paid: feeSituation.paid,
+          fee_lines: feeSituation.fee_lines,
         },
       }
     }

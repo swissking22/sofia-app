@@ -22,7 +22,7 @@ import {
   wrapOfficialHtml,
 } from '../../domain/documents'
 import { assetToDataUrl } from '../../helpers/school-assets'
-import { allocatePaymentToLines } from '../../domain/finance'
+import { receiptPaidForLines } from '../../domain/finance'
 import type {
   DocumentSignatory,
   DocumentTemplate,
@@ -1180,10 +1180,14 @@ export class DocumentsRepository {
     const invoiceLines = finance
       ? (this.db
           .prepare(
-            `SELECT description, amount FROM invoice_lines
+            `SELECT id, description, amount FROM invoice_lines
              WHERE invoice_id = ? AND deleted_at IS NULL ORDER BY sort_order`
           )
-          .all(finance.invoice_id) as Array<{ description: string; amount: number }>)
+          .all(finance.invoice_id) as Array<{
+            id: string
+            description: string
+            amount: number
+          }>)
       : []
 
     const priorPaidTowardInvoice = finance
@@ -1235,12 +1239,28 @@ export class DocumentsRepository {
         )
       : 0
 
+    const storedAllocations = finance?.payment_id
+      ? (this.db
+          .prepare(
+            `SELECT invoice_line_id, description, amount
+             FROM payment_allocations
+             WHERE payment_id = ? AND deleted_at IS NULL
+             ORDER BY created_at ASC, id ASC`
+          )
+          .all(finance.payment_id) as Array<{
+            invoice_line_id: string
+            description: string
+            amount: number
+          }>)
+      : []
+
     const allocatedLines = finance
-      ? allocatePaymentToLines(
-          invoiceLines,
-          Number(finance.amount) || 0,
-          priorPaidTowardInvoice
-        )
+      ? receiptPaidForLines({
+          lines: invoiceLines,
+          paymentAmount: Number(finance.amount) || 0,
+          priorPaidTowardInvoice,
+          storedAllocations,
+        })
       : []
 
     const bands = this.db

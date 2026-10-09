@@ -112,11 +112,13 @@ export default function FinancialAnalyticsPage() {
     by_term: [],
     by_class: [],
     by_fee_type: [],
+    by_fee_line: [],
     by_method: [],
   }) as {
     by_term: NamedAmount[];
     by_class: NamedAmount[];
     by_fee_type: NamedAmount[];
+    by_fee_line: NamedAmount[];
     by_method: NamedAmount[];
   };
   const expenses = (data?.expenses ?? { by_category: [], by_month: [] }) as {
@@ -157,6 +159,10 @@ export default function FinancialAnalyticsPage() {
 
   function exportCsv() {
     if (!summary) return;
+    const feeLineRows = (revenue.by_fee_line ?? []).map((r) => [
+      `Fee line · ${r.name}`,
+      formatMoney(r.amount, currency),
+    ]);
     downloadCsv(
       "financial-analytics.csv",
       toCsv(
@@ -168,6 +174,7 @@ export default function FinancialAnalyticsPage() {
           ["Expenses", formatMoney(summary.expenses, currency)],
           ["Net", formatMoney(summary.net, currency)],
           ["Collection rate", `${summary.collection_rate}%`],
+          ...feeLineRows,
         ],
       ),
     );
@@ -401,6 +408,19 @@ export default function FinancialAnalyticsPage() {
                 />
               </ReportChartPanel>
               <ReportChartPanel
+                title="Collected by fee line"
+                description="How much came in for Tuition, PTA, and other fee lines"
+              >
+                <SofiaHorizontalBarChart
+                  data={(revenue.by_fee_line ?? []).map((r, i) => ({
+                    id: `${r.name}-${i}`,
+                    label: r.name,
+                    value: r.amount,
+                  }))}
+                  valueFormatter={moneyCompact}
+                />
+              </ReportChartPanel>
+              <ReportChartPanel
                 title="Revenue by term"
                 description="Vertical bars across terms"
               >
@@ -427,6 +447,37 @@ export default function FinancialAnalyticsPage() {
                 />
               </ReportChartPanel>
             </ReportChartGrid>
+
+            <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+              <div className="border-b border-slate-100 px-4 py-3">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Collections by fee line
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Amounts recorded against each fee structure line in the
+                  selected period.
+                </p>
+              </div>
+              <StudentTable columns={["Fee line", "Collected"]}>
+                {(revenue.by_fee_line ?? []).length === 0 ? (
+                  <EmptyRow
+                    colSpan={2}
+                    message="No fee-line collections in this period."
+                  />
+                ) : (
+                  (revenue.by_fee_line ?? []).map((row) => (
+                    <tr key={row.name} className="border-t border-slate-100">
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {row.name}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-slate-800">
+                        <MoneyText amount={row.amount} currency={currency} />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </StudentTable>
+            </div>
           </ReportSection>
 
           <ReportSection title="Outstanding fees">

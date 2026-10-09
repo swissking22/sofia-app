@@ -419,6 +419,87 @@ export default function StudentDetailPage() {
         </div>
       </div>
 
+      <section className="mb-5 rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Fee situation
+            </h3>
+            <p className="text-xs text-slate-500">
+              Billed, paid, and remaining across fee lines.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTab("finance")}
+            className="cursor-pointer text-xs font-semibold text-(--sofia-primary) hover:underline"
+          >
+            View Finance tab
+          </button>
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              Billed
+            </div>
+            <div className="mt-0.5 text-base font-semibold text-slate-900">
+              {formatMoney(finance?.billed ?? 0, currency)}
+            </div>
+          </div>
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              Paid
+            </div>
+            <div className="mt-0.5 text-base font-semibold text-emerald-700">
+              {formatMoney(finance?.paid ?? 0, currency)}
+            </div>
+          </div>
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+              Outstanding
+            </div>
+            <div
+              className={`mt-0.5 text-base font-semibold ${
+                (finance?.outstanding ?? 0) > 0
+                  ? "text-amber-700"
+                  : "text-slate-900"
+              }`}
+            >
+              {formatMoney(finance?.outstanding ?? 0, currency)}
+            </div>
+          </div>
+        </div>
+        {(finance?.fee_lines?.length ?? 0) > 0 ? (
+          <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-100">
+            {(finance?.fee_lines ?? []).slice(0, 6).map((line) => (
+              <li
+                key={line.description}
+                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+              >
+                <span className="font-medium text-slate-800">
+                  {line.description}
+                </span>
+                <span className="text-slate-600">
+                  Paid {formatMoney(line.paid, currency)}
+                  {" · "}
+                  <span
+                    className={
+                      line.remaining > 0 ? "font-medium text-amber-700" : ""
+                    }
+                  >
+                    Due {formatMoney(line.remaining, currency)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-slate-500">
+            No fee lines billed yet for this student.
+          </p>
+        )}
+      </section>
+
       {tab === "overview" ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-5">
@@ -597,12 +678,24 @@ export default function StudentDetailPage() {
 
       {tab === "finance" ? (
         <div className="space-y-6">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-medium text-slate-500">Billed</div>
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                {formatMoney(finance?.billed ?? 0, currency)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-medium text-slate-500">Paid</div>
+              <div className="mt-1 text-lg font-semibold text-emerald-700">
+                {formatMoney(finance?.paid ?? 0, currency)}
+              </div>
+            </div>
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-xs font-medium text-slate-500">
                 Outstanding
               </div>
-              <div className="mt-1 text-lg font-semibold text-slate-900">
+              <div className="mt-1 text-lg font-semibold text-amber-700">
                 {formatMoney(finance?.outstanding ?? 0, currency)}
               </div>
             </div>
@@ -620,6 +713,46 @@ export default function StudentDetailPage() {
                 {finance?.invoices.length ?? 0}
               </div>
             </div>
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">
+              Fee lines
+            </h3>
+            <StudentTable
+              columns={["Fee line", "Charged", "Paid", "Remaining"]}
+            >
+              {!(finance?.fee_lines?.length ?? 0) ? (
+                <EmptyRow
+                  colSpan={4}
+                  message="No fee lines billed for this student."
+                />
+              ) : (
+                (finance?.fee_lines ?? []).map((line) => (
+                  <tr
+                    key={line.description}
+                    className="border-t border-slate-100"
+                  >
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {line.description}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {formatMoney(line.charged, currency)}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-emerald-700">
+                      {formatMoney(line.paid, currency)}
+                    </td>
+                    <td
+                      className={`px-4 py-3 font-medium ${
+                        line.remaining > 0 ? "text-amber-700" : "text-slate-600"
+                      }`}
+                    >
+                      {formatMoney(line.remaining, currency)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </StudentTable>
           </div>
 
           <div>
@@ -666,10 +799,17 @@ export default function StudentDetailPage() {
               Payments
             </h3>
             <StudentTable
-              columns={["Payment #", "Date", "Amount", "Method", "Reference"]}
+              columns={[
+                "Payment #",
+                "Date",
+                "Amount",
+                "Paid for",
+                "Method",
+                "Reference",
+              ]}
             >
               {!finance?.payments.length ? (
-                <EmptyRow colSpan={5} message="No payments recorded." />
+                <EmptyRow colSpan={6} message="No payments recorded." />
               ) : (
                 finance.payments.map((p) => (
                   <tr key={p.id} className="border-t border-slate-100">
@@ -681,6 +821,12 @@ export default function StudentDetailPage() {
                     </td>
                     <td className="px-4 py-3 font-medium">
                       {formatMoney(p.amount, currency)}
+                    </td>
+                    <td
+                      className="max-w-48 truncate px-4 py-3 text-slate-600"
+                      title={p.paid_for || undefined}
+                    >
+                      {p.paid_for || "—"}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {PAYMENT_METHOD_LABELS[p.method] ?? p.method}

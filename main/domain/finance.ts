@@ -269,6 +269,261 @@ export function allocatePaymentToLines(
   })
 }
 
+export type InvoiceLineBalance = {
+  id: string
+  description: string
+  charged: number
+  paid: number
+  remaining: number
+}
+
+/**
+ * Remaining due per invoice fee line after prior payments.
+ * Uses stored payment_allocations when present; otherwise FIFO on cash amount.
+ */
+export function computeInvoiceLineBalances(
+  lines: Array<{ id: string; description: string; amount: number }>,
+  paymentsChronological: Array<{
+    amount: number
+    allocations: Array<{ invoice_line_id: string; amount: number }>
+  }>
+): InvoiceLineBalance[] {
+  const paidByLine = new Map<string, number>()
+  for (const line of lines) paidByLine.set(line.id, 0)
+
+  for (const payment of paymentsChronological) {
+    const explicit = (payment.allocations ?? []).filter(
+      (a) => (Number(a.amount) || 0) > 0
+    )
+    if (explicit.length > 0) {
+      for (const alloc of explicit) {
+        if (!paidByLine.has(alloc.invoice_line_id)) continue
+        paidByLine.set(
+          alloc.invoice_line_id,
+          round2(
+            (paidByLine.get(alloc.invoice_line_id) || 0) +
+              Math.max(0, Number(alloc.amount) || 0)
+          )
+        )
+      }
+      continue
+    }
+
+    let payLeft = round2(Math.max(0, Number(payment.amount) || 0))
+    for (const line of lines) {
+      if (payLeft <= 0) break
+      const charged = round2(Number(line.amount) || 0)
+      const already = paidByLine.get(line.id) || 0
+      const remainingOnLine = round2(Math.max(0, charged - already))
+      const take = round2(Math.min(remainingOnLine, payLeft))
+      if (take <= 0) continue
+      paidByLine.set(line.id, round2(already + take))
+      payLeft = round2(payLeft - take)
+    }
+  }
+
+  return lines.map((line) => {
+    const charged = round2(Number(line.amount) || 0)
+    const paid = round2(Math.min(charged, paidByLine.get(line.id) || 0))
+    return {
+      id: line.id,
+      description: line.description,
+      charged,
+      paid,
+      remaining: round2(Math.max(0, charged - paid)),
+    }
+  })
+}
+
+export type NormalizedPaymentAllocation = {
+  invoice_line_id: string
+  description: string
+  amount: number
+  charged: number
+}
+
+/**
+ * Validate cashier-chosen fee-line amounts for a payment.
+ * Sum must equal the amount applied to the invoice (cash applied + credit).
+ */
+export function normalizePaymentLineAllocations(input: {
+  lines: Array<{ id: string; description: string; amount: number }>
+  remainingByLineId: Record<string, number>
+  allocations: Array<{ invoice_line_id: string; amount: number }>
+  appliedAmount: number
+}): NormalizedPaymentAllocation[] {
+  const applied = round2(Math.max(0, input.appliedAmount))
+  if (applied <= 0) {
+    throw new Error('Nothing to allocate to fee lines.')
+  }
+  if (!input.lines.length) {
+    throw new Error('Invoice has no fee lines to allocate.')
+  }
+
+  const lineById = new Map(input.lines.map((l) => [l.id, l]))
+  const merged = new Map<string, number>()
+  for (const raw of input.allocations) {
+    const id = String(raw.invoice_line_id || '')
+    const amount = round2(Number(raw.amount) || 0)
+    if (!id || amount <= 0) continue
+    const line = lineById.get(id)
+    if (!line) {
+      throw new Error('One or more selected fee lines are not on this invoice.')
+    }
+    merged.set(id, round2((merged.get(id) || 0) + amount))
+  }
+
+  if (merged.size === 0) {
+    throw new Error('Select at least one fee line being paid for.')
+  }
+
+  const result: NormalizedPaymentAllocation[] = []
+  let total = 0
+  for (const [id, amount] of merged) {
+    const line = lineById.get(id)!
+    const remaining = round2(
+      Math.max(
+        0,
+        input.remainingByLineId[id] ?? round2(Number(line.amount) || 0)
+      )
+    )
+    if (amount > remaining + 0.009) {
+      throw new Error(
+        `Allocation for "${line.description}" exceeds the remaining amount on that fee line.`
+      )
+    }
+    total = round2(total + amount)
+    result.push({
+      invoice_line_id: id,
+      description: line.description,
+      amount,
+      charged: round2(Number(line.amount) || 0),
+    })
+  }
+
+  if (Math.abs(total - applied) > 0.009) {
+    throw new Error(
+      `Fee line amounts (${total}) must equal the amount applied to the invoice (${applied}).`
+    )
+  }
+
+  return result
+}
+
+/** Build FIFO allocations when the cashier does not pick fee lines. */
+export function fifoPaymentAllocations(input: {
+  lines: Array<{ id: string; description: string; amount: number }>
+  remainingByLineId: Record<string, number>
+  appliedAmount: number
+}): NormalizedPaymentAllocation[] {
+  let payLeft = round2(Math.max(0, input.appliedAmount))
+  const result: NormalizedPaymentAllocation[] = []
+  for (const line of input.lines) {
+    if (payLeft <= 0) break
+    const remaining = round2(
+      Math.max(
+        0,
+        input.remainingByLineId[line.id] ?? round2(Number(line.amount) || 0)
+      )
+    )
+    const take = round2(Math.min(remaining, payLeft))
+    if (take <= 0) continue
+    result.push({
+      invoice_line_id: line.id,
+      description: line.description,
+      amount: take,
+      charged: round2(Number(line.amount) || 0),
+    })
+    payLeft = round2(payLeft - take)
+  }
+  return result
+}
+
+/**
+ * Merge invoice line balances by description (e.g. Tuition across terms).
+ */
+export function aggregateFeeLineSituation(
+  balances: InvoiceLineBalance[]
+): Array<{
+  description: string
+  charged: number
+  paid: number
+  remaining: number
+}> {
+  const map = new Map<
+    string,
+    { description: string; charged: number; paid: number; remaining: number }
+  >()
+  for (const row of balances) {
+    const key = row.description.trim() || 'Other'
+    const existing = map.get(key) ?? {
+      description: key,
+      charged: 0,
+      paid: 0,
+      remaining: 0,
+    }
+    existing.charged = round2(existing.charged + row.charged)
+    existing.paid = round2(existing.paid + row.paid)
+    existing.remaining = round2(existing.remaining + row.remaining)
+    map.set(key, existing)
+  }
+  return [...map.values()].sort((a, b) =>
+    a.description.localeCompare(b.description, undefined, {
+      sensitivity: 'base',
+    })
+  )
+}
+
+/** Sum collected amounts by fee-line description. */
+export function aggregateNamedAmounts(
+  rows: Array<{ name: string; amount: number }>
+): Array<{ name: string; amount: number }> {
+  const map = new Map<string, number>()
+  for (const row of rows) {
+    const name = (row.name || 'Other').trim() || 'Other'
+    map.set(name, round2((map.get(name) || 0) + (Number(row.amount) || 0)))
+  }
+  return [...map.entries()]
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount)
+}
+
+/** Prefer stored allocations for receipt "Paid for"; fall back to FIFO. */
+export function receiptPaidForLines(input: {
+  lines: Array<{ id: string; description: string; amount: number }>
+  paymentAmount: number
+  priorPaidTowardInvoice?: number
+  storedAllocations?: Array<{
+    invoice_line_id: string
+    description: string
+    amount: number
+  }> | null
+}): Array<{ description: string; charged: number; paid: number }> {
+  const stored = (input.storedAllocations ?? []).filter(
+    (a) => (Number(a.amount) || 0) > 0
+  )
+  if (stored.length > 0) {
+    const chargedById = new Map(
+      input.lines.map((l) => [l.id, round2(Number(l.amount) || 0)])
+    )
+    return stored.map((a) => ({
+      description: a.description,
+      charged:
+        chargedById.get(a.invoice_line_id) ??
+        round2(Number(a.amount) || 0),
+      paid: round2(Number(a.amount) || 0),
+    }))
+  }
+  return allocatePaymentToLines(
+    input.lines.map((l) => ({
+      description: l.description,
+      amount: l.amount,
+    })),
+    input.paymentAmount,
+    input.priorPaidTowardInvoice ?? 0
+  )
+}
+
 export function padNum(n: number): string {
   return String(Math.max(1, Math.floor(n))).padStart(5, '0')
 }

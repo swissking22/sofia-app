@@ -260,9 +260,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
         items: [
           "Define fee structures for the year/term and scopes (class, residence, etc.).",
           "Generate student billing (invoices).",
-          "Record payments and print receipts.",
+          "Record payments: choose which fee lines the payment covers so receipts show what was paid for.",
           "Monitor Outstanding Fees and Financial Reports for collection health.",
         ],
+      },
+      {
+        type: "tip",
+        text: "When recording a payment, select Tuition, PTA, and other fee lines so the printed receipt lists exactly what the student paid for.",
       },
       {
         type: "tip",

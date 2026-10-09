@@ -43,6 +43,7 @@ export const GENERIC_SYNC_TABLES = [
   'invoices',
   'invoice_lines',
   'payments',
+  'payment_allocations',
   'receipts',
   'student_credits',
   'expenses',
@@ -318,6 +319,10 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   payments: [
     'id', 'school_id', 'student_id', 'invoice_id', 'payment_number', 'amount', 'method',
     'reference', 'paid_at', 'recorded_by', 'notes', 'credit_applied',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  payment_allocations: [
+    'id', 'school_id', 'payment_id', 'invoice_line_id', 'description', 'amount',
     'created_at', 'updated_at', 'deleted_at', 'version',
   ],
   receipts: [
