@@ -9,7 +9,10 @@ import { pushPendingSync } from './push'
 import { pullRemoteChanges } from './pull'
 import { downloadMissingSyncedAssets, uploadRowAssets } from './assets'
 import { getSupabaseSyncClient } from './supabase-client'
-import { countReadyPendingSyncItems } from './queue'
+import {
+  countReadyPendingSyncItems,
+  enqueueOrphanedPendingRows,
+} from './queue'
 import type {
   AssetStorageClient,
   PushSyncResult,
@@ -28,7 +31,8 @@ export const DEFAULT_MAX_PUSH_BATCHES = 200
  * Must honour pull.hasMore — previously pull always returned false and only
  * one page ever ran (~1 000 changes), leaving second-desk rosters incomplete.
  */
-export const DEFAULT_MAX_PULL_BATCHES = 50
+/** Outer pull pages per Sync Now (each page ≤20 inner batches). */
+export const DEFAULT_MAX_PULL_BATCHES = 100
 
 function asAssetStorage(client: unknown): AssetStorageClient | null {
   const c = client as AssetStorageClient
@@ -104,6 +108,17 @@ export async function runSyncWorker(
     failed: 0,
     newCursor: 0,
     hasMore: false,
+  }
+
+  // 0. Backfill seed / missed writes (sync_status=pending, never queued)
+  // so primary Sync Now pushes fee structures, admissions, roles, etc. for other desks.
+  if (!options.skipPush) {
+    const orphaned = enqueueOrphanedPendingRows(db, { limit: 5000 })
+    if (orphaned > 0) {
+      console.log(
+        `[SYNC] Enqueued ${orphaned} local pending row(s) that were missing from the outbox`
+      )
+    }
   }
 
   // 1. Push Phase (unless skipped) — drain outbox in batches

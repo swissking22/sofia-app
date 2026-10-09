@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
+import { enqueueSync } from '../../sync/queue'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -324,25 +325,50 @@ export class SubjectCoefficientsRepository {
                WHERE id = ?`
             )
             .run(val, t, existing.id)
+          const updated = this.db
+            .prepare(`SELECT * FROM result_subject_coefficients WHERE id = ?`)
+            .get(existing.id) as Record<string, unknown>
+          enqueueSync(
+            this.db,
+            'result_subject_coefficients',
+            existing.id,
+            'UPDATE',
+            updated
+          )
         } else {
+          const id = randomUUID()
+          const row = {
+            id,
+            school_id: schoolId,
+            subject_id: item.subject_id,
+            class_id: classId,
+            academic_level_id: levelId,
+            academic_year_id: yearId,
+            coefficient: val,
+            created_at: t,
+            updated_at: t,
+            deleted_at: null,
+            sync_status: 'pending',
+            version: 1,
+          }
           this.db
             .prepare(
               `INSERT INTO result_subject_coefficients (
                 id, school_id, subject_id, class_id, academic_level_id, academic_year_id,
                 coefficient, created_at, updated_at, deleted_at, sync_status, version
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending', 1)`
+              ) VALUES (
+                @id, @school_id, @subject_id, @class_id, @academic_level_id, @academic_year_id,
+                @coefficient, @created_at, @updated_at, @deleted_at, @sync_status, @version
+              )`
             )
-            .run(
-              randomUUID(),
-              schoolId,
-              item.subject_id,
-              classId,
-              levelId,
-              yearId,
-              val,
-              t,
-              t
-            )
+            .run(row)
+          enqueueSync(
+            this.db,
+            'result_subject_coefficients',
+            id,
+            'INSERT',
+            row
+          )
         }
 
         // Also update the base subject coefficient if no class/level is specified
@@ -354,6 +380,12 @@ export class SubjectCoefficientsRepository {
                WHERE id = ? AND deleted_at IS NULL`
             )
             .run(val, t, item.subject_id)
+          const subject = this.db
+            .prepare(`SELECT * FROM subjects WHERE id = ?`)
+            .get(item.subject_id) as Record<string, unknown> | undefined
+          if (subject) {
+            enqueueSync(this.db, 'subjects', item.subject_id, 'UPDATE', subject)
+          }
         }
       }
     })

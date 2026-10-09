@@ -101,6 +101,22 @@ export const GENERIC_SYNC_TABLES = [
   'communication_deliveries',
   'parent_message_threads',
   'parent_messages',
+  // Step 10 — student ops / calendar / leave / teaching / reports
+  // (needed so secretary, bursar, principal, and teacher desks share full school data)
+  'student_settings',
+  'admissions',
+  'student_transfers',
+  'student_documents',
+  'promotion_runs',
+  'promotion_mappings',
+  'calendar_events',
+  'leave_balances',
+  'leave_requests',
+  'staff_notifications',
+  'teaching_syllabi',
+  'syllabus_topics',
+  'teaching_logs',
+  'report_settings',
 ] as const
 
 export type GenericSyncTable = (typeof GENERIC_SYNC_TABLES)[number]
@@ -586,6 +602,74 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   parent_messages: [
     'id', 'school_id', 'thread_id', 'direction', 'channel', 'body', 'status',
     'sent_at', 'created_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  student_settings: [
+    'id', 'school_id', 'student_id_format',
+    'field_full_name', 'field_gender', 'field_date_of_birth', 'field_place_of_birth',
+    'field_parent_information', 'field_emergency_contact',
+    'admit_new', 'admit_returning', 'admit_transfer',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  admissions: [
+    'id', 'school_id', 'full_name', 'gender', 'date_of_birth', 'phone', 'email',
+    'address', 'academic_level_id', 'preferred_class_id', 'admission_year',
+    'guardian_name', 'guardian_phone', 'guardian_email', 'guardian_relationship',
+    'status', 'notes', 'student_id', 'photo_path',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  student_transfers: [
+    'id', 'school_id', 'student_id', 'from_class_id', 'to_school_name',
+    'transfer_date', 'reason', 'status',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  student_documents: [
+    'id', 'school_id', 'student_id', 'document_type', 'title', 'file_path', 'notes',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  promotion_runs: [
+    'id', 'school_id', 'from_year', 'to_year', 'status', 'notes',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  promotion_mappings: [
+    'id', 'promotion_run_id', 'from_class_id', 'to_class_id', 'student_count',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  calendar_events: [
+    'id', 'academic_year_id', 'type', 'title', 'start_date', 'end_date',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  leave_balances: [
+    'id', 'school_id', 'staff_id', 'leave_type', 'year', 'entitled', 'used',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  leave_requests: [
+    'id', 'school_id', 'staff_id', 'leave_type', 'start_date', 'end_date', 'days',
+    'reason', 'status', 'reviewed_by', 'reviewed_at', 'review_notes',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  staff_notifications: [
+    'id', 'school_id', 'user_id', 'title', 'body', 'link', 'read_at',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  teaching_syllabi: [
+    'id', 'school_id', 'subject_id', 'academic_year_id', 'academic_level_id',
+    'class_id', 'title', 'term_weeks', 'created_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  syllabus_topics: [
+    'id', 'school_id', 'syllabus_id', 'parent_id', 'title', 'sequence',
+    'objectives', 'coverage_status',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  teaching_logs: [
+    'id', 'school_id', 'syllabus_id', 'topic_id', 'staff_id', 'class_id',
+    'subject_id', 'academic_year_id', 'academic_term_id', 'lesson_date',
+    'description', 'status', 'progress_percent', 'remarks', 'created_by',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  report_settings: [
+    'id', 'school_id', 'attendance_risk_pct', 'pass_mark',
     'created_at', 'updated_at', 'deleted_at', 'version',
   ],
 }

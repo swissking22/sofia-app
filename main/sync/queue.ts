@@ -21,9 +21,16 @@ const SYNC_PRIORITY_CASE = `
     WHEN 'sections' THEN 1
     WHEN 'specializations' THEN 1
     WHEN 'departments' THEN 1
+    WHEN 'student_settings' THEN 1
+    WHEN 'calendar_events' THEN 1
+    WHEN 'report_settings' THEN 1
     WHEN 'classes' THEN 2
     WHEN 'subjects' THEN 2
     WHEN 'subject_classes' THEN 2
+    WHEN 'permissions' THEN 2
+    WHEN 'roles' THEN 2
+    WHEN 'role_permissions' THEN 2
+    WHEN 'users' THEN 3
     WHEN 'staff' THEN 3
     WHEN 'staff_subjects' THEN 3
     WHEN 'staff_classes' THEN 3
@@ -34,11 +41,67 @@ const SYNC_PRIORITY_CASE = `
     WHEN 'grade_bands' THEN 4
     WHEN 'students' THEN 5
     WHEN 'student_id_settings' THEN 5
+    WHEN 'admissions' THEN 5
+    WHEN 'student_transfers' THEN 5
+    WHEN 'student_documents' THEN 5
+    WHEN 'promotion_runs' THEN 5
+    WHEN 'promotion_mappings' THEN 5
     WHEN 'attendance_sessions' THEN 6
     WHEN 'attendance_records' THEN 6
+    WHEN 'gate_attendance' THEN 6
+    WHEN 'staff_attendance' THEN 6
     WHEN 'ca_assessments' THEN 6
     WHEN 'ca_scores' THEN 6
-    WHEN 'announcements' THEN 7
+    WHEN 'exam_sessions' THEN 6
+    WHEN 'exam_papers' THEN 6
+    WHEN 'exam_scores' THEN 6
+    WHEN 'result_calculation_profiles' THEN 7
+    WHEN 'result_calculation_profile_versions' THEN 7
+    WHEN 'result_calculation_class_assignments' THEN 7
+    WHEN 'result_subject_coefficients' THEN 7
+    WHEN 'result_runs' THEN 7
+    WHEN 'result_subject_rows' THEN 7
+    WHEN 'result_student_summaries' THEN 7
+    WHEN 'report_cards' THEN 7
+    WHEN 'teaching_syllabi' THEN 7
+    WHEN 'syllabus_topics' THEN 7
+    WHEN 'teaching_logs' THEN 7
+    WHEN 'announcements' THEN 8
+    WHEN 'internal_notices' THEN 8
+    WHEN 'communication_settings' THEN 8
+    WHEN 'notification_templates' THEN 8
+    WHEN 'communication_deliveries' THEN 8
+    WHEN 'parent_message_threads' THEN 8
+    WHEN 'parent_messages' THEN 8
+    WHEN 'staff_notifications' THEN 8
+    WHEN 'leave_balances' THEN 8
+    WHEN 'leave_requests' THEN 8
+    WHEN 'finance_settings' THEN 9
+    WHEN 'fee_categories' THEN 9
+    WHEN 'fee_amounts' THEN 9
+    WHEN 'fee_structures' THEN 9
+    WHEN 'fee_structure_lines' THEN 9
+    WHEN 'fee_discounts' THEN 9
+    WHEN 'student_fee_discounts' THEN 10
+    WHEN 'invoices' THEN 10
+    WHEN 'invoice_lines' THEN 10
+    WHEN 'payments' THEN 11
+    WHEN 'receipts' THEN 11
+    WHEN 'student_credits' THEN 11
+    WHEN 'document_templates' THEN 12
+    WHEN 'document_number_sequences' THEN 12
+    WHEN 'document_signatories' THEN 12
+    WHEN 'issued_documents' THEN 12
+    WHEN 'issued_document_versions' THEN 12
+    WHEN 'document_audit_log' THEN 12
+    WHEN 'student_id_card_templates' THEN 12
+    WHEN 'id_card_template_versions' THEN 12
+    WHEN 'id_card_settings' THEN 12
+    WHEN 'id_card_sequences' THEN 12
+    WHEN 'student_id_cards' THEN 12
+    WHEN 'id_card_generation_jobs' THEN 12
+    WHEN 'id_card_generation_items' THEN 12
+    WHEN 'id_card_print_history' THEN 12
     ELSE 40
   END
 `
@@ -143,6 +206,71 @@ export function requeueFailedSupportedTables(db: Database.Database): number {
     )
     .run()
   return result.changes
+}
+
+function tableColumns(db: Database.Database, table: string): Set<string> {
+  try {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+      name: string
+    }>
+    return new Set(rows.map((r) => r.name))
+  } catch {
+    return new Set()
+  }
+}
+
+/**
+ * Enqueue domain rows that are still `sync_status='pending'` but never made it
+ * into `sync_queue` (seed data, pre-allowlist tables, missed repository writes).
+ * Caps per call so Sync Now stays responsive; remaining rows enqueue next click.
+ */
+export function enqueueOrphanedPendingRows(
+  db: Database.Database,
+  options?: { limit?: number }
+): number {
+  const limit = options?.limit ?? 5000
+  let enqueued = 0
+  const pendingExists = db.prepare(
+    `SELECT 1 AS ok FROM sync_queue
+     WHERE table_name = ? AND record_id = ? AND status = 'pending'
+     LIMIT 1`
+  )
+
+  for (const table of SUPPORTED_SYNC_TABLES) {
+    if (enqueued >= limit) break
+    const cols = tableColumns(db, table)
+    if (!cols.has('id') || !cols.has('sync_status')) continue
+
+    const whereDeleted = cols.has('deleted_at')
+      ? `AND deleted_at IS NULL`
+      : ''
+    let rows: Array<Record<string, unknown>> = []
+    try {
+      rows = db
+        .prepare(
+          `SELECT * FROM ${table}
+           WHERE sync_status = 'pending' ${whereDeleted}
+           LIMIT ?`
+        )
+        .all(limit - enqueued) as Array<Record<string, unknown>>
+    } catch {
+      continue
+    }
+
+    // Permissions are a global catalog seeded on every desk — do not re-push locals.
+    if (table === 'permissions') continue
+
+    for (const row of rows) {
+      if (enqueued >= limit) break
+      const recordId = String(row.id || '')
+      if (!recordId) continue
+      if (pendingExists.get(table, recordId)) continue
+      enqueueSync(db, table, recordId, 'INSERT', row)
+      enqueued += 1
+    }
+  }
+
+  return enqueued
 }
 
 /**

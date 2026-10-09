@@ -546,7 +546,8 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
       id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       school_id: schoolId,
     })
-    enqueueSync(db, 'report_settings', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'INSERT', {
+    // system_settings stays local-only (not in GENERIC_SYNC_TABLES)
+    enqueueSync(db, 'system_settings', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'INSERT', {
       id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
       school_id: schoolId,
     })

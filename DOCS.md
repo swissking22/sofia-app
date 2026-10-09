@@ -601,10 +601,13 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 | Documents & ID cards (Step 7) | `document_templates`, numbering sequences (MAX), signatories, `issued_documents` (+ versions/audit); ID card templates/versions/settings/sequences (MAX), issued cards, generation jobs/items, print history |
 | Communication (Step 8) | `communication_settings`, `notification_templates`, `announcements`, `internal_notices`, `communication_deliveries`, `parent_message_threads`, `parent_messages` |
 | Assets & ops (Step 9) | Supabase Storage bucket `school-assets` for school logo/stamp/signature + student photos; Admin Sync Now works with pending=0 (pull-only); queue health **by table** |
+| Student ops / leave / teaching / reports (Step 10) | `student_settings`, `admissions`, `student_transfers`, `student_documents`, `promotion_runs`/`promotion_mappings`, `calendar_events`, `leave_balances`/`leave_requests`, `staff_notifications`, `teaching_syllabi`/`syllabus_topics`/`teaching_logs`, `report_settings` — so secretary, bursar, principal, and teacher desks share the same operational data after Join/Sync |
 
 **Not yet synced as files:** expense receipts, bank deposit scans, ID-card template art embedded only as JSON, arbitrary student document attachments (path strings may sync; bytes not mirrored yet).
 
 **Finance notes:** Invoice/receipt/payment/expense **numbers** travel with their rows (immutable after issue). Sequence counters on `finance_settings` never move backward when desks sync.
+
+**Multi-desk pull safety:** Generic apply stubs missing FK parents from payload keys (years, classes, students, staff, subjects, roles, fee structures, invoices, attendance sessions, result runs, …) at version **0** so out-of-order `sync_changes` never aborts a batch. Real rows overwrite stubs. Sync Now also **backfills** local `sync_status='pending'` rows that never entered `sync_queue` (seed / missed enqueues) so primary desks push complete catalogs. Push priority: foundation → RBAC/users → students/admissions → attendance/exams/results → communication → finance → documents/ID cards. Cloud allow-list: migration `20261008150000_full_ops_synced_entities.sql`.
 
 **Academics notes:** Result-run status never regresses (`draft` → `computed` → `published` → `locked`). Locked runs ignore remote DELETE. Child score/attendance rows without a local `school_id` column still sync (push attaches tenant id in the cloud payload).
 
@@ -685,9 +688,9 @@ where school_id = '<school_uuid>' and table_name = 'staff_subjects'
 |-------|----------|
 | Primary desk | One machine should own **finance numbering** day-to-day (bursar). Others may still issue invoices offline; counters merge with MAX on sync — sync soon after busy periods. |
 | How often to Sync Now | At least morning / midday / end of day on every desk; immediately after Join school on a new PC; after bulk imports. |
-| New PC | Install → open **Join existing school** → enter short code → **wait for the full download** (large schools may take several minutes) → log in with a shared account → Sync Now once more for any leftover pages + assets. Dashboard student counts are **local** — if a new bursar desk shows far fewer than the primary, run Sync Now until the count matches. |
+| New PC | Install → open **Join existing school** → enter short code → **wait for the full download** (large schools may take several minutes) → log in with a shared account → Sync Now once more for any leftover pages + assets. Dashboard student counts and Finance lists are **local** — if a bursar desk is missing students, fee structures, or invoices, run Sync Now on the **primary** until finance queue is empty, then Sync Now on the bursar desk until lists match. |
 | Wipe / reinstall | Join again (or restore a local backup). Full pull starts at cursor 0. Photos/logos appear after Storage migration is applied and a desk that has the files has pushed. |
-| Health | Administration → Backup & Sync → **Queue by table** shows pending/failed per domain. Retry failed, then Sync Now. One Sync Now **drains** pending push (~10 000 item cap) and pull pages (~50 000 changes); click again if the UI says more remain. Staff/assignments sync before large finance queues. |
+| Health | Administration → Backup & Sync → **Queue by table** shows pending/failed per domain. Retry failed, then Sync Now. One Sync Now **drains** pending push (~10 000 item cap) and pull pages (~100 000 changes); click again if the UI says more remain. RBAC/users and students sync before finance and documents. Any desktop role (bursar, secretary, principal, …) uses the same pull stream — missing data means Sync Now on primary then bursar/secondary, not a role filter. |
 
 **How to add a table:** (1) add to `GENERIC_SYNC_TABLES` + column list in `main/sync/tables.ts`, (2) add name to `process_synced_entity` allow-list migration, (3) unit-test pull apply, (4) document here.
 
@@ -840,6 +843,8 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-08 | **Full multi-desk sync for all roles:** added admissions/transfers/promotions/calendar/leave/teaching/`report_settings`/`student_settings` to sync allow-list (migration `20261008150000_full_ops_synced_entities.sql`); payload-driven FK stubs on pull; Sync Now backfills orphaned `sync_status=pending` rows into the outbox; result-calculation + subject-coefficient writes enqueue; push priority covers RBAC before finance. Any new bursar/secretary/principal desk can pull the school’s operational data. |
+| 2026-10-08 | **Finance pull FK hardening:** second-desk pull no longer aborts when fee structures/invoices arrive before their academic year or student — generic apply creates version-0 parent stubs; fee catalogs push ahead of invoices. Fixes bursar desks that never received structures/invoices from the primary. |
 | 2026-10-08 | **Release 1.0.3:** bumped `package.json` to **1.0.3** and tagged `v1.0.3` for Windows GitHub Release publish (includes second-desk pull drain fix so Join/Sync Now finish downloading large student/fee backlogs). |
 | 2026-10-08 | **Second-desk student undercount:** `pullRemoteChanges` no longer always returns `hasMore: false` after its per-call batch cap — Sync Now and Join keep draining remaining cloud pages. Fixes bursar/second-desk dashboards that showed far fewer than the real active roster (e.g. dozens instead of 468). |
 | 2026-10-08 | **Release 1.0.2:** bumped `package.json` to **1.0.2** and tagged `v1.0.2` for Windows GitHub Release publish (includes second-desk Auth bootstrap, sync conflict resolve, and role permission repair). |
