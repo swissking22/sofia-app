@@ -844,6 +844,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-09 | **Release 1.0.6:** bumped `package.json` to **1.0.6** and tagged `v1.0.6` for Windows GitHub Release publish (faster pull: 500-change pages + batched cloud cursor acks). |
 | 2026-10-09 | **Faster pull (safe):** default pull page size raised to cloud max **500**; cloud cursor ack batched every **5** pages (local cursor still advances each page). Fewer round-trips on second-desk hydrate without changing apply/FK rules. |
 | 2026-10-09 | **Release 1.0.5:** bumped `package.json` to **1.0.5** and tagged `v1.0.5` for Windows GitHub Release publish (second-desk Sync Now drain + live sync progress %). Apply cloud migration `20261009140000_count_pending_sync_changes.sql` for accurate download percentages. |
 | 2026-10-09 | **Sync progress %:** Sync Now shows a live percentage bar (upload + download). Push uses pending outbox count; pull uses new cloud RPC `count_pending_sync_changes` (`20261009140000_count_pending_sync_changes.sql`). IPC event `sync:progress`; UI on Home and Backup & Sync. |
