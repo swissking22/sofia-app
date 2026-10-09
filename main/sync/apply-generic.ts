@@ -59,6 +59,8 @@ function omittedColumnDefault(
     invoice_next_number: 1,
     payment_next_number: 1,
     expense_next_number: 1,
+    payslip_prefix: 'PSL',
+    payslip_next_number: 1,
     header_text: '',
     footer_text: '',
     body_text: '',
@@ -928,6 +930,64 @@ function ensureReferencedParents(
   ensureBudgetCategory(str('budget_category_id'))
   ensureBudget(str('budget_id'))
   ensureUser(str('user_id'))
+
+  const ensureExpense = (expenseId: string | null | undefined) => {
+    if (!expenseId || rowExists(db, 'expenses', expenseId)) return
+    try {
+      db.prepare(
+        `INSERT INTO expenses (
+           id, school_id, expense_number, category, amount, expense_date,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, 'salaries', 0, ?, ?, ?, 'synced', 0)`
+      ).run(
+        expenseId,
+        schoolId,
+        'EXP-STUB-' + String(expenseId).slice(0, 8),
+        now.slice(0, 10),
+        now,
+        now
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ensurePayslip = (payslipId: string | null | undefined) => {
+    if (!payslipId || rowExists(db, 'payslips', payslipId)) return
+    const staffId =
+      (payload.staff_id != null && String(payload.staff_id)) ||
+      `staff-for-${payslipId}`
+    ensureStaff(staffId)
+    try {
+      db.prepare(
+        `INSERT INTO payslips (
+           id, school_id, staff_id, payslip_number, period_year, period_month,
+           issue_date, status, currency, gross_amount, deduction_amount, net_amount,
+           created_at, updated_at, sync_status, version
+         ) VALUES (?, ?, ?, ?, 2099, 1, ?, 'draft', 'XAF', 0, 0, 0, ?, ?, 'synced', 0)`
+      ).run(
+        payslipId,
+        schoolId,
+        staffId,
+        'PSL-STUB-' + String(payslipId).slice(0, 8),
+        now.slice(0, 10),
+        now,
+        now
+      )
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (table === 'payslips') {
+    ensureExpense(str('expense_id'))
+  }
+  if (table === 'payslip_lines') {
+    ensurePayslip(str('payslip_id'))
+  }
+  if (table === 'staff_salary_terms') {
+    ensureStaff(str('staff_id'))
+  }
 
   if (table === 'role_permissions') {
     ensureRole(str('role_id'))

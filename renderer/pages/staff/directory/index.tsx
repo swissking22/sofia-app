@@ -57,6 +57,7 @@ export default function StaffDirectoryPage() {
   const [joiningDate, setJoiningDate] = React.useState("");
   const [newStatus, setNewStatus] = React.useState<StaffStatus>("active");
   const [address, setAddress] = React.useState("");
+  const [monthlySalary, setMonthlySalary] = React.useState("");
 
   const load = React.useCallback(async () => {
     const [metaRes, listRes] = await Promise.all([
@@ -88,6 +89,7 @@ export default function StaffDirectoryPage() {
     setJoiningDate("");
     setNewStatus("active");
     setAddress("");
+    setMonthlySalary("");
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -111,6 +113,9 @@ export default function StaffDirectoryPage() {
         status: newStatus,
         address: address.trim() || null,
         staff_type: "administrative",
+        monthly_salary: monthlySalary.trim()
+          ? Number(monthlySalary)
+          : null,
       });
       if (!res.ok) {
         setError(res.error);
@@ -257,13 +262,14 @@ export default function StaffDirectoryPage() {
           "Name",
           "Role",
           "Department",
+          "Salary",
           "Contact",
           "Status",
           "",
         ]}
       >
         {staff.length === 0 ? (
-          <EmptyRow colSpan={7}>No staff match these filters.</EmptyRow>
+          <EmptyRow colSpan={8}>No staff match these filters.</EmptyRow>
         ) : (
           staff.map((s) => (
             <tr
@@ -292,6 +298,11 @@ export default function StaffDirectoryPage() {
               </td>
               <td className="px-4 py-3 text-slate-600">
                 {s.department_name || "—"}
+              </td>
+              <td className="px-4 py-3 tabular-nums text-slate-600">
+                {s.monthly_salary != null && s.monthly_salary > 0
+                  ? s.monthly_salary.toLocaleString()
+                  : "—"}
               </td>
               <td className="px-4 py-3 text-slate-600">
                 {s.phone || s.email || "—"}
@@ -432,6 +443,13 @@ export default function StaffDirectoryPage() {
               type="date"
               value={joiningDate}
               onChange={(e) => setJoiningDate(e.target.value)}
+            />
+            <FormField
+              label="Monthly salary"
+              type="number"
+              value={monthlySalary}
+              onChange={(e) => setMonthlySalary(e.target.value)}
+              placeholder="Optional — used for payslips"
             />
             <label className="mb-4 block">
               <span className="mb-1.5 block text-sm font-medium text-slate-700">

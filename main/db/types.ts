@@ -376,12 +376,57 @@ export interface FinanceSettings extends BaseRecord {
   payment_next_number: number
   expense_prefix: string
   expense_next_number: number
+  payslip_prefix?: string
+  payslip_next_number?: number
   /** 1 = overpayments create student credit */
   allow_credit: number
   budget_alert_pct?: number
   budget_warning_pct?: number
   budget_critical_pct?: number
   require_full_deposit_reconciliation?: number
+}
+
+export type PayslipStatus = 'draft' | 'issued' | 'paid' | 'void'
+export type PayslipLineType = 'earning' | 'deduction'
+
+/** Effective monthly (or other) salary for a staff member over a date range. */
+export interface StaffSalaryTerm extends BaseRecord {
+  school_id: string
+  staff_id: string
+  amount: number
+  currency: string
+  pay_frequency: 'monthly'
+  effective_from: string
+  effective_to: string | null
+  notes: string | null
+}
+
+/** Monthly staff payslip; when paid, links to an expenses row (salaries). */
+export interface Payslip extends BaseRecord {
+  school_id: string
+  staff_id: string
+  payslip_number: string
+  period_year: number
+  period_month: number
+  issue_date: string
+  paid_at: string | null
+  status: PayslipStatus
+  currency: string
+  gross_amount: number
+  deduction_amount: number
+  net_amount: number
+  expense_id: string | null
+  payment_method: string | null
+  notes: string | null
+}
+
+export interface PayslipLine extends BaseRecord {
+  school_id: string
+  payslip_id: string
+  line_type: PayslipLineType
+  description: string
+  amount: number
+  sort_order: number
 }
 
 export type FeeFrequency = 'one_time' | 'monthly' | 'termly' | 'yearly'

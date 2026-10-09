@@ -429,7 +429,7 @@ Syllabus (subject / class / year, topics and subtopics) and a teaching logbook. 
 
 ## Staff Management
 
-Shared list/filter UI mirrors Student Management (`renderer/components/staff/ui.tsx` → student UI primitives). Create/delete/approve actions respect `meta.can_manage`. No photos or salary fields.
+Shared list/filter UI mirrors Student Management (`renderer/components/staff/ui.tsx` → student UI primitives). Create/delete/approve actions respect `meta.can_manage`. No photos. Monthly salary is stored on `staff_salary_terms` (not on the staff row) and drives Finance → Payslips.
 
 ### Teachers
 
@@ -443,8 +443,8 @@ Shared list/filter UI mirrors Student Management (`renderer/components/staff/ui.
 
 | Screen | Path | How to use |
 |--------|------|------------|
-| List | `/staff/directory` | All staff; filter by status, staff type, job role. **Add Staff** opens a drawer for administrative roles (support/admin). |
-| Detail | `/staff/directory/:id` | Text-only profile: personal, role, department, contact, assignments. |
+| List | `/staff/directory` | All staff; filter by status, staff type, job role. Shows current monthly salary when set. **Add Staff** opens a drawer for administrative roles (support/admin) with optional monthly salary. |
+| Detail | `/staff/directory/:id` | Profile: personal, role, department, contact, assignments, and **Compensation** (managers can set/update monthly salary for payslips). |
 
 ### Teacher workload — `/staff/workload`
 
@@ -475,7 +475,7 @@ Notifications strip at top (mark read). Tabs:
 
 ## Finance & Fees
 
-Shared list/filter UI mirrors Student Management (`renderer/components/finance/ui.tsx` → student UI primitives). Create/adjust/record actions respect `meta.can_manage` (admin/secretary); teachers can view lists and reports. No payroll module — expense category **Salaries** is a label only. Print via browser print; export summaries as CSV (no PDF library).
+Shared list/filter UI mirrors Student Management (`renderer/components/finance/ui.tsx` → student UI primitives). Create/adjust/record actions respect `meta.can_manage` (admin/secretary/bursar); teachers can view lists and reports. **Payslips** generate monthly payroll from staff salaries; marking a slip paid posts a **Salaries** expense (budget-traced). Print via browser print; export summaries as CSV (no PDF library).
 
 Fee categories and currency come from Setup → Finance. Receipt header/footer use the document template with key `receipt` when present.
 
@@ -486,8 +486,9 @@ Fee categories and currency come from Setup → Finance. Receipt header/footer u
 | Payments | `/finance/payments` | Payment history. **Record payment**: search a student with outstanding balance, pick their invoice, then **choose which fee lines** (from the fee structure on that invoice) this payment covers — checkboxes + amounts. Cash amount follows the selected lines (credit can reduce cash collected). Allocations are stored on `payment_allocations` and shown in the list/export **Paid for** column. If lines are omitted (e.g. online confirm), Sofia falls back to FIFO. **Online payment** starts a request (`pending`/`processing`); Confirm/Fail/Cancel after the provider settles. |
 | Receipts | `/finance/receipts` | List + search. View/print drawer or full page `/finance/receipts/:id`. Receipts show **Paid for** fee components from stored payment allocations when present (else FIFO). Managers can log a reprint. |
 | Outstanding | `/finance/outstanding` | Toggle student vs class grouping; aging columns (current / 1–30 / 60+). Select students and send in-app fee reminders. |
-| Expenses | `/finance/expenses` | List with date filters. Create: category, amount, date, vendor, description, method, optional recurring. Recording an expense updates matching **budgets** and may raise spending alerts. |
-| Budgeting | `/finance/budgeting` | Totals (allocated / spent / remaining / utilization) and per-category bars. Managers add configurable categories, allocate budgets by period (monthly / termly / annual / custom), and set alert / warning / critical thresholds. Spending is computed from existing Expenses. |
+| Expenses | `/finance/expenses` | List with date filters. Create: category, amount, date, vendor, description, method, optional recurring. Recording an expense updates matching **budgets** and may raise spending alerts. Payslips marked paid also appear here under **Salaries**. |
+| Payslips | `/finance/payslips` | Filter by year/month/status. Set salaries on Staff Directory first, then **Generate** issued payslips for active staff with a covering salary term. **Mark paid** posts a numbered Salaries expense (linked on the payslip) and updates Salaries budgets via the existing expense→budget map. IPC: `finance-payroll:*`. Tables: `staff_salary_terms`, `payslips`, `payslip_lines` (synced). |
+| Budgeting | `/finance/budgeting` | Totals (allocated / spent / remaining / utilization) and per-category bars. Managers add configurable categories, allocate budgets by period (monthly / termly / annual / custom), and set alert / warning / critical thresholds. Spending is computed from existing Expenses (including paid payslips). |
 | Bank deposits | `/finance/bank-deposits` | Track school cash **already collected** when it is later deposited in the bank. Not a student payment method. Workflow: record (pending) → reconcile cash collections (many payments to one slip) → verify → post to ledger. Verified deposits cannot be silently edited. |
 | Financial reports | `/finance/reports` | Date range → cards for revenue, collected, outstanding, expenses, P&L; tables by payment method and expense category; Export CSV. |
 
@@ -596,7 +597,7 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 | School foundation | `schools`, `academic_years`, `academic_terms`, `academic_levels`, `sections`, `specializations`, `departments`, `classes`, `subjects`, `subject_classes`, `grading_systems`, `assessment_types`, `grade_bands` |
 | Users & RBAC | `permissions`, `roles`, `role_permissions`, `users` (**no passwords** — `password_hash` stripped from outbox/push; pull keeps local hash or a pending placeholder) |
 | Staff (light) | `staff`, `staff_subjects`, `staff_classes` |
-| Finance (Step 5) | `finance_settings` (counters use **MAX** local/remote), fee catalogs/structures/discounts, `invoices`, `invoice_lines`, `payments`, `payment_allocations`, `receipts`, credits, expenses, ledger, audit, reminders, budgets, online payments, bank deposits |
+| Finance (Step 5) | `finance_settings` (counters use **MAX** local/remote), fee catalogs/structures/discounts, `invoices`, `invoice_lines`, `payments`, `payment_allocations`, `receipts`, credits, expenses, ledger, audit, reminders, `staff_salary_terms`, `payslips`, `payslip_lines`, budgets, online payments, bank deposits |
 | Academics & attendance (Step 6) | `timetable_slots`; class + gate + staff attendance; CA/exams/scores; calculation profiles/coefficients; `result_runs` (+ rows/summaries); `report_cards` |
 | Documents & ID cards (Step 7) | `document_templates`, numbering sequences (MAX), signatories, `issued_documents` (+ versions/audit); ID card templates/versions/settings/sequences (MAX), issued cards, generation jobs/items, print history |
 | Communication (Step 8) | `communication_settings`, `notification_templates`, `announcements`, `internal_notices`, `communication_deliveries`, `parent_message_threads`, `parent_messages` |
@@ -967,6 +968,7 @@ Key libs for built modules:
 | 2026-08-06 | Seed system (`npm run seed` / `seed:dev`): Faker-based SQLite demo data (2 schools, academics, staff, 300 students, finance 40/40/20 pay mix, attendance). Login `admin@greenfield.demo` / `Sofia@Demo1`. |
 | 2026-08-06 | Unit tests (Jest): finance & staff service-layer coverage (billing, payments, expenses, outstanding, attendance, leave) + demo scenarios; shared domain helpers in `main/domain/`. Run with `npm test`. |
 | 2026-08-06 | App branding: official SOFIA logo/icon from `renderer/assets/images` used in auth, sidebar, setup, 404, and Electron window/dock icons (`resources/icon.*`). |
+| 2026-10-09 | Payroll: staff monthly salaries (`staff_salary_terms`), Finance → Payslips generate/mark-paid, Salaries expense + budget tracing, sync allow-list + IPC `finance-payroll:*`; bursar included in finance manage roles. |
 | 2026-08-06 | Finance & Fees module: fee structures, invoices (partial pay + arrears), payments/receipts, student credits, expenses, ledger + audit log, outstanding aging, reports; IPC `finance-mgmt:*`; sidebar unlocked. |
 | 2026-08-06 | Finance & Fees UI: fee structures, billing, payments, receipts (print), outstanding + reminders, expenses, reports (CSV); sidebar unlocked; student Finance tab wired to `finance-mgmt:student-summary`. |
 | 2026-08-06 | Staff Management module: schema (employee code, leave, teacher attendance, notifications), IPC `staff-mgmt:*`, pages under `/staff/*`, sidebar unlocked. No payroll or staff photos. |

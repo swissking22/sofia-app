@@ -50,6 +50,9 @@ export const GENERIC_SYNC_TABLES = [
   'ledger_entries',
   'finance_audit_log',
   'finance_reminders',
+  'staff_salary_terms',
+  'payslips',
+  'payslip_lines',
   'budget_categories',
   'budgets',
   'budget_alerts',
@@ -143,6 +146,7 @@ export const FINANCE_SEQUENCE_COLUMNS = [
   'payment_next_number',
   'receipt_next_number',
   'expense_next_number',
+  'payslip_next_number',
 ] as const
 
 /**
@@ -292,7 +296,8 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   finance_settings: [
     'id', 'school_id', 'currency', 'payment_methods', 'receipt_prefix', 'receipt_next_number',
     'invoice_prefix', 'invoice_next_number', 'payment_prefix', 'payment_next_number',
-    'expense_prefix', 'expense_next_number', 'allow_credit', 'budget_alert_pct',
+    'expense_prefix', 'expense_next_number', 'payslip_prefix', 'payslip_next_number',
+    'allow_credit', 'budget_alert_pct',
     'budget_warning_pct', 'budget_critical_pct', 'require_full_deposit_reconciliation',
     'created_at', 'updated_at', 'deleted_at', 'version',
   ],
@@ -353,6 +358,21 @@ export const GENERIC_TABLE_COLUMNS: Record<GenericSyncTable, readonly string[]> 
   expenses: [
     'id', 'school_id', 'expense_number', 'category', 'amount', 'expense_date', 'description',
     'vendor', 'payment_method', 'receipt_path', 'is_recurring', 'recurring_interval',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  staff_salary_terms: [
+    'id', 'school_id', 'staff_id', 'amount', 'currency', 'pay_frequency',
+    'effective_from', 'effective_to', 'notes',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  payslips: [
+    'id', 'school_id', 'staff_id', 'payslip_number', 'period_year', 'period_month',
+    'issue_date', 'paid_at', 'status', 'currency', 'gross_amount', 'deduction_amount',
+    'net_amount', 'expense_id', 'payment_method', 'notes',
+    'created_at', 'updated_at', 'deleted_at', 'version',
+  ],
+  payslip_lines: [
+    'id', 'school_id', 'payslip_id', 'line_type', 'description', 'amount', 'sort_order',
     'created_at', 'updated_at', 'deleted_at', 'version',
   ],
   ledger_entries: [

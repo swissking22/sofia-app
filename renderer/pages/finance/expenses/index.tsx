@@ -161,7 +161,7 @@ export default function ExpensesPage() {
       title="Expenses"
       breadcrumb={["Finance & Fees", "Expenses"]}
       heading="Expenses"
-      subtitle="Track school operating expenses (not staff payroll)."
+      subtitle="Track school operating expenses. Payroll payslips also post here under Salaries when marked paid."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
       {success ? <PageAlert tone="success">{success}</PageAlert> : null}

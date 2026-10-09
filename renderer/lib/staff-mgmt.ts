@@ -50,6 +50,8 @@ export interface StaffDto {
   }>
   homeroom_class_ids: string[]
   homeroom_class_names: string[]
+  /** Current monthly salary from staff_salary_terms, if set. */
+  monthly_salary?: number | null
 }
 
 export interface StaffMeta {

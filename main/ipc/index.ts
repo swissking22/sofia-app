@@ -24,6 +24,7 @@ import { registerAcademicMgmtIpc } from './academic-mgmt'
 import { registerStaffMgmtIpc } from './staff-mgmt'
 import { registerFinanceMgmtIpc } from './finance-mgmt'
 import { registerFinanceExtIpc } from './finance-ext'
+import { registerFinancePayrollIpc } from './finance-payroll'
 import { registerStudentIdCardsIpc } from './student-id-cards'
 import { registerTeachingProgressIpc } from './teaching-progress'
 import { registerReportsIpc } from './reports'
@@ -61,6 +62,7 @@ export function registerIpcHandlers(
   registerFinanceIpc(repos)
   registerFinanceMgmtIpc(repos)
   registerFinanceExtIpc(repos)
+  registerFinancePayrollIpc(repos)
   registerStudentIdCardsIpc(repos)
   registerTeachingProgressIpc(repos)
   registerReportsIpc(repos)

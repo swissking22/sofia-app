@@ -622,6 +622,7 @@ export function createSchema(db: Database.Database): void {
   migrateStaffManagementTables(db)
   migrateTeachingAssignments(db)
   migrateFinanceManagementTables(db)
+  migratePayrollTables(db)
   migrateCommunicationManagementTables(db)
   migrateMvpFeatureTables(db)
   migrateReportsTables(db)
@@ -2065,6 +2066,14 @@ function migrateFinanceManagementTables(db: Database.Database): void {
     {
       name: 'allow_credit',
       sql: `ALTER TABLE finance_settings ADD COLUMN allow_credit INTEGER NOT NULL DEFAULT 1`,
+    },
+    {
+      name: 'payslip_prefix',
+      sql: `ALTER TABLE finance_settings ADD COLUMN payslip_prefix TEXT NOT NULL DEFAULT 'PSL'`,
+    },
+    {
+      name: 'payslip_next_number',
+      sql: `ALTER TABLE finance_settings ADD COLUMN payslip_next_number INTEGER NOT NULL DEFAULT 1`,
     },
   ]
   for (const col of settingsAdditions) {
@@ -3601,6 +3610,87 @@ function migrateAssessmentQuestionPaperTables(db: Database.Database): void {
       WHERE deleted_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_aq_events_paper
       ON assessment_question_paper_events(paper_id, created_at)
+      WHERE deleted_at IS NULL;
+  `)
+}
+
+/** Staff salaries + monthly payslips (linked to expenses/budgets when paid). */
+function migratePayrollTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS staff_salary_terms (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      staff_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'XAF',
+      pay_frequency TEXT NOT NULL DEFAULT 'monthly',
+      effective_from TEXT NOT NULL,
+      effective_to TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (staff_id) REFERENCES staff(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS payslips (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      staff_id TEXT NOT NULL,
+      payslip_number TEXT NOT NULL,
+      period_year INTEGER NOT NULL,
+      period_month INTEGER NOT NULL,
+      issue_date TEXT NOT NULL,
+      paid_at TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      currency TEXT NOT NULL DEFAULT 'XAF',
+      gross_amount REAL NOT NULL DEFAULT 0,
+      deduction_amount REAL NOT NULL DEFAULT 0,
+      net_amount REAL NOT NULL DEFAULT 0,
+      expense_id TEXT,
+      payment_method TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (staff_id) REFERENCES staff(id),
+      FOREIGN KEY (expense_id) REFERENCES expenses(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS payslip_lines (
+      id TEXT PRIMARY KEY NOT NULL,
+      school_id TEXT NOT NULL,
+      payslip_id TEXT NOT NULL,
+      line_type TEXT NOT NULL,
+      description TEXT NOT NULL,
+      amount REAL NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (school_id) REFERENCES schools(id),
+      FOREIGN KEY (payslip_id) REFERENCES payslips(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_staff_salary_terms_staff
+      ON staff_salary_terms(school_id, staff_id, effective_from)
+      WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_payslips_school_period
+      ON payslips(school_id, period_year, period_month)
+      WHERE deleted_at IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_payslips_staff_period_unique
+      ON payslips(school_id, staff_id, period_year, period_month)
+      WHERE deleted_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_payslip_lines_payslip
+      ON payslip_lines(payslip_id)
       WHERE deleted_at IS NULL;
   `)
 }

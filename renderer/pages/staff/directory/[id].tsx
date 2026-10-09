@@ -3,12 +3,16 @@ import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
   PageAlert,
+  PrimaryButton,
   SecondaryButton,
   StatusBadge,
+  fieldClass,
 } from "../../../components/staff/ui";
 import {
   JOB_ROLE_LABELS,
   fetchStaff,
+  fetchStaffMeta,
+  updateStaff,
   type StaffDto,
 } from "../../../lib/staff-mgmt";
 import { formatDisplayDate } from "../../../lib/date-format";
@@ -26,19 +30,60 @@ export default function StaffDirectoryDetailPage() {
   const router = useRouter();
   const id = typeof router.query.id === "string" ? router.query.id : "";
   const [loading, setLoading] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
+  const [success, setSuccess] = React.useState("");
   const [staff, setStaff] = React.useState<StaffDto | null>(null);
+  const [canManage, setCanManage] = React.useState(false);
+  const [salaryInput, setSalaryInput] = React.useState("");
+
+  const reload = React.useCallback(async () => {
+    if (!id) return;
+    const [metaRes, res] = await Promise.all([
+      fetchStaffMeta(),
+      fetchStaff(id),
+    ]);
+    if (metaRes.ok) setCanManage(metaRes.data.can_manage);
+    if (res.ok) {
+      setStaff(res.data);
+      setSalaryInput(
+        res.data.monthly_salary != null && res.data.monthly_salary > 0
+          ? String(res.data.monthly_salary)
+          : "",
+      );
+    } else setError(res.error);
+    setLoading(false);
+  }, [id]);
 
   React.useEffect(() => {
-    if (!id) return;
-    void (async () => {
-      setLoading(true);
-      const res = await fetchStaff(id);
-      if (res.ok) setStaff(res.data);
-      else setError(res.error);
-      setLoading(false);
-    })();
-  }, [id]);
+    void reload();
+  }, [reload]);
+
+  async function saveSalary() {
+    if (!staff || !canManage || busy) return;
+    const amount = Number(salaryInput);
+    if (!(amount > 0)) {
+      setError("Enter a positive monthly salary.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await updateStaff({
+        id: staff.id,
+        monthly_salary: amount,
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setSuccess("Monthly salary saved. It will be used for payslip generation.");
+      setStaff(res.data);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -77,6 +122,7 @@ export default function StaffDirectoryDetailPage() {
       }`}
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
+      {success ? <PageAlert tone="success">{success}</PageAlert> : null}
 
       <div className="mb-4">
         <StatusBadge status={staff.status} />
@@ -126,6 +172,50 @@ export default function StaffDirectoryDetailPage() {
             <InfoRow label="Phone" value={staff.phone} />
             <InfoRow label="Email" value={staff.email} />
           </dl>
+        </section>
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Compensation
+          </h2>
+          <p className="mb-3 text-sm text-slate-500">
+            Monthly salary feeds Finance → Payslips. When a payslip is marked
+            paid, a Salaries expense is posted for budgeting.
+          </p>
+          {canManage ? (
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="block min-w-40 flex-1 text-sm">
+                <span className="mb-1 block font-medium text-slate-700">
+                  Monthly salary
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className={fieldClass}
+                  value={salaryInput}
+                  onChange={(e) => setSalaryInput(e.target.value)}
+                />
+              </label>
+              <PrimaryButton
+                disabled={busy}
+                onClick={() => void saveSalary()}
+              >
+                {busy ? "Saving…" : "Save salary"}
+              </PrimaryButton>
+            </div>
+          ) : (
+            <dl>
+              <InfoRow
+                label="Monthly salary"
+                value={
+                  staff.monthly_salary != null && staff.monthly_salary > 0
+                    ? staff.monthly_salary.toLocaleString()
+                    : null
+                }
+              />
+            </dl>
+          )}
         </section>
 
         {(staff.subject_names.length > 0 ||

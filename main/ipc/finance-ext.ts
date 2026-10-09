@@ -10,11 +10,11 @@ function requireSession(): SessionData | null {
 }
 
 function canManage(role: string): boolean {
-  return role === 'admin' || role === 'secretary'
+  return role === 'admin' || role === 'secretary' || role === 'bursar'
 }
 
 function canView(role: string): boolean {
-  return canManage(role) || role === 'teacher'
+  return canManage(role) || role === 'teacher' || role === 'principal'
 }
 
 function schoolId(repos: Repositories, session: SessionData): string {

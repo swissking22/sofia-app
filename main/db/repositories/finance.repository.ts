@@ -140,6 +140,8 @@ export class FinanceRepository extends BaseRepository<FinanceSettings> {
       payment_next_number: 1,
       expense_prefix: 'EXP',
       expense_next_number: 1,
+      payslip_prefix: 'PSL',
+      payslip_next_number: 1,
       allow_credit: 1,
     }
     this.db
@@ -147,12 +149,12 @@ export class FinanceRepository extends BaseRepository<FinanceSettings> {
         `INSERT INTO finance_settings (
           id, school_id, currency, payment_methods, receipt_prefix, receipt_next_number,
           invoice_prefix, invoice_next_number, payment_prefix, payment_next_number,
-          expense_prefix, expense_next_number, allow_credit,
+          expense_prefix, expense_next_number, payslip_prefix, payslip_next_number, allow_credit,
           created_at, updated_at, deleted_at, sync_status, version
         ) VALUES (
           @id, @school_id, @currency, @payment_methods, @receipt_prefix, @receipt_next_number,
           @invoice_prefix, @invoice_next_number, @payment_prefix, @payment_next_number,
-          @expense_prefix, @expense_next_number, @allow_credit,
+          @expense_prefix, @expense_next_number, @payslip_prefix, @payslip_next_number, @allow_credit,
           @created_at, @updated_at, @deleted_at, @sync_status, @version
         )`
       )

@@ -65,6 +65,8 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
       payment_next_number: row.payment_next_number ?? 1,
       expense_prefix: row.expense_prefix || 'EXP',
       expense_next_number: row.expense_next_number ?? 1,
+      payslip_prefix: row.payslip_prefix || 'PSL',
+      payslip_next_number: row.payslip_next_number ?? 1,
       allow_credit: row.allow_credit ?? 1,
     }
   }

@@ -68,13 +68,17 @@ function enrichStaff(
 ): StaffDto | null {
   const row = repos.staff.findById(staffId)
   if (!row || row.school_id !== schoolId) return null
-  const dto = repos.staff.toDto(row, lookups(repos, schoolId))
+  const dto = repos.staff.toDto(row, lookups(repos, schoolId)) as StaffDto & {
+    monthly_salary?: number | null
+  }
   const homeroomIds = repos.staff.findHomeroomClassIds(staffId)
   const classLookup = lookups(repos, schoolId).classes
   dto.homeroom_class_ids = homeroomIds
   dto.homeroom_class_names = homeroomIds
     .map((id) => classLookup.find((c) => c.id === id)?.name)
     .filter((n): n is string => Boolean(n))
+  const salary = repos.payroll.currentSalary(schoolId, staffId)
+  dto.monthly_salary = salary?.amount ?? null
   return dto
 }
 
@@ -317,6 +321,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         homeroom_class_ids?: string[]
         teaching_assignments?: Array<{ class_id: string; subject_id: string }>
         staff_type?: StaffType
+        monthly_salary?: number | null
       }
     ): Promise<Result<StaffDto>> => {
       const session = requireSession()
@@ -387,6 +392,18 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
           }
         }
 
+        if (
+          input.monthly_salary != null &&
+          Number(input.monthly_salary) > 0
+        ) {
+          repos.payroll.setMonthlySalary({
+            school_id: schoolId,
+            staff_id: staff.id,
+            amount: Number(input.monthly_salary),
+            effective_from: input.joining_date || undefined,
+          })
+        }
+
         let warning: string | null = null
         const email = input.email?.trim()
         if (staff_type === 'teaching') {
@@ -439,6 +456,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         class_ids?: string[]
         homeroom_class_ids?: string[]
         teaching_assignments?: Array<{ class_id: string; subject_id: string }>
+        monthly_salary?: number | null
       }
     ): Promise<Result<StaffDto>> => {
       const session = requireSession()
@@ -499,6 +517,17 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
           address: input.address,
           gender: input.gender,
         })
+
+        if (
+          input.monthly_salary != null &&
+          Number(input.monthly_salary) > 0
+        ) {
+          repos.payroll.setMonthlySalary({
+            school_id: schoolId,
+            staff_id: input.id,
+            amount: Number(input.monthly_salary),
+          })
+        }
 
         if (existing.staff_type === 'teaching') {
           if (

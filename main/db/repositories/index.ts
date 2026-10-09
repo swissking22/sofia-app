@@ -18,6 +18,7 @@ import { StudentSettingsRepository } from './student-settings.repository'
 import { StudentIdSettingsRepository } from './student-id-settings.repository'
 import { FinanceRepository } from './finance.repository'
 import { FinanceMgmtRepository } from './finance-mgmt.repository'
+import { PayrollRepository } from './payroll.repository'
 import { DocumentTemplateRepository } from './document-template.repository'
 import { CommunicationRepository } from './communication.repository'
 import { CommunicationMgmtRepository } from './communication-mgmt.repository'
@@ -53,6 +54,7 @@ import { AssessmentQuestionsRepository } from './assessment-questions.repository
 /** Factory that creates all repositories from a shared DB connection. */
 export function createRepositories(db: Database.Database) {
   const financeMgmt = new FinanceMgmtRepository(db)
+  const payroll = new PayrollRepository(db, financeMgmt)
   return {
     schools: new SchoolRepository(db),
     users: new UserRepository(db),
@@ -73,6 +75,7 @@ export function createRepositories(db: Database.Database) {
     studentIdSettings: new StudentIdSettingsRepository(db),
     finance: new FinanceRepository(db),
     financeMgmt,
+    payroll,
     budgets: new BudgetRepository(db),
     onlinePayments: new OnlinePaymentRepository(db, financeMgmt),
     bankDeposits: new BankDepositRepository(db, financeMgmt),

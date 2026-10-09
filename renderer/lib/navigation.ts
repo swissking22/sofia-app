@@ -340,6 +340,12 @@ export const NAV_SECTIONS: NavSection[] = [
             permissions: ['finance.read'],
           },
           {
+            id: 'payslips',
+            label: 'Payslips',
+            href: '/finance/payslips',
+            permissions: ['finance.read'],
+          },
+          {
             id: 'budgeting',
             label: 'Budgeting',
             href: '/finance/budgeting',
