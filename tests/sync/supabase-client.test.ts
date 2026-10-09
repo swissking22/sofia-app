@@ -225,6 +225,18 @@ describe('Sofia Supabase JS client (transport)', () => {
     expect(result.count).toBe(1)
   })
 
+  test('8b. count_pending_sync_changes returns remaining backlog', async () => {
+    const client = new SupabaseSyncClient({
+      supabase: mockSupabase(async () => ({
+        data: { success: true, count: 42, cursor: 7 },
+        error: null,
+      })),
+    })
+    await expect(
+      client.countPendingSyncChanges({ schoolId: 's1', cursor: 7 })
+    ).resolves.toEqual({ ok: true, count: 42 })
+  })
+
   test('9. update_sync_cursor RPC success and failure', async () => {
     const ok = new SupabaseSyncClient({
       supabase: mockSupabase(async () => ({

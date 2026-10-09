@@ -2,11 +2,16 @@ import Database from 'better-sqlite3'
 import { createSchema } from '../../main/db/schema'
 import { createRepositories } from '../../main/db/repositories'
 import { enqueueSync } from '../../main/sync/queue'
-import { pullRemoteChanges } from '../../main/sync/pull'
+import {
+  applyPulledChangesIndividually,
+  pullRemoteChanges,
+} from '../../main/sync/pull'
 import { getLocalSyncCursor, setLocalSyncCursor } from '../../main/sync/cursor'
 import { resetDeviceStoreForTests } from '../../main/sync/device'
-import { runSyncWorker } from '../../main/sync/worker'
+import { runSyncWorker, runSyncWorkerUntilCaughtUp } from '../../main/sync/worker'
 import type {
+  CountPendingSyncChangesParams,
+  CountPendingSyncChangesResult,
   ProcessSyncRpcParams,
   ProcessSyncRpcResult,
   PullSyncRpcParams,
@@ -26,12 +31,23 @@ class MockSupabaseSyncClient implements SupabaseSyncClientInterface {
   public updatedCursors: UpdateSyncCursorRpcParams[] = []
 
   public changesToReturn: SyncChange[] = []
+  public pendingPullCount: number | null = null
   public pullHandler?: (params: PullSyncRpcParams) => Promise<PullSyncRpcResult> | PullSyncRpcResult
   public operationHandler?: (params: ProcessSyncRpcParams) => Promise<ProcessSyncRpcResult> | ProcessSyncRpcResult
 
   async registerDevice(params: RegisterDeviceRpcParams): Promise<RegisterDeviceRpcResult> {
     this.registeredDevices.push(params)
     return { ok: true }
+  }
+
+  async countPendingSyncChanges(
+    params: CountPendingSyncChangesParams
+  ): Promise<CountPendingSyncChangesResult> {
+    if (this.pendingPullCount == null) {
+      return { ok: false, count: 0, error: 'count not stubbed' }
+    }
+    void params
+    return { ok: true, count: this.pendingPullCount }
   }
 
   async processSyncOperation(params: ProcessSyncRpcParams): Promise<ProcessSyncRpcResult> {
@@ -446,8 +462,8 @@ describe('Sofia Phase 2: Local Pull Sync Service', () => {
     expect(queueCount.count).toBe(0)
   })
 
-  // 10. Local transaction atomicity: rolls back on failure and does not advance cursor
-  test('10. Atomic rollback: corrupted batch does not partially commit or advance cursor', async () => {
+  // 10. Corrupted row in a page: per-change fallback keeps good rows and advances cursor
+  test('10. Corrupted change falls back to per-row apply; good rows commit and cursor advances', async () => {
     setLocalSyncCursor(db, schoolId, deviceId, 50)
 
     mockClient.pullHandler = async () => ({
@@ -481,15 +497,13 @@ describe('Sofia Phase 2: Local Pull Sync Service', () => {
     })
 
     const result = await pullRemoteChanges({ db, schoolId, deviceId, client: mockClient })
-    expect(result.ok).toBe(false)
+    expect(result.ok).toBe(true)
+    expect(result.applied).toBe(1)
     expect(result.failed).toBe(1)
-
-    // Cursor must remain at 50, NOT advanced to 52
-    expect(getLocalSyncCursor(db, schoolId, deviceId)).toBe(50)
-
-    // 'student-valid' must not be in the database because the transaction rolled back
+    // Cursor advances past the page so Sync Now is not stuck replaying the poison row forever
+    expect(getLocalSyncCursor(db, schoolId, deviceId)).toBe(52)
     const valid = db.prepare(`SELECT * FROM students WHERE id = 'student-valid'`).get()
-    expect(valid).toBeUndefined()
+    expect(valid).toBeDefined()
   })
 
   // 11. Network error during pull returns clean error and preserves cursor
@@ -509,6 +523,7 @@ describe('Sofia Phase 2: Local Pull Sync Service', () => {
     const result = await pullRemoteChanges({ db, schoolId, deviceId, client: mockClient })
     expect(result.ok).toBe(false)
     expect(result.failed).toBe(1)
+    expect(result.hasMore).toBe(true)
     expect(getLocalSyncCursor(db, schoolId, deviceId)).toBe(60)
   })
 
@@ -714,17 +729,223 @@ describe('Sofia Phase 2: Local Pull Sync Service', () => {
       schoolId,
       client: mockClient,
       skipPush: true,
-      batchSize: 1,
+      pullBatchSize: 1,
     })
 
     expect(workerResult.ok).toBe(true)
     expect(workerResult.pull.applied).toBe(7)
     expect(workerResult.pull.hasMore).toBe(false)
+    expect(workerResult.hasMore).toBe(false)
     expect(
       repos.students.findBySchool(schoolId, 'all').filter((s) =>
         s.id.startsWith('drain-student-')
       ).length
     ).toBe(7)
+  })
+
+  // 13d. One bad row must not freeze the whole pull page (second-desk crawl fix)
+  test('13d. batch apply failure falls back to per-change apply and advances cursor', async () => {
+    mockClient.pullHandler = async (params) => ({
+      ok: true,
+      changes: [
+        {
+          id: 301,
+          school_id: schoolId,
+          table_name: 'students',
+          record_id: 'good-before-poison',
+          operation: 'INSERT',
+          version: 1,
+          created_at: new Date().toISOString(),
+          payload: {
+            id: 'good-before-poison',
+            school_id: schoolId,
+            name: 'Good Before',
+            class_id: classId,
+            version: 1,
+          },
+        },
+        {
+          id: 302,
+          school_id: schoolId,
+          // Generic table: upsertRow throws when id is missing → aborts batch TX
+          table_name: 'subjects',
+          record_id: '',
+          operation: 'INSERT',
+          version: 1,
+          created_at: new Date().toISOString(),
+          payload: { name: 'Poison Subject', school_id: schoolId, version: 1 },
+        },
+        {
+          id: 303,
+          school_id: schoolId,
+          table_name: 'students',
+          record_id: 'good-after-poison',
+          operation: 'INSERT',
+          version: 1,
+          created_at: new Date().toISOString(),
+          payload: {
+            id: 'good-after-poison',
+            school_id: schoolId,
+            name: 'Good After',
+            class_id: classId,
+            version: 1,
+          },
+        },
+      ],
+      count: 3,
+      currentCursor: params.cursor,
+      newCursor: 303,
+      hasMore: false,
+    })
+
+    const result = await pullRemoteChanges({
+      db,
+      schoolId,
+      deviceId,
+      client: mockClient,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.applied).toBe(2)
+    expect(result.failed).toBe(1)
+    expect(result.newCursor).toBe(303)
+    expect(getLocalSyncCursor(db, schoolId, deviceId)).toBe(303)
+    expect(repos.students.findBySchool(schoolId, 'all').map((s) => s.id)).toEqual(
+      expect.arrayContaining(['good-before-poison', 'good-after-poison'])
+    )
+  })
+
+  // 13e. Hard pull error must not tight-loop inside the worker
+  test('13e. runSyncWorker stops pull drain on hard error but keeps hasMore', async () => {
+    let calls = 0
+    mockClient.pullHandler = async (params) => {
+      calls += 1
+      return {
+        ok: false,
+        error: 'simulated network drop',
+        changes: [],
+        count: 0,
+        currentCursor: params.cursor,
+        newCursor: params.cursor,
+        hasMore: false,
+      }
+    }
+
+    const workerResult = await runSyncWorker(db, {
+      schoolId,
+      client: mockClient,
+      skipPush: true,
+    })
+
+    expect(calls).toBe(1)
+    expect(workerResult.ok).toBe(false)
+    expect(workerResult.pull.hasMore).toBe(true)
+    expect(workerResult.hasMore).toBe(true)
+    expect(workerResult.message).toMatch(/Sync Now|network|continue/i)
+  })
+
+  // 13g. Progress percent uses cloud remaining count
+  test('13g. runSyncWorkerUntilCaughtUp emits rising percent from pull totals', async () => {
+    let nextId = 500
+    let remaining = 4
+    mockClient.pendingPullCount = 4
+    mockClient.pullHandler = async (params) => {
+      if (remaining <= 0) {
+        return {
+          ok: true,
+          changes: [],
+          count: 0,
+          currentCursor: params.cursor,
+          newCursor: params.cursor,
+          hasMore: false,
+        }
+      }
+      const id = nextId++
+      remaining -= 1
+      mockClient.pendingPullCount = remaining
+      return {
+        ok: true,
+        changes: [
+          {
+            id,
+            school_id: schoolId,
+            table_name: 'students',
+            record_id: `pct-student-${id}`,
+            operation: 'INSERT',
+            version: 1,
+            created_at: new Date().toISOString(),
+            payload: {
+              id: `pct-student-${id}`,
+              school_id: schoolId,
+              name: `Pct ${id}`,
+              class_id: classId,
+              version: 1,
+            },
+          },
+        ],
+        count: 1,
+        currentCursor: params.cursor,
+        newCursor: id,
+        hasMore: remaining > 0,
+      }
+    }
+
+    const percents: number[] = []
+    const result = await runSyncWorkerUntilCaughtUp(db, {
+      schoolId,
+      client: mockClient,
+      skipPush: true,
+      pullBatchSize: 1,
+      pullMaxIterations: 1,
+      onProgress: (e) => percents.push(e.percent),
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.pull.applied).toBe(4)
+    expect(result.progress?.percent).toBe(100)
+    expect(Math.max(...percents)).toBe(100)
+    expect(percents.some((p) => p > 0 && p < 100)).toBe(true)
+  })
+
+  // 13f. Individual apply helper advances cursor after mixed success
+  test('13f. applyPulledChangesIndividually advances cursor past skipped failures', () => {
+    const res = applyPulledChangesIndividually(
+      db,
+      [
+        {
+          id: 401,
+          school_id: schoolId,
+          table_name: 'students',
+          record_id: 'indiv-ok',
+          operation: 'INSERT',
+          version: 1,
+          created_at: new Date().toISOString(),
+          payload: {
+            id: 'indiv-ok',
+            school_id: schoolId,
+            name: 'Indiv Ok',
+            class_id: classId,
+            version: 1,
+          },
+        },
+        {
+          id: 402,
+          school_id: schoolId,
+          table_name: 'subjects',
+          record_id: '',
+          operation: 'INSERT',
+          version: 1,
+          created_at: new Date().toISOString(),
+          payload: { name: 'No Id', school_id: schoolId },
+        },
+      ],
+      schoolId,
+      deviceId,
+      402
+    )
+    expect(res.applied).toBe(1)
+    expect(res.failed).toBe(1)
+    expect(getLocalSyncCursor(db, schoolId, deviceId)).toBe(402)
   })
 
   // 14. Integrated sync worker runs push then pull

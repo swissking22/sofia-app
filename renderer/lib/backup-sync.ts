@@ -74,26 +74,63 @@ export async function pickBackupLocation(): Promise<
   )) as Result<{ path: string }>
 }
 
-export async function syncNow(): Promise<
-  Result<
-    BackupSyncSetup & {
-      processed: number
-      failed: number
-      successful?: number
-      has_more?: boolean
-      message?: string | null
-    }
-  >
-> {
-  return (await window.ipc.invoke('backup-sync:sync-now')) as Result<
-    BackupSyncSetup & {
-      processed: number
-      failed: number
-      successful?: number
-      has_more?: boolean
-      message?: string | null
-    }
-  >
+export type SyncNowResult = BackupSyncSetup & {
+  processed: number
+  failed: number
+  successful?: number
+  has_more?: boolean
+  hasMore?: boolean
+  message?: string | null
+  rounds?: number
+  progress?: {
+    percent: number
+    message: string
+    phase: string
+  }
+  push?: { hasMore?: boolean; successful?: number; applied?: number }
+  pull?: { hasMore?: boolean; applied?: number }
+}
+
+/** True when push or pull still has cloud/local backlog after a Sync Now. */
+export function syncResultHasMore(data: {
+  has_more?: boolean
+  hasMore?: boolean
+  message?: string | null
+  push?: { hasMore?: boolean }
+  pull?: { hasMore?: boolean }
+}): boolean {
+  return Boolean(
+    data.has_more ||
+      data.hasMore ||
+      data.push?.hasMore ||
+      data.pull?.hasMore
+  )
+}
+
+export async function syncNow(): Promise<Result<SyncNowResult>> {
+  return (await window.ipc.invoke('backup-sync:sync-now')) as Result<SyncNowResult>
+}
+
+/**
+ * Sync Now with live `sync:progress` events. Main drains push+pull until caught up.
+ */
+export async function syncNowUntilCaughtUp(options?: {
+  onProgress?: (event: {
+    percent: number
+    message: string
+    phase: string
+    indeterminate?: boolean
+  }) => void
+}): Promise<Result<SyncNowResult>> {
+  const { subscribeSyncProgress } = await import('./sync-progress')
+  const unsub = options?.onProgress
+    ? subscribeSyncProgress(options.onProgress)
+    : () => undefined
+  try {
+    return await syncNow()
+  } finally {
+    unsub()
+  }
 }
 
 export async function testCloudConnection(): Promise<

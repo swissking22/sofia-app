@@ -1,5 +1,5 @@
 import { dialog, BrowserWindow } from 'electron'
-import { ipcMain } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { getSession } from '../auth'
 import { getDatabasePath } from '../db'
 import type { Repositories } from '../db/repositories'
@@ -7,7 +7,21 @@ import type {
   BackupSyncSaveInput,
   BackupSyncSetupDto,
 } from '../db/repositories/backup-sync.repository'
-import { runSyncWorker } from '../sync/worker'
+import { runSyncWorkerUntilCaughtUp } from '../sync/worker'
+import type { SyncProgressEvent } from '../sync/progress'
+
+function emitSyncProgress(
+  event: IpcMainInvokeEvent,
+  progress: SyncProgressEvent
+): void {
+  try {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('sync:progress', progress)
+    }
+  } catch {
+    /* renderer gone */
+  }
+}
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -96,14 +110,19 @@ export function registerBackupSyncIpc(
 
   ipcMain.handle(
     'backup-sync:sync-now',
-    async (): Promise<
+    async (
+      event: IpcMainInvokeEvent
+    ): Promise<
       Result<BackupSyncSetupDto & { processed: number; failed: number }>
     > => {
       const school = resolveSchool(repos)
       if (!school) return { ok: false, error: 'No school found.' }
 
       try {
-        const result = await runSyncWorker(db, { schoolId: school.id })
+        const result = await runSyncWorkerUntilCaughtUp(db, {
+          schoolId: school.id,
+          onProgress: (p) => emitSyncProgress(event, p),
+        })
         const ok = result.failed === 0
         repos.backupSync.markSyncResult(school.id, {
           ok,
@@ -122,6 +141,9 @@ export function registerBackupSyncIpc(
         }
 
         const data = loadSetup(repos)!
+        const hasMore = Boolean(
+          result.hasMore || result.push?.hasMore || result.pull?.hasMore
+        )
         return {
           ok: true,
           data: {
@@ -129,8 +151,12 @@ export function registerBackupSyncIpc(
             processed: result.processed,
             failed: result.failed,
             successful: result.successful,
-            has_more: Boolean(result.push?.hasMore || result.pull?.hasMore),
+            has_more: hasMore,
             message: result.message || null,
+            push: result.push,
+            pull: result.pull,
+            progress: result.progress,
+            rounds: result.rounds,
           },
         }
       } catch (err) {

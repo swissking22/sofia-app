@@ -143,8 +143,62 @@ export async function fetchSyncDashboard() {
   return (await window.ipc.invoke('system-admin:sync-dashboard')) as Result<Record<string, unknown>>
 }
 
+export type AdminSyncResult = {
+  processed?: number
+  successful?: number
+  failed?: number
+  conflicts?: number
+  message?: string | null
+  has_more?: boolean
+  hasMore?: boolean
+  rounds?: number
+  progress?: {
+    percent: number
+    message: string
+    phase: string
+    indeterminate?: boolean
+  }
+  push?: { hasMore?: boolean; successful?: number }
+  pull?: { hasMore?: boolean; applied?: number }
+}
+
+export function adminSyncHasMore(data: AdminSyncResult): boolean {
+  return Boolean(
+    data.has_more ||
+      data.hasMore ||
+      data.push?.hasMore ||
+      data.pull?.hasMore
+  )
+}
+
 export async function runAdminSync() {
-  return (await window.ipc.invoke('system-admin:sync-now')) as Result<unknown>
+  return (await window.ipc.invoke('system-admin:sync-now')) as Result<AdminSyncResult>
+}
+
+/**
+ * Sync Now with live percent progress. Main drains until caught up (or safety cap).
+ */
+export async function runAdminSyncUntilCaughtUp(options?: {
+  onProgress?: (event: {
+    percent: number
+    message: string
+    phase: string
+    indeterminate?: boolean
+    pushTotal?: number
+    pushDone?: number
+    pullTotal?: number
+    pullDone?: number
+  }) => void
+}): Promise<Result<AdminSyncResult>> {
+  const { subscribeSyncProgress } = await import('./sync-progress')
+  const unsub = options?.onProgress
+    ? subscribeSyncProgress(options.onProgress)
+    : () => undefined
+  try {
+    return await runAdminSync()
+  } finally {
+    unsub()
+  }
 }
 
 export async function retryAdminSync() {

@@ -5,6 +5,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { isGenericSyncTable } from './tables'
 import { SCHOOL_ASSETS_BUCKET } from './assets'
 import type {
+  CountPendingSyncChangesParams,
+  CountPendingSyncChangesResult,
   ProcessSyncRpcParams,
   ProcessSyncRpcResult,
   PullSyncRpcParams,
@@ -550,6 +552,46 @@ export class SupabaseSyncClient implements SupabaseSyncClientInterface {
         newCursor: params.cursor,
         hasMore: false,
         error: err?.message || 'Network failure while pulling changes',
+      }
+    }
+  }
+
+  async countPendingSyncChanges(
+    params: CountPendingSyncChangesParams
+  ): Promise<CountPendingSyncChangesResult> {
+    try {
+      const { data, error } = await this.supabase.rpc(
+        'count_pending_sync_changes',
+        {
+          p_school_id: params.schoolId,
+          p_cursor: params.cursor,
+        }
+      )
+
+      if (error) {
+        return { ok: false, count: 0, error: rpcErrorMessage(error) }
+      }
+
+      const result = data as Record<string, unknown> | null
+      if (!result || typeof result !== 'object' || result.success === false) {
+        return {
+          ok: false,
+          count: 0,
+          error:
+            (result?.error as string) ||
+            'Invalid count_pending_sync_changes response',
+        }
+      }
+
+      return {
+        ok: true,
+        count: Math.max(0, toFiniteNumber(result.count, 0)),
+      }
+    } catch (err: any) {
+      return {
+        ok: false,
+        count: 0,
+        error: err?.message || 'Network failure while counting pending changes',
       }
     }
   }
