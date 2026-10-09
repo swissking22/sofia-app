@@ -6,7 +6,7 @@
  */
 import type Database from 'better-sqlite3'
 import { pushPendingSync } from './push'
-import { pullRemoteChanges } from './pull'
+import { DEFAULT_PULL_BATCH_SIZE, pullRemoteChanges } from './pull'
 import { downloadMissingSyncedAssets, uploadRowAssets } from './assets'
 import { getSupabaseSyncClient } from './supabase-client'
 import {
@@ -26,14 +26,14 @@ import type {
 
 /** Default push batch size (RPC items per round-trip). */
 export const DEFAULT_SYNC_BATCH_SIZE = 50
-/** Default pull RPC page size — larger than push so second desks hydrate faster. */
-export const DEFAULT_PULL_BATCH_SIZE = 100
+/** Re-export pull page size (500 = cloud max) for Sync Now callers. */
+export { DEFAULT_PULL_BATCH_SIZE }
 /** Safety cap: 200 × 50 = 10 000 items per Sync Now. */
 export const DEFAULT_MAX_PUSH_BATCHES = 200
 /**
  * Max outer pull pages per Sync Now. Each page runs up to 50 inner batches of
- * ~100 changes (see pullRemoteChanges), so default ≈ 100 × 50 × 100 = 500 000
- * changes. Must honour pull.hasMore and stop on hard errors (no tight retry loop).
+ * up to 500 changes (see pullRemoteChanges). Must honour pull.hasMore and stop
+ * on hard errors (no tight retry loop).
  */
 export const DEFAULT_MAX_PULL_BATCHES = 100
 /** Outer Sync Now rounds when a single drain hits a safety cap. */

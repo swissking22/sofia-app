@@ -142,6 +142,10 @@ export interface PullSyncOptions {
   db: import('better-sqlite3').Database
   schoolId?: string
   deviceId?: string
+  /**
+   * Changes per `pull_sync_changes` RPC (default 500 = cloud max).
+   * Larger pages = fewer round-trips when hydrating a second desk.
+   */
   batchSize?: number
   /**
    * Max RPC batches inside one `pullRemoteChanges` call (default 50).
@@ -149,6 +153,12 @@ export interface PullSyncOptions {
    * so Join / Sync Now can continue draining.
    */
   maxIterations?: number
+  /**
+   * Ack cloud `update_sync_cursor` every N successfully applied pages
+   * (default 5), plus always at end of the call / on pause. Local SQLite
+   * cursor still advances every page — this only reduces network chatter.
+   */
+  cursorAckEveryPages?: number
   client?: SupabaseSyncClientInterface
   /** Fired after each successful RPC page is applied (for live %). */
   onPageApplied?: (appliedDelta: number, hasMore: boolean) => void
@@ -174,8 +184,8 @@ export interface SyncWorkerOptions {
   /** Items per push RPC batch (default 50). */
   batchSize?: number
   /**
-   * Items per pull RPC batch (default 100). Prefer larger pages when hydrating
-   * a second desk so Sync Now does not crawl one tiny page at a time.
+   * Items per pull RPC batch (default 500 = cloud max). Prefer larger pages
+   * when hydrating a second desk so Sync Now uses fewer round-trips.
    */
   pullBatchSize?: number
   /**
