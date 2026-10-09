@@ -844,6 +844,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-09 | **Release 1.0.5:** bumped `package.json` to **1.0.5** and tagged `v1.0.5` for Windows GitHub Release publish (second-desk Sync Now drain + live sync progress %). Apply cloud migration `20261009140000_count_pending_sync_changes.sql` for accurate download percentages. |
 | 2026-10-09 | **Sync progress %:** Sync Now shows a live percentage bar (upload + download). Push uses pending outbox count; pull uses new cloud RPC `count_pending_sync_changes` (`20261009140000_count_pending_sync_changes.sql`). IPC event `sync:progress`; UI on Home and Backup & Sync. |
 | 2026-10-09 | **Second-desk Sync Now drain:** pull falls back to per-change apply when a batch aborts (so one bad row cannot freeze the cursor); worker uses larger pull pages, surfaces pull `hasMore`/`message`, and stops hard-error spin-loops; Home + Backup & Sync auto-continue Sync Now until the backlog clears — fixes desks that only advanced ~a dozen records per click. |
 | 2026-10-09 | **Release 1.0.4:** bumped `package.json` to **1.0.4** and tagged `v1.0.4` for Windows GitHub Release publish (full multi-desk sync for all roles, finance pull FK stubs, payment fee-line allocations). Apply cloud migrations `20261008150000_full_ops_synced_entities.sql` and `20261009120000_payment_allocations_sync.sql`. |
