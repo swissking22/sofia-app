@@ -151,6 +151,13 @@ export type AdminSyncResult = {
   message?: string | null
   has_more?: boolean
   hasMore?: boolean
+  rounds?: number
+  progress?: {
+    percent: number
+    message: string
+    phase: string
+    indeterminate?: boolean
+  }
   push?: { hasMore?: boolean; successful?: number }
   pull?: { hasMore?: boolean; applied?: number }
 }
@@ -168,54 +175,29 @@ export async function runAdminSync() {
   return (await window.ipc.invoke('system-admin:sync-now')) as Result<AdminSyncResult>
 }
 
-/** Drain remaining push/pull pages without requiring repeated Sync Now clicks. */
+/**
+ * Sync Now with live percent progress. Main drains until caught up (or safety cap).
+ */
 export async function runAdminSyncUntilCaughtUp(options?: {
-  maxRounds?: number
-  onRound?: (round: number, data: AdminSyncResult) => void
-}): Promise<Result<AdminSyncResult & { rounds: number }>> {
-  const maxRounds = options?.maxRounds ?? 40
-  let last: AdminSyncResult | null = null
-  let totalSuccessful = 0
-  let totalFailed = 0
-  let totalProcessed = 0
-
-  for (let round = 1; round <= maxRounds; round += 1) {
-    const res = await runAdminSync()
-    if (!res.ok) return res
-    last = res.data
-    totalSuccessful += Number(res.data.successful ?? 0)
-    totalFailed += Number(res.data.failed ?? 0)
-    totalProcessed += Number(res.data.processed ?? 0)
-    options?.onRound?.(round, res.data)
-    if (!adminSyncHasMore(res.data)) {
-      return {
-        ok: true,
-        data: {
-          ...res.data,
-          successful: totalSuccessful,
-          failed: totalFailed,
-          processed: totalProcessed,
-          rounds: round,
-        },
-      }
-    }
-    await new Promise((r) => setTimeout(r, 50))
-  }
-
-  return {
-    ok: true,
-    data: {
-      ...(last as AdminSyncResult),
-      successful: totalSuccessful,
-      failed: totalFailed,
-      processed: totalProcessed,
-      has_more: true,
-      hasMore: true,
-      message:
-        last?.message ||
-        `Synced ${totalSuccessful} item(s) across ${maxRounds} rounds; more remain — Sync Now again.`,
-      rounds: maxRounds,
-    },
+  onProgress?: (event: {
+    percent: number
+    message: string
+    phase: string
+    indeterminate?: boolean
+    pushTotal?: number
+    pushDone?: number
+    pullTotal?: number
+    pullDone?: number
+  }) => void
+}): Promise<Result<AdminSyncResult>> {
+  const { subscribeSyncProgress } = await import('./sync-progress')
+  const unsub = options?.onProgress
+    ? subscribeSyncProgress(options.onProgress)
+    : () => undefined
+  try {
+    return await runAdminSync()
+  } finally {
+    unsub()
   }
 }
 

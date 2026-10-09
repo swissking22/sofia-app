@@ -8,8 +8,10 @@ import {
 } from '../../main/sync/pull'
 import { getLocalSyncCursor, setLocalSyncCursor } from '../../main/sync/cursor'
 import { resetDeviceStoreForTests } from '../../main/sync/device'
-import { runSyncWorker } from '../../main/sync/worker'
+import { runSyncWorker, runSyncWorkerUntilCaughtUp } from '../../main/sync/worker'
 import type {
+  CountPendingSyncChangesParams,
+  CountPendingSyncChangesResult,
   ProcessSyncRpcParams,
   ProcessSyncRpcResult,
   PullSyncRpcParams,
@@ -29,12 +31,23 @@ class MockSupabaseSyncClient implements SupabaseSyncClientInterface {
   public updatedCursors: UpdateSyncCursorRpcParams[] = []
 
   public changesToReturn: SyncChange[] = []
+  public pendingPullCount: number | null = null
   public pullHandler?: (params: PullSyncRpcParams) => Promise<PullSyncRpcResult> | PullSyncRpcResult
   public operationHandler?: (params: ProcessSyncRpcParams) => Promise<ProcessSyncRpcResult> | ProcessSyncRpcResult
 
   async registerDevice(params: RegisterDeviceRpcParams): Promise<RegisterDeviceRpcResult> {
     this.registeredDevices.push(params)
     return { ok: true }
+  }
+
+  async countPendingSyncChanges(
+    params: CountPendingSyncChangesParams
+  ): Promise<CountPendingSyncChangesResult> {
+    if (this.pendingPullCount == null) {
+      return { ok: false, count: 0, error: 'count not stubbed' }
+    }
+    void params
+    return { ok: true, count: this.pendingPullCount }
   }
 
   async processSyncOperation(params: ProcessSyncRpcParams): Promise<ProcessSyncRpcResult> {
@@ -829,6 +842,69 @@ describe('Sofia Phase 2: Local Pull Sync Service', () => {
     expect(workerResult.pull.hasMore).toBe(true)
     expect(workerResult.hasMore).toBe(true)
     expect(workerResult.message).toMatch(/Sync Now|network|continue/i)
+  })
+
+  // 13g. Progress percent uses cloud remaining count
+  test('13g. runSyncWorkerUntilCaughtUp emits rising percent from pull totals', async () => {
+    let nextId = 500
+    let remaining = 4
+    mockClient.pendingPullCount = 4
+    mockClient.pullHandler = async (params) => {
+      if (remaining <= 0) {
+        return {
+          ok: true,
+          changes: [],
+          count: 0,
+          currentCursor: params.cursor,
+          newCursor: params.cursor,
+          hasMore: false,
+        }
+      }
+      const id = nextId++
+      remaining -= 1
+      mockClient.pendingPullCount = remaining
+      return {
+        ok: true,
+        changes: [
+          {
+            id,
+            school_id: schoolId,
+            table_name: 'students',
+            record_id: `pct-student-${id}`,
+            operation: 'INSERT',
+            version: 1,
+            created_at: new Date().toISOString(),
+            payload: {
+              id: `pct-student-${id}`,
+              school_id: schoolId,
+              name: `Pct ${id}`,
+              class_id: classId,
+              version: 1,
+            },
+          },
+        ],
+        count: 1,
+        currentCursor: params.cursor,
+        newCursor: id,
+        hasMore: remaining > 0,
+      }
+    }
+
+    const percents: number[] = []
+    const result = await runSyncWorkerUntilCaughtUp(db, {
+      schoolId,
+      client: mockClient,
+      skipPush: true,
+      pullBatchSize: 1,
+      pullMaxIterations: 1,
+      onProgress: (e) => percents.push(e.percent),
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.pull.applied).toBe(4)
+    expect(result.progress?.percent).toBe(100)
+    expect(Math.max(...percents)).toBe(100)
+    expect(percents.some((p) => p > 0 && p < 100)).toBe(true)
   })
 
   // 13f. Individual apply helper advances cursor after mixed success

@@ -81,6 +81,12 @@ export type SyncNowResult = BackupSyncSetup & {
   has_more?: boolean
   hasMore?: boolean
   message?: string | null
+  rounds?: number
+  progress?: {
+    percent: number
+    message: string
+    phase: string
+  }
   push?: { hasMore?: boolean; successful?: number; applied?: number }
   pull?: { hasMore?: boolean; applied?: number }
 }
@@ -106,57 +112,24 @@ export async function syncNow(): Promise<Result<SyncNowResult>> {
 }
 
 /**
- * Keep calling Sync Now until push+pull report no backlog (or a hard error).
- * Caps rounds so a stuck remote change cannot spin forever.
+ * Sync Now with live `sync:progress` events. Main drains push+pull until caught up.
  */
 export async function syncNowUntilCaughtUp(options?: {
-  maxRounds?: number
-  onRound?: (round: number, data: SyncNowResult) => void
-}): Promise<Result<SyncNowResult & { rounds: number }>> {
-  const maxRounds = options?.maxRounds ?? 40
-  let last: SyncNowResult | null = null
-  let totalSuccessful = 0
-  let totalFailed = 0
-  let totalProcessed = 0
-
-  for (let round = 1; round <= maxRounds; round += 1) {
-    const res = await syncNow()
-    if (!res.ok) return res
-    last = res.data
-    totalSuccessful += Number(res.data.successful ?? 0)
-    totalFailed += Number(res.data.failed ?? 0)
-    totalProcessed += Number(res.data.processed ?? 0)
-    options?.onRound?.(round, res.data)
-    if (!syncResultHasMore(res.data)) {
-      return {
-        ok: true,
-        data: {
-          ...res.data,
-          successful: totalSuccessful,
-          failed: totalFailed,
-          processed: totalProcessed,
-          rounds: round,
-        },
-      }
-    }
-    // Pause briefly between rounds so UI can paint and IPC can breathe.
-    await new Promise((r) => setTimeout(r, 50))
-  }
-
-  return {
-    ok: true,
-    data: {
-      ...(last as SyncNowResult),
-      successful: totalSuccessful,
-      failed: totalFailed,
-      processed: totalProcessed,
-      has_more: true,
-      hasMore: true,
-      message:
-        last?.message ||
-        `Synced ${totalSuccessful} item(s) across ${maxRounds} rounds; more remain — Sync Now again.`,
-      rounds: maxRounds,
-    },
+  onProgress?: (event: {
+    percent: number
+    message: string
+    phase: string
+    indeterminate?: boolean
+  }) => void
+}): Promise<Result<SyncNowResult>> {
+  const { subscribeSyncProgress } = await import('./sync-progress')
+  const unsub = options?.onProgress
+    ? subscribeSyncProgress(options.onProgress)
+    : () => undefined
+  try {
+    return await syncNow()
+  } finally {
+    unsub()
   }
 }
 

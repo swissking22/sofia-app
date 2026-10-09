@@ -127,6 +127,17 @@ export interface UpdateSyncCursorRpcResult {
   error?: string
 }
 
+export interface CountPendingSyncChangesParams {
+  schoolId: string
+  cursor: number
+}
+
+export interface CountPendingSyncChangesResult {
+  ok: boolean
+  count: number
+  error?: string
+}
+
 export interface PullSyncOptions {
   db: import('better-sqlite3').Database
   schoolId?: string
@@ -139,6 +150,8 @@ export interface PullSyncOptions {
    */
   maxIterations?: number
   client?: SupabaseSyncClientInterface
+  /** Fired after each successful RPC page is applied (for live %). */
+  onPageApplied?: (appliedDelta: number, hasMore: boolean) => void
 }
 
 export interface PullSyncResult {
@@ -176,6 +189,15 @@ export interface SyncWorkerOptions {
   drainPull?: boolean
   /** Max outer pull pages per Sync Now (default 100). */
   maxPullBatches?: number
+  /** Max RPC batches inside each pullRemoteChanges call (default 50). */
+  pullMaxIterations?: number
+  /**
+   * Live Sync Now progress (percent + phase). Used by IPC to push
+   * `sync:progress` events to the renderer.
+   */
+  onProgress?: import('./progress').SyncProgressListener
+  /** Pre-measured totals for multi-round drain (optional). */
+  progressTracker?: import('./progress').SyncProgressTracker
 }
 
 export interface SyncWorkerResult {
@@ -188,8 +210,12 @@ export interface SyncWorkerResult {
   /** True when push or pull still has backlog after this run. */
   hasMore?: boolean
   message?: string
+  /** Final progress snapshot when onProgress / tracker was used. */
+  progress?: import('./progress').SyncProgressEvent
   push: PushSyncResult
   pull: PullSyncResult
+  /** Set by runSyncWorkerUntilCaughtUp. */
+  rounds?: number
 }
 
 export interface CloudSchoolSummary {
@@ -217,6 +243,10 @@ export interface SupabaseSyncClientInterface {
   ): Promise<BootstrapSchoolTenantResult>
   pullSyncChanges(params: PullSyncRpcParams): Promise<PullSyncRpcResult>
   updateSyncCursor(params: UpdateSyncCursorRpcParams): Promise<UpdateSyncCursorRpcResult>
+  /** Optional: remaining remote changes ahead of cursor (Sync Now %). */
+  countPendingSyncChanges?(
+    params: CountPendingSyncChangesParams
+  ): Promise<CountPendingSyncChangesResult>
   lookupSchoolByCode?(code: string): Promise<LookupSchoolByCodeResult>
   uploadAsset?(
     objectKey: string,

@@ -17,9 +17,24 @@ import {
   verifySqliteBackup,
 } from '../db/sqlite-backup'
 import { scheduleTeacherReadySync } from '../sync/auto-sync'
-import { runSyncWorker } from '../sync/worker'
+import { runSyncWorkerUntilCaughtUp } from '../sync/worker'
+import type { SyncProgressEvent } from '../sync/progress'
 import type { RoleWriteInput } from '../db/repositories/role.repository'
 import type { UserRole } from '../db/types'
+import type { IpcMainInvokeEvent } from 'electron'
+
+function emitSyncProgress(
+  event: IpcMainInvokeEvent,
+  progress: SyncProgressEvent
+): void {
+  try {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('sync:progress', progress)
+    }
+  } catch {
+    /* renderer gone */
+  }
+}
 
 type Result<T> = { ok: true; data: T; warning?: string } | { ok: false; error: string }
 
@@ -764,55 +779,66 @@ export function registerSystemAdminIpc(repos: Repositories): void {
     }
   })
 
-  ipcMain.handle('system-admin:sync-now', async (): Promise<Result<unknown>> => {
-    const s = session()
-    if (!s || !allow(repos, s, ['system.sync.run'])) return { ok: false, error: 'Access denied.' }
-    const schoolId = sid(repos, s)
-    const started = Date.now()
-    try {
-      const { getDatabase } = await import('../db')
-      const result = await runSyncWorker(getDatabase(), { schoolId })
-      repos.backupSync.markSyncResult(schoolId, result)
-      const hasMore = Boolean(
-        result.hasMore || result.push?.hasMore || result.pull?.hasMore
-      )
-      admin().recordSyncRun({
-        school_id: schoolId,
-        processed: result.processed,
-        successful: result.successful,
-        failed: result.failed,
-        conflicts: result.conflicts,
-        duration_ms: Date.now() - started,
-        status: result.failed ? 'failed' : 'successful',
-      })
-      admin().writeAudit({
-        school_id: schoolId,
-        actor_user_id: s.userId,
-        action: result.failed ? 'sync.failed' : 'sync.completed',
-        description: `${result.processed} processed, ${result.failed} failed, ${result.conflicts} conflicts${
-          hasMore ? ' (more remain)' : ''
-        }`,
-        result: result.failed ? 'failure' : 'success',
-      })
-      return {
-        ok: true,
-        data: {
-          ...result,
-          has_more: hasMore,
-          hasMore,
-        },
+  ipcMain.handle(
+    'system-admin:sync-now',
+    async (event: IpcMainInvokeEvent): Promise<Result<unknown>> => {
+      const s = session()
+      if (!s || !allow(repos, s, ['system.sync.run']))
+        return { ok: false, error: 'Access denied.' }
+      const schoolId = sid(repos, s)
+      const started = Date.now()
+      try {
+        const { getDatabase } = await import('../db')
+        const result = await runSyncWorkerUntilCaughtUp(getDatabase(), {
+          schoolId,
+          onProgress: (p) => emitSyncProgress(event, p),
+        })
+        repos.backupSync.markSyncResult(schoolId, result)
+        const hasMore = Boolean(
+          result.hasMore || result.push?.hasMore || result.pull?.hasMore
+        )
+        admin().recordSyncRun({
+          school_id: schoolId,
+          processed: result.processed,
+          successful: result.successful,
+          failed: result.failed,
+          conflicts: result.conflicts,
+          duration_ms: Date.now() - started,
+          status: result.failed ? 'failed' : 'successful',
+        })
+        admin().writeAudit({
+          school_id: schoolId,
+          actor_user_id: s.userId,
+          action: result.failed ? 'sync.failed' : 'sync.completed',
+          description: `${result.processed} processed, ${result.failed} failed, ${result.conflicts} conflicts${
+            hasMore ? ' (more remain)' : ''
+          }`,
+          result: result.failed ? 'failure' : 'success',
+        })
+        return {
+          ok: true,
+          data: {
+            ...result,
+            has_more: hasMore,
+            hasMore,
+            progress: result.progress,
+          },
+        }
+      } catch (err) {
+        admin().writeAudit({
+          school_id: schoolId,
+          actor_user_id: s.userId,
+          action: 'sync.failed',
+          result: 'failure',
+          description: err instanceof Error ? err.message : 'Sync failed',
+        })
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Sync failed.',
+        }
       }
-    } catch (err) {
-      admin().writeAudit({
-        school_id: schoolId,
-        actor_user_id: s.userId,
-        action: 'sync.failed',
-        result: 'failure',
-        description: err instanceof Error ? err.message : 'Sync failed',
-      })
-      return { ok: false, error: err instanceof Error ? err.message : 'Sync failed.' }
     }
-  })
+  )
 
   ipcMain.handle('system-admin:sync-retry', (): Result<unknown> => {
     const s = session()

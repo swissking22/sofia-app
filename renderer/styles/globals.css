@@ -25,6 +25,19 @@ body {
   }
 }
 
+@keyframes sofia-sync-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.sofia-sync-indeterminate {
+  animation: sofia-sync-indeterminate 1.2s ease-in-out infinite;
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;

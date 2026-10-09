@@ -583,6 +583,11 @@ export async function pullRemoteChanges(
         deviceId,
         cursor: currentCursor,
       })
+
+      options.onPageApplied?.(
+        txRes.applied,
+        Boolean(pullRes.hasMore)
+      )
     } catch (err: any) {
       console.error(`[SYNC] Error applying pulled changes transaction:`, err)
       totalFailed += 1

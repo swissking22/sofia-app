@@ -29,6 +29,8 @@ import {
 } from "../../../lib/system-admin";
 import { listPreUpdateBackups } from "../../../lib/updater";
 import { formatSyncTime } from "../../../lib/backup-sync";
+import { SyncProgressBar } from "../../../components/sync/SyncProgressBar";
+import type { SyncProgressEvent } from "../../../lib/sync-progress";
 
 type RestoreTarget =
   | { kind: "record"; id: string }
@@ -56,6 +58,8 @@ export default function AdminBackupSyncPage() {
   const [phrase, setPhrase] = React.useState("");
   const [restoring, setRestoring] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
+  const [syncProgress, setSyncProgress] =
+    React.useState<SyncProgressEvent | null>(null);
   const [retrying, setRetrying] = React.useState(false);
   const [resolvingId, setResolvingId] = React.useState<string | null>(null);
 
@@ -97,17 +101,20 @@ export default function AdminBackupSyncPage() {
     if (syncBusy) return;
     setSyncing(true);
     setError("");
-    setSuccess("Syncing — downloading remaining cloud changes…");
+    setSuccess("");
+    setSyncProgress({
+      phase: "starting",
+      percent: 0,
+      message: "Starting sync…",
+      pushTotal: 0,
+      pushDone: 0,
+      pullTotal: 0,
+      pullDone: 0,
+    });
     try {
       const r = await runAdminSyncUntilCaughtUp({
-        maxRounds: 40,
-        onRound: (round, data) => {
-          const n = Number(data.successful ?? data.processed ?? 0);
-          setSuccess(
-            adminSyncHasMore(data)
-              ? `Syncing… round ${round} (${n} item(s) this round).`
-              : `Finishing sync (round ${round})…`,
-          );
+        onProgress: (event) => {
+          setSyncProgress(event as SyncProgressEvent);
         },
       });
       if (r.ok) {
@@ -115,6 +122,9 @@ export default function AdminBackupSyncPage() {
         const synced = Number(data.successful ?? data.processed ?? 0);
         const failed = Number(data.failed ?? 0);
         const hasMore = adminSyncHasMore(data);
+        if (data.progress) {
+          setSyncProgress(data.progress as SyncProgressEvent);
+        }
         if (data.message && hasMore) {
           setSuccess(String(data.message));
         } else if (hasMore) {
@@ -128,7 +138,11 @@ export default function AdminBackupSyncPage() {
         } else {
           setSuccess(
             synced > 0
-              ? `Sync finished — ${synced} item(s) pushed/pulled across ${data.rounds} round(s).`
+              ? `Sync finished — ${synced} item(s) pushed/pulled${
+                  data.rounds && data.rounds > 1
+                    ? ` across ${data.rounds} round(s)`
+                    : ""
+                }.`
               : "Sync finished (pulled latest from cloud).",
           );
         }
@@ -141,6 +155,7 @@ export default function AdminBackupSyncPage() {
       setError("Sync failed unexpectedly.");
     } finally {
       setSyncing(false);
+      setSyncProgress(null);
     }
   }
 
@@ -348,14 +363,10 @@ export default function AdminBackupSyncPage() {
               (setup?.synchronization?.last_sync_at as string) || null,
             )}
           </p>
-          {syncing ? (
-            <p className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-600">
-              <span
-                className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-(--sofia-primary)"
-                aria-hidden
-              />
-              Sync in progress…
-            </p>
+          {syncing || syncProgress ? (
+            <div className="mb-3 max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+              <SyncProgressBar progress={syncProgress} />
+            </div>
           ) : null}
           <div className="mb-4 flex gap-2">
             <PrimaryButton

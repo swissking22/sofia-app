@@ -33,6 +33,8 @@ import { syncNowUntilCaughtUp, syncResultHasMore } from "../lib/backup-sync";
 import { formatDisplayDate, SOFIA_DATE_LOCALE } from "../lib/date-format";
 import { formatCompactMoney } from "../lib/finance-mgmt";
 import { useOnlineStatus } from "../lib/online";
+import { SyncProgressBar } from "../components/sync/SyncProgressBar";
+import type { SyncProgressEvent } from "../lib/sync-progress";
 
 const selectClass =
   "cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -90,6 +92,8 @@ export default function HomePage() {
   const [syncMessage, setSyncMessage] = React.useState("");
   const [syncError, setSyncError] = React.useState("");
   const [syncing, setSyncing] = React.useState(false);
+  const [syncProgress, setSyncProgress] =
+    React.useState<SyncProgressEvent | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [yearId, setYearId] = React.useState<string>("");
   const [termId, setTermId] = React.useState<string>("");
@@ -134,17 +138,20 @@ export default function HomePage() {
     if (!online || syncing) return;
     setSyncing(true);
     setSyncError("");
-    setSyncMessage("Syncing — downloading remaining cloud changes…");
+    setSyncMessage("");
+    setSyncProgress({
+      phase: "starting",
+      percent: 0,
+      message: "Starting sync…",
+      pushTotal: 0,
+      pushDone: 0,
+      pullTotal: 0,
+      pullDone: 0,
+    });
     try {
       const res = await syncNowUntilCaughtUp({
-        maxRounds: 40,
-        onRound: (round, data) => {
-          const n = Number(data.successful ?? data.processed ?? 0);
-          setSyncMessage(
-            syncResultHasMore(data)
-              ? `Syncing… round ${round} (${n} item(s) this round).`
-              : `Finishing sync (round ${round})…`,
-          );
+        onProgress: (event) => {
+          setSyncProgress(event as SyncProgressEvent);
         },
       });
       if (!res.ok) {
@@ -154,6 +161,9 @@ export default function HomePage() {
       const synced = Number(res.data.successful ?? res.data.processed ?? 0);
       const failed = Number(res.data.failed ?? 0);
       const hasMore = syncResultHasMore(res.data);
+      if (res.data.progress) {
+        setSyncProgress(res.data.progress as SyncProgressEvent);
+      }
       if (res.data.message && hasMore) {
         setSyncMessage(String(res.data.message));
       } else if (hasMore) {
@@ -167,7 +177,11 @@ export default function HomePage() {
       } else {
         setSyncMessage(
           synced > 0
-            ? `Sync finished — ${synced} item(s) across ${res.data.rounds} round(s).`
+            ? `Sync finished — ${synced} item(s)${
+                res.data.rounds && res.data.rounds > 1
+                  ? ` across ${res.data.rounds} round(s)`
+                  : ""
+              }.`
             : "Sync finished (up to date).",
         );
       }
@@ -176,6 +190,7 @@ export default function HomePage() {
       setSyncError("Sync failed unexpectedly.");
     } finally {
       setSyncing(false);
+      setSyncProgress(null);
     }
   }, [online, syncing, load]);
 
@@ -231,7 +246,11 @@ export default function HomePage() {
               ) : (
                 <Icon icon={CloudUploadIcon} size={16} />
               )}
-              {syncing ? "Syncing…" : "Sync"}
+              {syncing
+                ? syncProgress && !syncProgress.indeterminate
+                  ? `Syncing ${syncProgress.percent}%`
+                  : "Syncing…"
+                : "Sync"}
             </button>
           ) : null}
           <select
@@ -280,7 +299,12 @@ export default function HomePage() {
           {syncError}
         </div>
       ) : null}
-      {syncMessage ? (
+      {syncing || syncProgress ? (
+        <div className="mb-4 max-w-md rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <SyncProgressBar progress={syncProgress} />
+        </div>
+      ) : null}
+      {syncMessage && !syncing ? (
         <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           {syncMessage}
         </div>
