@@ -775,11 +775,11 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 2. **Server-Side RPCs (`supabase/migrations/20260907100737_add_pull_sync_rpcs.sql`)**:
    - `public.pull_sync_changes(p_school_id, p_device_id, p_cursor, p_limit)`: `SECURITY DEFINER` function querying `public.sync_changes` strictly for the authorized `p_school_id` with `id > p_cursor`, returning aggregated changes JSON, counts, and `new_cursor`.
    - `public.update_sync_cursor(p_school_id, p_device_id, p_cursor)`: `SECURITY DEFINER` function upserting `public.sync_cursors` with `GREATEST(last_synced_change_id, p_cursor)`.
-3. **Two-Way Sync Coordination (`main/sync/worker.ts` - `runSyncWorker()`)**:
-   - Runs Push phase first (`pushPendingSync()`), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters plus top-level **`hasMore`** / **`message`** from either phase.
+3. **Two-Way Sync Coordination (`main/sync/worker.ts` - `runSyncWorker()` / `runSyncWorkerUntilCaughtUp()`)**:
+   - Runs Push phase first (`pushPendingSync()`), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters plus top-level **`hasMore`** / **`message`** from either phase. Until-caught-up drains across safety-cap rounds.
    - Pull uses a dedicated page size (default 100) and loops while `pull.hasMore` (default up to 100 outer pages). Hard pull errors stop the drain (no tight retry loop) but leave `hasMore=true` for the next Sync Now.
    - Join school (`main/services/join-school.ts`) drains the same way (up to 200 pages).
-   - **UI auto-continue:** Home and Administration → Backup & Sync call Sync Now in rounds until push+pull report no backlog (`syncNowUntilCaughtUp` / `runAdminSyncUntilCaughtUp`), so a second desk does not need dozens of manual clicks. IPC returns `has_more` from **both** push and pull (`backup-sync:sync-now`, `system-admin:sync-now`).
+   - **Sync progress %:** main emits live `sync:progress` (phase, percent, upload/download counts). Push % = outbox drained; pull % uses cloud RPC `count_pending_sync_changes` (migration `20261009140000_count_pending_sync_changes.sql`). Home and Backup & Sync show a progress bar; without that migration, pull shows an indeterminate bar with applied counts. IPC: `backup-sync:sync-now`, `system-admin:sync-now`.
 
 ---
 
