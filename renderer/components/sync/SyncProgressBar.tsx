@@ -1,4 +1,3 @@
-import React from 'react'
 import type { SyncProgressEvent } from '../../lib/sync-progress'
 
 export function SyncProgressBar({
