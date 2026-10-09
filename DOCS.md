@@ -843,6 +843,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-09 | **Release 1.0.4:** bumped `package.json` to **1.0.4** and tagged `v1.0.4` for Windows GitHub Release publish (full multi-desk sync for all roles, finance pull FK stubs, payment fee-line allocations). Apply cloud migrations `20261008150000_full_ops_synced_entities.sql` and `20261009120000_payment_allocations_sync.sql`. |
 | 2026-10-08 | **Full multi-desk sync for all roles:** added admissions/transfers/promotions/calendar/leave/teaching/`report_settings`/`student_settings` to sync allow-list (migration `20261008150000_full_ops_synced_entities.sql`); payload-driven FK stubs on pull; Sync Now backfills orphaned `sync_status=pending` rows into the outbox; result-calculation + subject-coefficient writes enqueue; push priority covers RBAC before finance. Any new bursar/secretary/principal desk can pull the school’s operational data. |
 | 2026-10-08 | **Finance pull FK hardening:** second-desk pull no longer aborts when fee structures/invoices arrive before their academic year or student — generic apply creates version-0 parent stubs; fee catalogs push ahead of invoices. Fixes bursar desks that never received structures/invoices from the primary. |
 | 2026-10-08 | **Release 1.0.3:** bumped `package.json` to **1.0.3** and tagged `v1.0.3` for Windows GitHub Release publish (includes second-desk pull drain fix so Join/Sync Now finish downloading large student/fee backlogs). |
