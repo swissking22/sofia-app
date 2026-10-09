@@ -2,7 +2,7 @@
   "private": true,
   "name": "sofia",
   "description": "Offline-first school management desktop application",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "author": "SOFIA",
   "type": "module",
   "main": "app/main.js",
