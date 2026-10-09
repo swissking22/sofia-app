@@ -23,15 +23,15 @@ import type {
 
 /** Default push batch size (RPC items per round-trip). */
 export const DEFAULT_SYNC_BATCH_SIZE = 50
+/** Default pull RPC page size — larger than push so second desks hydrate faster. */
+export const DEFAULT_PULL_BATCH_SIZE = 100
 /** Safety cap: 200 × 50 = 10 000 items per Sync Now. */
 export const DEFAULT_MAX_PUSH_BATCHES = 200
 /**
- * Max outer pull pages per Sync Now. Each page runs up to 20 inner batches
- * (see pullRemoteChanges), so default ≈ 50 × 20 × 50 = 50 000 changes.
- * Must honour pull.hasMore — previously pull always returned false and only
- * one page ever ran (~1 000 changes), leaving second-desk rosters incomplete.
+ * Max outer pull pages per Sync Now. Each page runs up to 50 inner batches of
+ * ~100 changes (see pullRemoteChanges), so default ≈ 100 × 50 × 100 = 500 000
+ * changes. Must honour pull.hasMore and stop on hard errors (no tight retry loop).
  */
-/** Outer pull pages per Sync Now (each page ≤20 inner batches). */
 export const DEFAULT_MAX_PULL_BATCHES = 100
 
 function asAssetStorage(client: unknown): AssetStorageClient | null {
@@ -86,6 +86,7 @@ export async function runSyncWorker(
   const client = options.client || getSupabaseSyncClient()
   const storage = asAssetStorage(client)
   const batchSize = options.batchSize ?? DEFAULT_SYNC_BATCH_SIZE
+  const pullBatchSize = options.pullBatchSize ?? DEFAULT_PULL_BATCH_SIZE
   const drainPush = options.drainPush !== false
   const drainPull = options.drainPull !== false
   const maxPushBatches = options.maxPushBatches ?? DEFAULT_MAX_PUSH_BATCHES
@@ -206,20 +207,36 @@ export async function runSyncWorker(
         db,
         schoolId,
         client,
-        batchSize,
+        batchSize: pullBatchSize,
       })
       pullResult = mergePull(pullResult, page)
       pages += 1
+      // Hard error (network / apply): keep hasMore for the UI but do not spin.
+      if (!page.ok) break
       if (!drainPull) break
       if (!page.hasMore) break
       if (pages >= maxPullBatches) {
         console.warn(
-          `[SYNC] Pull drain stopped at safety cap (${maxPullBatches} pages).`
+          `[SYNC] Pull drain stopped at safety cap (${maxPullBatches} pages). ` +
+            `Applied ${pullResult.applied} so far — Sync Now again to continue.`
         )
-        pullResult = { ...pullResult, hasMore: true }
+        pullResult = {
+          ...pullResult,
+          hasMore: true,
+          message:
+            pullResult.message ||
+            `Pulled ${pullResult.applied} change(s); more remain — Sync Now again.`,
+        }
         break
       }
     } while (pullResult.hasMore)
+
+    console.log(
+      `[SYNC] Pull drain finished after ${pages} page(s): ` +
+        `${pullResult.applied} applied, ${pullResult.failed} failed, hasMore=${Boolean(
+          pullResult.hasMore
+        )}`
+    )
   }
 
   // 3. Download branding/photos missing on this desk
@@ -239,6 +256,13 @@ export async function runSyncWorker(
   const failed = pushResult.failed + pullResult.failed
   const conflicts = pushResult.conflicts + pullResult.conflicts
   const ok = pushResult.ok && pullResult.ok
+  const hasMore = Boolean(pushResult.hasMore || pullResult.hasMore)
+  const message =
+    pushResult.message ||
+    pullResult.message ||
+    (hasMore
+      ? `Synced ${successful} item(s); more remain — Sync Now will continue.`
+      : undefined)
 
   return {
     ok,
@@ -246,7 +270,8 @@ export async function runSyncWorker(
     successful,
     failed,
     conflicts,
-    message: pushResult.message,
+    hasMore,
+    message,
     push: pushResult,
     pull: pullResult,
   }

@@ -143,8 +143,80 @@ export async function fetchSyncDashboard() {
   return (await window.ipc.invoke('system-admin:sync-dashboard')) as Result<Record<string, unknown>>
 }
 
+export type AdminSyncResult = {
+  processed?: number
+  successful?: number
+  failed?: number
+  conflicts?: number
+  message?: string | null
+  has_more?: boolean
+  hasMore?: boolean
+  push?: { hasMore?: boolean; successful?: number }
+  pull?: { hasMore?: boolean; applied?: number }
+}
+
+export function adminSyncHasMore(data: AdminSyncResult): boolean {
+  return Boolean(
+    data.has_more ||
+      data.hasMore ||
+      data.push?.hasMore ||
+      data.pull?.hasMore
+  )
+}
+
 export async function runAdminSync() {
-  return (await window.ipc.invoke('system-admin:sync-now')) as Result<unknown>
+  return (await window.ipc.invoke('system-admin:sync-now')) as Result<AdminSyncResult>
+}
+
+/** Drain remaining push/pull pages without requiring repeated Sync Now clicks. */
+export async function runAdminSyncUntilCaughtUp(options?: {
+  maxRounds?: number
+  onRound?: (round: number, data: AdminSyncResult) => void
+}): Promise<Result<AdminSyncResult & { rounds: number }>> {
+  const maxRounds = options?.maxRounds ?? 40
+  let last: AdminSyncResult | null = null
+  let totalSuccessful = 0
+  let totalFailed = 0
+  let totalProcessed = 0
+
+  for (let round = 1; round <= maxRounds; round += 1) {
+    const res = await runAdminSync()
+    if (!res.ok) return res
+    last = res.data
+    totalSuccessful += Number(res.data.successful ?? 0)
+    totalFailed += Number(res.data.failed ?? 0)
+    totalProcessed += Number(res.data.processed ?? 0)
+    options?.onRound?.(round, res.data)
+    if (!adminSyncHasMore(res.data)) {
+      return {
+        ok: true,
+        data: {
+          ...res.data,
+          successful: totalSuccessful,
+          failed: totalFailed,
+          processed: totalProcessed,
+          rounds: round,
+        },
+      }
+    }
+    await new Promise((r) => setTimeout(r, 50))
+  }
+
+  return {
+    ok: true,
+    data: {
+      ...(last as AdminSyncResult),
+      successful: totalSuccessful,
+      failed: totalFailed,
+      processed: totalProcessed,
+      has_more: true,
+      hasMore: true,
+      message:
+        last?.message ||
+        `Synced ${totalSuccessful} item(s) across ${maxRounds} rounds; more remain — Sync Now again.`,
+      rounds: maxRounds,
+    },
+  }
 }
 
 export async function retryAdminSync() {

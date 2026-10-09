@@ -773,6 +773,9 @@ export function registerSystemAdminIpc(repos: Repositories): void {
       const { getDatabase } = await import('../db')
       const result = await runSyncWorker(getDatabase(), { schoolId })
       repos.backupSync.markSyncResult(schoolId, result)
+      const hasMore = Boolean(
+        result.hasMore || result.push?.hasMore || result.pull?.hasMore
+      )
       admin().recordSyncRun({
         school_id: schoolId,
         processed: result.processed,
@@ -786,10 +789,19 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         school_id: schoolId,
         actor_user_id: s.userId,
         action: result.failed ? 'sync.failed' : 'sync.completed',
-        description: `${result.processed} processed, ${result.failed} failed, ${result.conflicts} conflicts`,
+        description: `${result.processed} processed, ${result.failed} failed, ${result.conflicts} conflicts${
+          hasMore ? ' (more remain)' : ''
+        }`,
         result: result.failed ? 'failure' : 'success',
       })
-      return { ok: true, data: result }
+      return {
+        ok: true,
+        data: {
+          ...result,
+          has_more: hasMore,
+          hasMore,
+        },
+      }
     } catch (err) {
       admin().writeAudit({
         school_id: schoolId,

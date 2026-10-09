@@ -29,7 +29,7 @@ import {
   type AttendanceTrendRange,
   type DashboardSummary,
 } from "../lib/dashboard";
-import { syncNow } from "../lib/backup-sync";
+import { syncNowUntilCaughtUp, syncResultHasMore } from "../lib/backup-sync";
 import { formatDisplayDate, SOFIA_DATE_LOCALE } from "../lib/date-format";
 import { formatCompactMoney } from "../lib/finance-mgmt";
 import { useOnlineStatus } from "../lib/online";
@@ -134,30 +134,40 @@ export default function HomePage() {
     if (!online || syncing) return;
     setSyncing(true);
     setSyncError("");
-    setSyncMessage("");
+    setSyncMessage("Syncing — downloading remaining cloud changes…");
     try {
-      const res = await syncNow();
+      const res = await syncNowUntilCaughtUp({
+        maxRounds: 40,
+        onRound: (round, data) => {
+          const n = Number(data.successful ?? data.processed ?? 0);
+          setSyncMessage(
+            syncResultHasMore(data)
+              ? `Syncing… round ${round} (${n} item(s) this round).`
+              : `Finishing sync (round ${round})…`,
+          );
+        },
+      });
       if (!res.ok) {
         setSyncError(res.error);
         return;
       }
-      const pushed = Number(res.data.successful ?? res.data.processed ?? 0);
+      const synced = Number(res.data.successful ?? res.data.processed ?? 0);
       const failed = Number(res.data.failed ?? 0);
-      const hasMore = Boolean(res.data.has_more || res.data.message);
-      if (res.data.message) {
+      const hasMore = syncResultHasMore(res.data);
+      if (res.data.message && hasMore) {
         setSyncMessage(String(res.data.message));
       } else if (hasMore) {
         setSyncMessage(
-          `Synced ${pushed} item(s). More remain — sync again when ready.`,
+          `Synced ${synced} item(s). More remain — sync again when ready.`,
         );
       } else if (failed > 0) {
         setSyncMessage(
-          `Sync finished: ${pushed} pushed, ${failed} failed. Check Backup & Sync for details.`,
+          `Sync finished: ${synced} synced, ${failed} failed. Check Backup & Sync for details.`,
         );
       } else {
         setSyncMessage(
-          pushed > 0
-            ? `Sync finished — pushed ${pushed} pending item(s).`
+          synced > 0
+            ? `Sync finished — ${synced} item(s) across ${res.data.rounds} round(s).`
             : "Sync finished (up to date).",
         );
       }

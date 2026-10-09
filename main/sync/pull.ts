@@ -79,8 +79,10 @@ export function applyPulledChangesTransaction(
   changes: SyncChange[],
   schoolId: string,
   deviceId: string,
-  newCursor: number
+  newCursor: number,
+  options?: { advanceCursor?: boolean }
 ): { applied: number; conflicts: number; skipped: number } {
+  const advanceCursor = options?.advanceCursor !== false
   const applyTx = db.transaction((items: SyncChange[]) => {
     let applied = 0
     let conflicts = 0
@@ -373,12 +375,56 @@ export function applyPulledChangesTransaction(
     }
 
     // Atomically advance local cursor in the SAME SQLite transaction
-    setLocalSyncCursor(db, schoolId, deviceId, newCursor)
+    if (advanceCursor) {
+      setLocalSyncCursor(db, schoolId, deviceId, newCursor)
+    }
 
     return { applied, conflicts, skipped }
   })
 
   return applyTx(changes)
+}
+
+/**
+ * Apply each change in its own transaction so one bad row cannot roll back the
+ * whole page (and freeze the pull cursor). Always advances the cursor afterward.
+ */
+export function applyPulledChangesIndividually(
+  db: Database,
+  changes: SyncChange[],
+  schoolId: string,
+  deviceId: string,
+  newCursor: number
+): { applied: number; conflicts: number; skipped: number; failed: number } {
+  let applied = 0
+  let conflicts = 0
+  let skipped = 0
+  let failed = 0
+
+  for (const change of changes) {
+    try {
+      const res = applyPulledChangesTransaction(
+        db,
+        [change],
+        schoolId,
+        deviceId,
+        newCursor,
+        { advanceCursor: false }
+      )
+      applied += res.applied
+      conflicts += res.conflicts
+      skipped += res.skipped
+    } catch (err) {
+      failed += 1
+      console.error(
+        `[SYNC] Skipping pulled change ${change.id} (${change.table_name}):`,
+        err instanceof Error ? err.message : err
+      )
+    }
+  }
+
+  setLocalSyncCursor(db, schoolId, deviceId, newCursor)
+  return { applied, conflicts, skipped, failed }
 }
 
 /**
@@ -388,6 +434,7 @@ export function applyPulledChangesTransaction(
 export async function pullRemoteChanges(
   options: PullSyncOptions
 ): Promise<PullSyncResult> {
+  // Prefer larger pull pages than push batches — second desks hydrate big backlogs.
   const { db, batchSize = 100 } = options
   const client: SupabaseSyncClientInterface =
     options.client || getSupabaseSyncClient()
@@ -454,7 +501,7 @@ export async function pullRemoteChanges(
   let hasMore = true
   let iterations = 0
   // Cap per call so callers (Join / Sync Now worker) can drain across pages.
-  const maxIterations = options.maxIterations ?? 20
+  const maxIterations = options.maxIterations ?? 50
 
   while (hasMore && iterations < maxIterations) {
     iterations += 1
@@ -469,6 +516,7 @@ export async function pullRemoteChanges(
     if (!pullRes.ok) {
       console.warn(`[SYNC] Pull RPC error: ${pullRes.error || 'Unknown error'}`)
       totalFailed += 1
+      // Keep hasMore=true so Sync Now / Join retry instead of pretending we are done.
       return {
         ok: false,
         processed: totalProcessed,
@@ -476,8 +524,10 @@ export async function pullRemoteChanges(
         conflicts: totalConflicts,
         failed: totalFailed,
         newCursor: currentCursor,
-        hasMore: false,
-        message: pullRes.error,
+        hasMore: true,
+        message:
+          pullRes.error ||
+          'Pull paused after a network/RPC error. Click Sync Now to continue.',
       }
     }
 
@@ -486,15 +536,37 @@ export async function pullRemoteChanges(
       break
     }
 
-    // 5. Apply batch in atomic SQLite transaction
+    // 5. Apply batch — prefer one atomic transaction; fall back per-row so a
+    // single bad change cannot freeze the cursor for the whole school.
     try {
-      const txRes = applyPulledChangesTransaction(
-        db,
-        pullRes.changes,
-        schoolId,
-        deviceId,
-        pullRes.newCursor
-      )
+      let txRes: {
+        applied: number
+        conflicts: number
+        skipped: number
+        failed?: number
+      }
+      try {
+        txRes = applyPulledChangesTransaction(
+          db,
+          pullRes.changes,
+          schoolId,
+          deviceId,
+          pullRes.newCursor
+        )
+      } catch (batchErr) {
+        console.warn(
+          '[SYNC] Batch apply failed; retrying each change individually:',
+          batchErr instanceof Error ? batchErr.message : batchErr
+        )
+        txRes = applyPulledChangesIndividually(
+          db,
+          pullRes.changes,
+          schoolId,
+          deviceId,
+          pullRes.newCursor
+        )
+        totalFailed += txRes.failed || 0
+      }
 
       totalProcessed += pullRes.changes.length
       totalApplied += txRes.applied
@@ -521,8 +593,10 @@ export async function pullRemoteChanges(
         conflicts: totalConflicts,
         failed: totalFailed,
         newCursor: currentCursor,
-        hasMore: false,
-        message: err?.message || 'Transaction error while applying pulled changes',
+        hasMore: true,
+        message:
+          err?.message ||
+          'Pull paused while applying changes. Click Sync Now to continue.',
       }
     }
 

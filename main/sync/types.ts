@@ -133,7 +133,7 @@ export interface PullSyncOptions {
   deviceId?: string
   batchSize?: number
   /**
-   * Max RPC batches inside one `pullRemoteChanges` call (default 20).
+   * Max RPC batches inside one `pullRemoteChanges` call (default 50).
    * When the cap is hit and the cloud still has pages, `hasMore` stays true
    * so Join / Sync Now can continue draining.
    */
@@ -161,6 +161,11 @@ export interface SyncWorkerOptions {
   /** Items per push RPC batch (default 50). */
   batchSize?: number
   /**
+   * Items per pull RPC batch (default 100). Prefer larger pages when hydrating
+   * a second desk so Sync Now does not crawl one tiny page at a time.
+   */
+  pullBatchSize?: number
+  /**
    * Keep pushing batches until the ready outbox is empty (default true).
    * Caps via maxPushBatches to avoid unbounded runs.
    */
@@ -169,7 +174,7 @@ export interface SyncWorkerOptions {
   maxPushBatches?: number
   /** Keep pulling while hasMore (default true). */
   drainPull?: boolean
-  /** Max pull pages per Sync Now (default 50). */
+  /** Max outer pull pages per Sync Now (default 100). */
   maxPullBatches?: number
 }
 
@@ -180,6 +185,8 @@ export interface SyncWorkerResult {
   failed: number
   conflicts: number
   skipped?: boolean
+  /** True when push or pull still has backlog after this run. */
+  hasMore?: boolean
   message?: string
   push: PushSyncResult
   pull: PullSyncResult

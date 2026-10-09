@@ -22,8 +22,9 @@ import {
   resolveAdminConflict,
   restoreBackup,
   restoreBackupFromFile,
+  adminSyncHasMore,
   retryAdminSync,
-  runAdminSync,
+  runAdminSyncUntilCaughtUp,
   runBackupNow,
 } from "../../../lib/system-admin";
 import { listPreUpdateBackups } from "../../../lib/updater";
@@ -96,34 +97,38 @@ export default function AdminBackupSyncPage() {
     if (syncBusy) return;
     setSyncing(true);
     setError("");
-    setSuccess("");
+    setSuccess("Syncing — downloading remaining cloud changes…");
     try {
-      const r = await runAdminSync();
+      const r = await runAdminSyncUntilCaughtUp({
+        maxRounds: 40,
+        onRound: (round, data) => {
+          const n = Number(data.successful ?? data.processed ?? 0);
+          setSuccess(
+            adminSyncHasMore(data)
+              ? `Syncing… round ${round} (${n} item(s) this round).`
+              : `Finishing sync (round ${round})…`,
+          );
+        },
+      });
       if (r.ok) {
-        const data = r.data as {
-          successful?: number;
-          processed?: number;
-          failed?: number;
-          message?: string;
-          push?: { hasMore?: boolean; successful?: number };
-        };
-        const pushed = Number(data.push?.successful ?? data.successful ?? 0);
+        const data = r.data;
+        const synced = Number(data.successful ?? data.processed ?? 0);
         const failed = Number(data.failed ?? 0);
-        const hasMore = Boolean(data.push?.hasMore || data.message);
-        if (data.message) {
-          setSuccess(data.message);
+        const hasMore = adminSyncHasMore(data);
+        if (data.message && hasMore) {
+          setSuccess(String(data.message));
         } else if (hasMore) {
           setSuccess(
-            `Synced ${pushed} item(s). More remain — click Sync Now again.`,
+            `Synced ${synced} item(s). More remain — click Sync Now again.`,
           );
         } else if (failed > 0) {
           setSuccess(
-            `Sync finished: ${pushed} pushed, ${failed} failed. Use Retry failed if needed.`,
+            `Sync finished: ${synced} synced, ${failed} failed. Use Retry failed if needed.`,
           );
         } else {
           setSuccess(
-            pushed > 0
-              ? `Sync finished — pushed ${pushed} pending item(s) and pulled latest.`
+            synced > 0
+              ? `Sync finished — ${synced} item(s) pushed/pulled across ${data.rounds} round(s).`
               : "Sync finished (pulled latest from cloud).",
           );
         }

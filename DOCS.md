@@ -690,7 +690,7 @@ where school_id = '<school_uuid>' and table_name = 'staff_subjects'
 | How often to Sync Now | At least morning / midday / end of day on every desk; immediately after Join school on a new PC; after bulk imports. |
 | New PC | Install → open **Join existing school** → enter short code → **wait for the full download** (large schools may take several minutes) → log in with a shared account → Sync Now once more for any leftover pages + assets. Dashboard student counts and Finance lists are **local** — if a bursar desk is missing students, fee structures, or invoices, run Sync Now on the **primary** until finance queue is empty, then Sync Now on the bursar desk until lists match. |
 | Wipe / reinstall | Join again (or restore a local backup). Full pull starts at cursor 0. Photos/logos appear after Storage migration is applied and a desk that has the files has pushed. |
-| Health | Administration → Backup & Sync → **Queue by table** shows pending/failed per domain. Retry failed, then Sync Now. One Sync Now **drains** pending push (~10 000 item cap) and pull pages (~100 000 changes); click again if the UI says more remain. RBAC/users and students sync before finance and documents. Any desktop role (bursar, secretary, principal, …) uses the same pull stream — missing data means Sync Now on primary then bursar/secondary, not a role filter. |
+| Health | Administration → Backup & Sync → **Queue by table** shows pending/failed per domain. Retry failed, then Sync Now. One Sync Now **auto-continues** until push+pull report caught up (safety caps ~10 000 push items / hundreds of thousands of pull changes; UI says if more remain). RBAC/users and students sync before finance and documents. Any desktop role (bursar, secretary, principal, …) uses the same pull stream — missing data means Sync Now on primary then bursar/secondary, not a role filter. |
 
 **How to add a table:** (1) add to `GENERIC_SYNC_TABLES` + column list in `main/sync/tables.ts`, (2) add name to `process_synced_entity` allow-list migration, (3) unit-test pull apply, (4) document here.
 
@@ -769,16 +769,17 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
        - Soft deletion: if `operation = 'DELETE'`, sets local `deleted_at = now()`, increments version, and marks `sync_status = 'synced'`.
      - **Student ID Settings table**: updates `pattern`, `sequence_scope`, and advances `next_sequence_number = MAX(local, remote)` to prevent sequence back-sliding.
      - **No echo loop**: pulled changes are applied directly to local SQLite tables with `sync_status = 'synced'` and **never enqueued into `sync_queue`**.
-     - **Atomic cursor advancement**: advances local SQLite `sync_cursors.last_synced_change_id` in the **same transaction**. If any mutation fails, the entire batch rolls back and the cursor remains unchanged.
+     - **Atomic cursor advancement**: advances local SQLite `sync_cursors.last_synced_change_id` in the **same transaction**. If the whole-batch transaction throws, pull **retries each change individually** (`applyPulledChangesIndividually`) so one bad row cannot freeze the cursor and force Sync Now to crawl a handful of records at a time.
    - Upon successful local transaction commit, acknowledges cursor to Supabase via `public.update_sync_cursor` RPC.
-   - Automatically paginates multi-batch backlogs inside one call (default 20 batches). When the per-call safety cap is hit and the cloud still has pages, **`hasMore` stays `true`** so Join / Sync Now can continue draining (do not treat a capped pull as complete).
+   - Automatically paginates multi-batch backlogs inside one call (default **50** batches of **100**). When the per-call safety cap is hit, or a network/apply error pauses work, **`hasMore` stays `true`** so Join / Sync Now can continue draining.
 2. **Server-Side RPCs (`supabase/migrations/20260907100737_add_pull_sync_rpcs.sql`)**:
    - `public.pull_sync_changes(p_school_id, p_device_id, p_cursor, p_limit)`: `SECURITY DEFINER` function querying `public.sync_changes` strictly for the authorized `p_school_id` with `id > p_cursor`, returning aggregated changes JSON, counts, and `new_cursor`.
    - `public.update_sync_cursor(p_school_id, p_device_id, p_cursor)`: `SECURITY DEFINER` function upserting `public.sync_cursors` with `GREATEST(last_synced_change_id, p_cursor)`.
 3. **Two-Way Sync Coordination (`main/sync/worker.ts` - `runSyncWorker()`)**:
-   - Runs Push phase first (`pushPendingSync()`), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters (`processed`, `successful`, `failed`, `conflicts`). Allows granular options (`skipPush`, `skipPull`).
-   - Pull phase loops while `pull.hasMore` (default up to 50 outer pages). Join school (`main/services/join-school.ts`) drains the same way (up to 200 pages) so a second desk does not stop after the first ~2 000 changes.
-   - Wired seamlessly into existing IPC handlers (`backup-sync:sync-now`, `system-admin:sync-now`).
+   - Runs Push phase first (`pushPendingSync()`), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters plus top-level **`hasMore`** / **`message`** from either phase.
+   - Pull uses a dedicated page size (default 100) and loops while `pull.hasMore` (default up to 100 outer pages). Hard pull errors stop the drain (no tight retry loop) but leave `hasMore=true` for the next Sync Now.
+   - Join school (`main/services/join-school.ts`) drains the same way (up to 200 pages).
+   - **UI auto-continue:** Home and Administration → Backup & Sync call Sync Now in rounds until push+pull report no backlog (`syncNowUntilCaughtUp` / `runAdminSyncUntilCaughtUp`), so a second desk does not need dozens of manual clicks. IPC returns `has_more` from **both** push and pull (`backup-sync:sync-now`, `system-admin:sync-now`).
 
 ---
 
@@ -843,6 +844,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-09 | **Second-desk Sync Now drain:** pull falls back to per-change apply when a batch aborts (so one bad row cannot freeze the cursor); worker uses larger pull pages, surfaces pull `hasMore`/`message`, and stops hard-error spin-loops; Home + Backup & Sync auto-continue Sync Now until the backlog clears — fixes desks that only advanced ~a dozen records per click. |
 | 2026-10-09 | **Release 1.0.4:** bumped `package.json` to **1.0.4** and tagged `v1.0.4` for Windows GitHub Release publish (full multi-desk sync for all roles, finance pull FK stubs, payment fee-line allocations). Apply cloud migrations `20261008150000_full_ops_synced_entities.sql` and `20261009120000_payment_allocations_sync.sql`. |
 | 2026-10-08 | **Full multi-desk sync for all roles:** added admissions/transfers/promotions/calendar/leave/teaching/`report_settings`/`student_settings` to sync allow-list (migration `20261008150000_full_ops_synced_entities.sql`); payload-driven FK stubs on pull; Sync Now backfills orphaned `sync_status=pending` rows into the outbox; result-calculation + subject-coefficient writes enqueue; push priority covers RBAC before finance. Any new bursar/secretary/principal desk can pull the school’s operational data. |
 | 2026-10-08 | **Finance pull FK hardening:** second-desk pull no longer aborts when fee structures/invoices arrive before their academic year or student — generic apply creates version-0 parent stubs; fee catalogs push ahead of invoices. Fixes bursar desks that never received structures/invoices from the primary. |

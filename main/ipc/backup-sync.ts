@@ -122,6 +122,9 @@ export function registerBackupSyncIpc(
         }
 
         const data = loadSetup(repos)!
+        const hasMore = Boolean(
+          result.hasMore || result.push?.hasMore || result.pull?.hasMore
+        )
         return {
           ok: true,
           data: {
@@ -129,8 +132,10 @@ export function registerBackupSyncIpc(
             processed: result.processed,
             failed: result.failed,
             successful: result.successful,
-            has_more: Boolean(result.push?.hasMore || result.pull?.hasMore),
+            has_more: hasMore,
             message: result.message || null,
+            push: result.push,
+            pull: result.pull,
           },
         }
       } catch (err) {
