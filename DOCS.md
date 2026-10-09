@@ -771,13 +771,13 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
      - **No echo loop**: pulled changes are applied directly to local SQLite tables with `sync_status = 'synced'` and **never enqueued into `sync_queue`**.
      - **Atomic cursor advancement**: advances local SQLite `sync_cursors.last_synced_change_id` in the **same transaction**. If the whole-batch transaction throws, pull **retries each change individually** (`applyPulledChangesIndividually`) so one bad row cannot freeze the cursor and force Sync Now to crawl a handful of records at a time.
    - Upon successful local transaction commit, acknowledges cursor to Supabase via `public.update_sync_cursor` RPC.
-   - Automatically paginates multi-batch backlogs inside one call (default **50** batches of **100**). When the per-call safety cap is hit, or a network/apply error pauses work, **`hasMore` stays `true`** so Join / Sync Now can continue draining.
+   - Automatically paginates multi-batch backlogs inside one call (default **50** batches of up to **500** = cloud max). Cloud `update_sync_cursor` is acked every **5** applied pages (and at end of the call), while the local SQLite cursor still advances every page — fewer round-trips without changing correctness. When the per-call safety cap is hit, or a network/apply error pauses work, **`hasMore` stays `true`** so Join / Sync Now can continue draining.
 2. **Server-Side RPCs (`supabase/migrations/20260907100737_add_pull_sync_rpcs.sql`)**:
    - `public.pull_sync_changes(p_school_id, p_device_id, p_cursor, p_limit)`: `SECURITY DEFINER` function querying `public.sync_changes` strictly for the authorized `p_school_id` with `id > p_cursor`, returning aggregated changes JSON, counts, and `new_cursor`.
    - `public.update_sync_cursor(p_school_id, p_device_id, p_cursor)`: `SECURITY DEFINER` function upserting `public.sync_cursors` with `GREATEST(last_synced_change_id, p_cursor)`.
 3. **Two-Way Sync Coordination (`main/sync/worker.ts` - `runSyncWorker()` / `runSyncWorkerUntilCaughtUp()`)**:
    - Runs Push phase first (`pushPendingSync()`), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters plus top-level **`hasMore`** / **`message`** from either phase. Until-caught-up drains across safety-cap rounds.
-   - Pull uses a dedicated page size (default 100) and loops while `pull.hasMore` (default up to 100 outer pages). Hard pull errors stop the drain (no tight retry loop) but leave `hasMore=true` for the next Sync Now.
+   - Pull uses a dedicated page size (default **500**) and loops while `pull.hasMore` (default up to 100 outer pages). Hard pull errors stop the drain (no tight retry loop) but leave `hasMore=true` for the next Sync Now.
    - Join school (`main/services/join-school.ts`) drains the same way (up to 200 pages).
    - **Sync progress %:** main emits live `sync:progress` (phase, percent, upload/download counts). Push % = outbox drained; pull % uses cloud RPC `count_pending_sync_changes` (migration `20261009140000_count_pending_sync_changes.sql`). Home and Backup & Sync show a progress bar; without that migration, pull shows an indeterminate bar with applied counts. IPC: `backup-sync:sync-now`, `system-admin:sync-now`.
 
@@ -844,6 +844,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-09 | **Faster pull (safe):** default pull page size raised to cloud max **500**; cloud cursor ack batched every **5** pages (local cursor still advances each page). Fewer round-trips on second-desk hydrate without changing apply/FK rules. |
 | 2026-10-09 | **Release 1.0.5:** bumped `package.json` to **1.0.5** and tagged `v1.0.5` for Windows GitHub Release publish (second-desk Sync Now drain + live sync progress %). Apply cloud migration `20261009140000_count_pending_sync_changes.sql` for accurate download percentages. |
 | 2026-10-09 | **Sync progress %:** Sync Now shows a live percentage bar (upload + download). Push uses pending outbox count; pull uses new cloud RPC `count_pending_sync_changes` (`20261009140000_count_pending_sync_changes.sql`). IPC event `sync:progress`; UI on Home and Backup & Sync. |
 | 2026-10-09 | **Second-desk Sync Now drain:** pull falls back to per-change apply when a batch aborts (so one bad row cannot freeze the cursor); worker uses larger pull pages, surfaces pull `hasMore`/`message`, and stops hard-error spin-loops; Home + Backup & Sync auto-continue Sync Now until the backlog clears — fixes desks that only advanced ~a dozen records per click. |

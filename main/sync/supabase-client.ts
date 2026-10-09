@@ -504,7 +504,7 @@ export class SupabaseSyncClient implements SupabaseSyncClientInterface {
         p_school_id: params.schoolId,
         p_device_id: params.deviceId,
         p_cursor: params.cursor,
-        p_limit: params.limit ?? 100,
+        p_limit: params.limit ?? 500,
       })
 
       if (error) {

@@ -113,8 +113,8 @@ export async function joinSchoolByCode(
   const db = repos.schools.getDb()
 
   // Drain remote changes across multiple pull pages. A single pullRemoteChanges
-  // call caps at ~50 batches of 100; large schools still need many outer pages
-  // or the bursar desk would show a partial roster after Join.
+  // call uses up to 50 × 500-change pages; large schools still need many outer
+  // pages or the bursar desk would show a partial roster after Join.
   const maxJoinPullPages = 200
   let pages = 0
   let totalApplied = 0
@@ -123,7 +123,6 @@ export async function joinSchoolByCode(
     schoolId: remote.id,
     deviceId,
     client: syncClient,
-    batchSize: 100,
   })
 
   if (!pull.ok) {
@@ -144,7 +143,6 @@ export async function joinSchoolByCode(
       schoolId: remote.id,
       deviceId,
       client: syncClient,
-      batchSize: 100,
     })
     if (!pull.ok) {
       return {

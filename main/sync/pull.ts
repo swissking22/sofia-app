@@ -26,6 +26,17 @@ import type {
   SyncChange,
 } from './types'
 
+/** Cloud `pull_sync_changes` clamps at 500 — use the max for fewer round-trips. */
+export const MAX_PULL_BATCH_SIZE = 500
+export const DEFAULT_PULL_BATCH_SIZE = MAX_PULL_BATCH_SIZE
+/** Ack cloud cursor every N applied pages (local cursor still advances each page). */
+export const DEFAULT_CURSOR_ACK_EVERY_PAGES = 5
+
+function clampPullBatchSize(n: number | undefined): number {
+  const raw = Number.isFinite(n as number) ? Number(n) : DEFAULT_PULL_BATCH_SIZE
+  return Math.max(1, Math.min(MAX_PULL_BATCH_SIZE, Math.floor(raw)))
+}
+
 /**
  * Ensures a referenced class_id exists in local SQLite to satisfy foreign key constraints.
  */
@@ -434,12 +445,17 @@ export function applyPulledChangesIndividually(
 export async function pullRemoteChanges(
   options: PullSyncOptions
 ): Promise<PullSyncResult> {
-  // Prefer larger pull pages than push batches — second desks hydrate big backlogs.
-  const { db, batchSize = 100 } = options
+  // Prefer max pull pages — second desks hydrate big backlogs with fewer RPCs.
+  const { db } = options
+  const batchSize = clampPullBatchSize(options.batchSize)
+  const cursorAckEvery = Math.max(
+    1,
+    Math.floor(options.cursorAckEveryPages ?? DEFAULT_CURSOR_ACK_EVERY_PAGES)
+  )
   const client: SupabaseSyncClientInterface =
     options.client || getSupabaseSyncClient()
 
-  console.log('[SYNC] Pull started')
+  console.log(`[SYNC] Pull started (pageSize=${batchSize}, cursorAckEvery=${cursorAckEvery})`)
 
   // 1. Resolve authorized school identity
   let schoolId = options.schoolId
@@ -502,6 +518,19 @@ export async function pullRemoteChanges(
   let iterations = 0
   // Cap per call so callers (Join / Sync Now worker) can drain across pages.
   const maxIterations = options.maxIterations ?? 50
+  let pagesSinceCloudAck = 0
+  let cloudAckPending = false
+
+  const flushCloudCursor = async (): Promise<void> => {
+    if (!cloudAckPending) return
+    await client.updateSyncCursor({
+      schoolId: schoolId!,
+      deviceId,
+      cursor: currentCursor,
+    })
+    cloudAckPending = false
+    pagesSinceCloudAck = 0
+  }
 
   while (hasMore && iterations < maxIterations) {
     iterations += 1
@@ -516,6 +545,15 @@ export async function pullRemoteChanges(
     if (!pullRes.ok) {
       console.warn(`[SYNC] Pull RPC error: ${pullRes.error || 'Unknown error'}`)
       totalFailed += 1
+      // Persist any prior progress to the cloud before pausing.
+      try {
+        await flushCloudCursor()
+      } catch (ackErr) {
+        console.warn(
+          '[SYNC] Cloud cursor ack failed after pull RPC error:',
+          ackErr instanceof Error ? ackErr.message : ackErr
+        )
+      }
       // Keep hasMore=true so Sync Now / Join retry instead of pretending we are done.
       return {
         ok: false,
@@ -572,17 +610,18 @@ export async function pullRemoteChanges(
       totalApplied += txRes.applied
       totalConflicts += txRes.conflicts
       currentCursor = pullRes.newCursor
+      cloudAckPending = true
+      pagesSinceCloudAck += 1
 
       console.log(
         `[SYNC] Pulled batch applied: ${txRes.applied} records applied, cursor advanced to ${currentCursor}`
       )
 
-      // 6. Notify cloud of advanced cursor
-      await client.updateSyncCursor({
-        schoolId,
-        deviceId,
-        cursor: currentCursor,
-      })
+      // 6. Notify cloud of advanced cursor periodically (not every page) to
+      // cut round-trips. Local SQLite cursor already advanced in the apply TX.
+      if (pagesSinceCloudAck >= cursorAckEvery && pullRes.hasMore) {
+        await flushCloudCursor()
+      }
 
       options.onPageApplied?.(
         txRes.applied,
@@ -591,6 +630,14 @@ export async function pullRemoteChanges(
     } catch (err: any) {
       console.error(`[SYNC] Error applying pulled changes transaction:`, err)
       totalFailed += 1
+      try {
+        await flushCloudCursor()
+      } catch (ackErr) {
+        console.warn(
+          '[SYNC] Cloud cursor ack failed after apply error:',
+          ackErr instanceof Error ? ackErr.message : ackErr
+        )
+      }
       return {
         ok: false,
         processed: totalProcessed,
@@ -606,6 +653,16 @@ export async function pullRemoteChanges(
     }
 
     hasMore = Boolean(pullRes.hasMore)
+  }
+
+  // Final cloud ack for this call (end of backlog, safety cap, or empty page).
+  try {
+    await flushCloudCursor()
+  } catch (ackErr) {
+    console.warn(
+      '[SYNC] Final cloud cursor ack failed:',
+      ackErr instanceof Error ? ackErr.message : ackErr
+    )
   }
 
   if (hasMore) {

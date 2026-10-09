@@ -623,6 +623,89 @@ describe('Sofia Phase 2: Local Pull Sync Service', () => {
     expect(result.newCursor).toBe(82)
     expect(result.hasMore).toBe(false)
     expect(getLocalSyncCursor(db, schoolId, deviceId)).toBe(82)
+    // Two pages with default cursorAckEvery=5 → only final cloud ack
+    expect(mockClient.updatedCursors.length).toBe(1)
+    expect(mockClient.updatedCursors[0].cursor).toBe(82)
+  })
+
+  // 13h. Batched cloud cursor acks (local cursor still advances every page)
+  test('13h. batches cloud cursor acks every N pages plus a final flush', async () => {
+    let nextId = 900
+    let remaining = 6
+    mockClient.pullHandler = async (params) => {
+      if (remaining <= 0) {
+        return {
+          ok: true,
+          changes: [],
+          count: 0,
+          currentCursor: params.cursor,
+          newCursor: params.cursor,
+          hasMore: false,
+        }
+      }
+      const id = nextId++
+      remaining -= 1
+      return {
+        ok: true,
+        changes: [
+          {
+            id,
+            school_id: schoolId,
+            table_name: 'students',
+            record_id: `ack-student-${id}`,
+            operation: 'INSERT',
+            version: 1,
+            created_at: new Date().toISOString(),
+            payload: {
+              id: `ack-student-${id}`,
+              school_id: schoolId,
+              name: `Ack ${id}`,
+              class_id: classId,
+              version: 1,
+            },
+          },
+        ],
+        count: 1,
+        currentCursor: params.cursor,
+        newCursor: id,
+        hasMore: remaining > 0,
+      }
+    }
+
+    const result = await pullRemoteChanges({
+      db,
+      schoolId,
+      deviceId,
+      client: mockClient,
+      // 1-change pages; ack every 3 pages while more remain + final flush
+      batchSize: 1,
+      cursorAckEveryPages: 3,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.applied).toBe(6)
+    expect(getLocalSyncCursor(db, schoolId, deviceId)).toBe(905)
+    // Mid-ack after page 3, final ack after page 6
+    expect(mockClient.updatedCursors.length).toBe(2)
+    expect(mockClient.updatedCursors[0].cursor).toBe(902)
+    expect(mockClient.updatedCursors[1].cursor).toBe(905)
+  })
+
+  // 13i. Default pull page size is cloud max (500)
+  test('13i. default pull batchSize requests limit 500', async () => {
+    mockClient.pullHandler = async (params) => {
+      expect(params.limit).toBe(500)
+      return {
+        ok: true,
+        changes: [],
+        count: 0,
+        currentCursor: params.cursor,
+        newCursor: params.cursor,
+        hasMore: false,
+      }
+    }
+    await pullRemoteChanges({ db, schoolId, deviceId, client: mockClient })
+    expect(mockClient.pullRequests.length).toBe(1)
   })
 
   // 13b. Safety cap must surface hasMore so Join / Sync Now can drain
