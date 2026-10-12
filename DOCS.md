@@ -849,6 +849,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-12 | **Release 1.0.7:** bumped `package.json` to **1.0.7** and tagged `v1.0.7` for Windows GitHub Release publish (staff payslips/salaries + quiet periodic background sync). Apply cloud migration `20261009160000_payroll_payslips_sync.sql` for multi-desk payroll sync. |
 | 2026-10-12 | **Quiet background sync:** periodic online timer (`main/sync/periodic-sync.ts`) runs push+pull without progress UI; defaults on (30 min); toggle/interval under Administration → Settings → Backup & Sync. |
 | 2026-10-09 | **Release 1.0.6:** bumped `package.json` to **1.0.6** and tagged `v1.0.6` for Windows GitHub Release publish (faster pull: 500-change pages + batched cloud cursor acks). |
 | 2026-10-09 | **Faster pull (safe):** default pull page size raised to cloud max **500**; cloud cursor ack batched every **5** pages (local cursor still advances each page). Fewer round-trips on second-desk hydrate without changing apply/FK rules. |
