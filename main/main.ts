@@ -8,6 +8,7 @@ import { getDatabase, closeDatabase } from './db'
 import { createRepositories } from './db/repositories'
 import { registerIpcHandlers } from './ipc'
 import { ensureValidSession } from './auth'
+import { startPeriodicSync } from './sync/periodic-sync'
 import {
   completeUpdaterStartupEvaluation,
   initAutoUpdater,
@@ -77,6 +78,14 @@ function getRuntimeIconPath(): string | undefined {
 
     registerIpcHandlers(db, repos)
     startupLog('IPC registered')
+
+    try {
+      startPeriodicSync()
+      startupLog('periodic background sync started')
+    } catch (err) {
+      console.error('[SOFIA STARTUP] periodic sync start failed (non-fatal)', err)
+      startupLog('periodic sync start failed (non-fatal)')
+    }
 
     // Recovery evaluation does not load electron-updater (lazy inside updater.ts).
     const recovery = completeUpdaterStartupEvaluation(db)
