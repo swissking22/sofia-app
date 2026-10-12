@@ -27,6 +27,8 @@ export default function AdminSettingsPage() {
   const [lockMin, setLockMin] = React.useState(15);
   const [tz, setTz] = React.useState("Africa/Douala");
   const [retention, setRetention] = React.useState(30);
+  const [autoSync, setAutoSync] = React.useState(true);
+  const [syncInterval, setSyncInterval] = React.useState(30);
 
   React.useEffect(() => {
     void fetchSystemSettings().then((res) => {
@@ -44,6 +46,8 @@ export default function AdminSettingsPage() {
       setLockMin(Number(sys.lockout_minutes) || 15);
       setTz(String(sys.timezone || "Africa/Douala"));
       setRetention(Number(sys.backup_retention_days) || 30);
+      setAutoSync(sys.auto_sync !== 0);
+      setSyncInterval(Number(sys.sync_interval_minutes) || 30);
     });
   }, []);
 
@@ -203,6 +207,32 @@ export default function AdminSettingsPage() {
               onChange={(e) => setRetention(Number(e.target.value))}
             />
           </label>
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-2 font-medium text-slate-800">Background sync</p>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoSync}
+                onChange={(e) => setAutoSync(e.target.checked)}
+              />
+              Sync quietly in the background when online
+            </label>
+            <label className="mt-3 block text-xs text-slate-500">
+              Interval (minutes, min 5)
+              <input
+                type="number"
+                min={5}
+                className={fieldClass}
+                value={syncInterval}
+                disabled={!autoSync}
+                onChange={(e) => setSyncInterval(Number(e.target.value))}
+              />
+            </label>
+            <p className="mt-2 text-slate-500">
+              Runs push and pull without blocking your work. Manual Sync Now is
+              still available on Home and Backup &amp; Sync.
+            </p>
+          </div>
           <p className="mt-2 text-slate-500">
             Change folder and frequency under Setup → Backup or use Backup &
             Sync in this module.
@@ -222,6 +252,8 @@ export default function AdminSettingsPage() {
               lockout_attempts: lockout,
               lockout_minutes: lockMin,
               backup_retention_days: retention,
+              auto_sync: autoSync,
+              sync_interval_minutes: syncInterval,
             }).then((r) => {
               if (r.ok) setSuccess("Settings saved.");
               else setError(r.error);

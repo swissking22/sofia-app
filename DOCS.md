@@ -567,7 +567,7 @@ School-scoped control centre. There is no platform super-admin. Session role `ad
 | Permissions | `/administration/permissions` | Live matrix of catalog permissions × school roles. |
 | Audit logs | `/administration/audit-logs` | Paginated union of central `audit_events` plus finance and document audit tables. Append-only — no edit/delete API. |
 | Backup & Sync | `/administration/backup-sync` | Backup now + history. Backup folder defaults to `%APPDATA%\\sofia\\backups`; if a stored path is unwritable (e.g. after restore onto another PC/user), Sofia falls back to that default. **Restore from file…** picks a `.db` / `.sqlite` backup (integrity-checked), or restore a listed backup. Both require typing `RESTORE`, write a safety backup, stage the source under userData, then replace the DB on next launch. Sync now / retry failed / conflict **Keep local** (bump version + requeue failed outbox) or **Keep remote** (abandon local outbox for that record). The Conflicts list shows **open** rows only; one click resolves all open duplicates for the same table/record and shows success or error feedback. |
-| Settings | `/administration/settings` | Timezone (default Africa/Douala), session timeout, password/lockout policy, backup retention. School identity, academics, finance numbering, and document branding stay on their existing screens. |
+| Settings | `/administration/settings` | Timezone (default Africa/Douala), session timeout, password/lockout policy, backup retention, and **Background sync** (on by default): quiet push+pull while online on an interval (default 30 minutes, min 5). Saving restarts the timer. School identity, academics, finance numbering, and document branding stay on their existing screens. |
 
 ---
 
@@ -780,6 +780,10 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
    - Pull uses a dedicated page size (default **500**) and loops while `pull.hasMore` (default up to 100 outer pages). Hard pull errors stop the drain (no tight retry loop) but leave `hasMore=true` for the next Sync Now.
    - Join school (`main/services/join-school.ts`) drains the same way (up to 200 pages).
    - **Sync progress %:** main emits live `sync:progress` (phase, percent, upload/download counts). Push % = outbox drained; pull % uses cloud RPC `count_pending_sync_changes` (migration `20261009140000_count_pending_sync_changes.sql`). Home and Backup & Sync show a progress bar; without that migration, pull shows an indeterminate bar with applied counts. IPC: `backup-sync:sync-now`, `system-admin:sync-now`.
+4. **Quiet periodic background sync (`main/sync/periodic-sync.ts`)**:
+   - Started from `main/main.ts` after IPC registration. When `system_settings.auto_sync = 1` and Electron reports online, runs `runSyncWorkerUntilCaughtUp` on the interval in `sync_interval_minutes` (default 30, clamped 5–1440). First pass ~15s after startup.
+   - Does **not** emit `sync:progress` (stays out of the way while you work). Manual Sync Now still shows the progress bar.
+   - Settings UI: Administration → Settings → Backup & Sync. Saving calls `restartPeriodicSync()`. Existing installs get a one-time enable via `sofia_local_migrations` id `periodic_auto_sync_on`.
 
 ---
 
@@ -844,6 +848,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-12 | **Quiet background sync:** periodic online timer (`main/sync/periodic-sync.ts`) runs push+pull without progress UI; defaults on (30 min); toggle/interval under Administration → Settings → Backup & Sync. |
 | 2026-10-09 | **Release 1.0.6:** bumped `package.json` to **1.0.6** and tagged `v1.0.6` for Windows GitHub Release publish (faster pull: 500-change pages + batched cloud cursor acks). |
 | 2026-10-09 | **Faster pull (safe):** default pull page size raised to cloud max **500**; cloud cursor ack batched every **5** pages (local cursor still advances each page). Fewer round-trips on second-desk hydrate without changing apply/FK rules. |
 | 2026-10-09 | **Release 1.0.5:** bumped `package.json` to **1.0.5** and tagged `v1.0.5` for Windows GitHub Release publish (second-desk Sync Now drain + live sync progress %). Apply cloud migration `20261009140000_count_pending_sync_changes.sql` for accurate download percentages. |

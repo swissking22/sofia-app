@@ -17,6 +17,7 @@ import {
   verifySqliteBackup,
 } from '../db/sqlite-backup'
 import { scheduleTeacherReadySync } from '../sync/auto-sync'
+import { restartPeriodicSync } from '../sync/periodic-sync'
 import { runSyncWorkerUntilCaughtUp } from '../sync/worker'
 import type { SyncProgressEvent } from '../sync/progress'
 import type { RoleWriteInput } from '../db/repositories/role.repository'
@@ -939,6 +940,11 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         before,
         after: saved,
       })
+      try {
+        restartPeriodicSync()
+      } catch {
+        /* non-fatal — next launch will pick up settings */
+      }
       return { ok: true, data: saved }
     }
   )

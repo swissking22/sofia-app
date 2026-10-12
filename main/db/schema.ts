@@ -3093,7 +3093,7 @@ function migrateSystemAdministrationTables(db: Database.Database): void {
       password_require_digit INTEGER NOT NULL DEFAULT 1,
       lockout_attempts INTEGER NOT NULL DEFAULT 5,
       lockout_minutes INTEGER NOT NULL DEFAULT 15,
-      auto_sync INTEGER NOT NULL DEFAULT 0,
+      auto_sync INTEGER NOT NULL DEFAULT 1,
       sync_interval_minutes INTEGER NOT NULL DEFAULT 30,
       backup_retention_days INTEGER NOT NULL DEFAULT 30,
       created_at TEXT NOT NULL,
@@ -3104,6 +3104,30 @@ function migrateSystemAdministrationTables(db: Database.Database): void {
       FOREIGN KEY (school_id) REFERENCES schools(id)
     );
   `)
+
+  // One-time: existing installs had auto_sync=0 with no timer. Enable quiet
+  // background sync once; users can still turn it off under Settings.
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sofia_local_migrations (
+        id TEXT PRIMARY KEY NOT NULL,
+        applied_at TEXT NOT NULL
+      )
+    `)
+    const done = db
+      .prepare(
+        `SELECT 1 AS ok FROM sofia_local_migrations WHERE id = 'periodic_auto_sync_on'`
+      )
+      .get() as { ok: number } | undefined
+    if (!done) {
+      db.exec(`UPDATE system_settings SET auto_sync = 1 WHERE auto_sync = 0`)
+      db.prepare(
+        `INSERT INTO sofia_local_migrations (id, applied_at) VALUES (?, ?)`
+      ).run('periodic_auto_sync_on', new Date().toISOString())
+    }
+  } catch {
+    /* ignore — non-fatal on first boot */
+  }
 }
 
 function migrateResultsCalculationTables(db: Database.Database): void {

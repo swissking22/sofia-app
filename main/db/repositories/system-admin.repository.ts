@@ -662,7 +662,7 @@ export class SystemAdminRepository {
           password_require_upper, password_require_digit, lockout_attempts, lockout_minutes,
           auto_sync, sync_interval_minutes, backup_retention_days,
           created_at, updated_at, deleted_at, sync_status, version
-        ) VALUES (?, ?, ?, 480, 8, 1, 1, 5, 15, 0, 30, 30, ?, ?, NULL, 'pending', 1)`
+        ) VALUES (?, ?, ?, 480, 8, 1, 1, 5, 15, 1, 30, 30, ?, ?, NULL, 'pending', 1)`
       )
       .run(id, schoolId, DEFAULT_TIMEZONE, now, now)
     return this.db.prepare(`SELECT * FROM system_settings WHERE id = ?`).get(id) as Record<
@@ -713,8 +713,14 @@ export class SystemAdminRepository {
         password_require_digit: input.password_require_digit === false ? 0 : 1,
         lockout_attempts: input.lockout_attempts ?? current.lockout_attempts,
         lockout_minutes: input.lockout_minutes ?? current.lockout_minutes,
-        auto_sync: input.auto_sync ? 1 : 0,
-        sync_interval_minutes: input.sync_interval_minutes ?? current.sync_interval_minutes,
+        auto_sync:
+          input.auto_sync === undefined
+            ? current.auto_sync
+            : input.auto_sync
+              ? 1
+              : 0,
+        sync_interval_minutes:
+          input.sync_interval_minutes ?? current.sync_interval_minutes,
         backup_retention_days: input.backup_retention_days ?? current.backup_retention_days,
         updated_at: now,
       })
