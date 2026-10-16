@@ -646,7 +646,8 @@ export class ReportsRepository {
    * Collections by invoice fee-line description (Tuition, PTA, …).
    * Uses payment_allocations when present; otherwise FIFO across invoice lines.
    */
-  private feeLineCollections(
+  /** Collections attributed to each fee line (allocations + FIFO fallback). */
+  feeLineCollections(
     schoolId: string,
     filters: ReportFilters
   ): Array<{ name: string; amount: number }> {

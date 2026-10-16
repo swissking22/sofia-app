@@ -524,6 +524,52 @@ export function receiptPaidForLines(input: {
   )
 }
 
+/** Lines billed into school expected fees / invoice generation. */
+export function isMandatoryFeeLine(
+  line: { is_mandatory?: number | boolean | null } | null | undefined
+): boolean {
+  if (!line) return true
+  const v = line.is_mandatory
+  return v === 1 || v === true || v === undefined || v === null
+}
+
+export function mandatoryFeeLines<T extends { is_mandatory?: number | boolean | null }>(
+  lines: T[]
+): T[] {
+  return lines.filter((l) => isMandatoryFeeLine(l))
+}
+
+export function optionalFeeLines<T extends { is_mandatory?: number | boolean | null }>(
+  lines: T[]
+): T[] {
+  return lines.filter((l) => !isMandatoryFeeLine(l))
+}
+
+/** Match structure line name to an invoice line description (already billed optional). */
+export function invoiceLineMatchesStructureName(
+  invoiceDescription: string,
+  structureName: string
+): boolean {
+  return (
+    invoiceDescription.trim().toLowerCase() === structureName.trim().toLowerCase()
+  )
+}
+
+/**
+ * Optional structure lines not yet present on the invoice (by name).
+ * These can be added when recording a payment.
+ */
+export function availableOptionalStructureLines<
+  T extends { name: string; is_mandatory?: number | boolean | null },
+>(structureLines: T[], invoiceLineDescriptions: string[]): T[] {
+  return optionalFeeLines(structureLines).filter(
+    (sl) =>
+      !invoiceLineDescriptions.some((d) =>
+        invoiceLineMatchesStructureName(d, sl.name)
+      )
+  )
+}
+
 export function padNum(n: number): string {
   return String(Math.max(1, Math.floor(n))).padStart(5, '0')
 }

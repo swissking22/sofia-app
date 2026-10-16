@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
 import {
+  ConfirmModal,
   PageAlert,
   PrimaryButton,
   SecondaryButton,
@@ -11,6 +12,7 @@ import {
 } from "../../../components/staff/ui";
 import {
   JOB_ROLE_LABELS,
+  deleteStaff,
   fetchStaff,
   fetchStaffMeta,
   updateStaff,
@@ -32,6 +34,8 @@ export default function TeacherDetailPage() {
   const id = typeof router.query.id === "string" ? router.query.id : "";
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
   const [meta, setMeta] = React.useState<StaffMeta | null>(null);
@@ -133,6 +137,26 @@ export default function TeacherDetailPage() {
       setError("Could not update teacher.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runDelete() {
+    if (!staff || !meta?.can_manage) return;
+    setDeleting(true);
+    setError("");
+    try {
+      const res = await deleteStaff(staff.id);
+      if (!res.ok) {
+        setError(res.error);
+        setConfirmDelete(false);
+        return;
+      }
+      await router.push("/staff/teachers");
+    } catch {
+      setError("Could not delete teacher.");
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -348,14 +372,36 @@ export default function TeacherDetailPage() {
           </label>
         </FormSection>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canManage ? (
-            <PrimaryButton type="submit" disabled={saving}>
+            <PrimaryButton type="submit" disabled={saving || deleting}>
               {saving ? "Saving…" : "Save changes"}
             </PrimaryButton>
           ) : null}
+          <SecondaryButton href="/staff/teachers">Back</SecondaryButton>
+          {canManage ? (
+            <button
+              type="button"
+              disabled={saving || deleting}
+              onClick={() => setConfirmDelete(true)}
+              className="cursor-pointer rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+            >
+              Delete teacher
+            </button>
+          ) : null}
         </div>
       </form>
+
+      <ConfirmModal
+        open={confirmDelete}
+        title="Delete teacher?"
+        description={`${staff.full_name} will be removed from the active roster. Homeroom assignments will be cleared.`}
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => void runDelete()}
+      />
     </AppShell>
   );
 }

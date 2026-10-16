@@ -2,6 +2,7 @@ import React from "react";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
+  ConfirmModal,
   PageAlert,
   PrimaryButton,
   SecondaryButton,
@@ -10,6 +11,7 @@ import {
 } from "../../../components/staff/ui";
 import {
   JOB_ROLE_LABELS,
+  deleteStaff,
   fetchStaff,
   fetchStaffMeta,
   updateStaff,
@@ -31,6 +33,8 @@ export default function StaffDirectoryDetailPage() {
   const id = typeof router.query.id === "string" ? router.query.id : "";
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
   const [staff, setStaff] = React.useState<StaffDto | null>(null);
@@ -78,10 +82,32 @@ export default function StaffDirectoryDetailPage() {
         setError(res.error);
         return;
       }
-      setSuccess("Monthly salary saved. It will be used for payslip generation.");
+      setSuccess(
+        "Monthly salary saved. It will be used for payslip generation.",
+      );
       setStaff(res.data);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function runDelete() {
+    if (!staff || !canManage) return;
+    setDeleting(true);
+    setError("");
+    try {
+      const res = await deleteStaff(staff.id);
+      if (!res.ok) {
+        setError(res.error);
+        setConfirmDelete(false);
+        return;
+      }
+      await router.push("/staff/directory");
+    } catch {
+      setError("Could not delete staff member.");
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -124,8 +150,24 @@ export default function StaffDirectoryDetailPage() {
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
       {success ? <PageAlert tone="success">{success}</PageAlert> : null}
 
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <StatusBadge status={staff.status} />
+        {staff.staff_type === "teaching" ? (
+          <PrimaryButton href={`/staff/teachers/${staff.id}`}>
+            {canManage ? "Edit teacher" : "View teacher"}
+          </PrimaryButton>
+        ) : null}
+        <SecondaryButton href="/staff/directory">Back</SecondaryButton>
+        {canManage ? (
+          <button
+            type="button"
+            disabled={deleting || busy}
+            onClick={() => setConfirmDelete(true)}
+            className="cursor-pointer rounded-xl border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+          >
+            Delete
+          </button>
+        ) : null}
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -197,10 +239,7 @@ export default function StaffDirectoryDetailPage() {
                   onChange={(e) => setSalaryInput(e.target.value)}
                 />
               </label>
-              <PrimaryButton
-                disabled={busy}
-                onClick={() => void saveSalary()}
-              >
+              <PrimaryButton disabled={busy} onClick={() => void saveSalary()}>
                 {busy ? "Saving…" : "Save salary"}
               </PrimaryButton>
             </div>
@@ -254,6 +293,17 @@ export default function StaffDirectoryDetailPage() {
           </section>
         )}
       </div>
+
+      <ConfirmModal
+        open={confirmDelete}
+        title="Delete staff member?"
+        description={`${staff.full_name} will be removed from the active roster.`}
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => void runDelete()}
+      />
     </AppShell>
   );
 }

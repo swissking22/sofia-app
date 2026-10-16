@@ -153,8 +153,8 @@ export default function RegisterPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
 
@@ -473,7 +473,8 @@ export default function RegisterPage() {
           <form onSubmit={submitAdmin} className="mt-8">
             <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-800">
               Setting up admin for{" "}
-              <span className="font-semibold">{schoolName}</span>
+              <span className="font-semibold">{schoolName}</span>. This creates
+              your cloud login (needed for other desks) — stay online.
             </div>
 
             <AuthField
@@ -489,16 +490,16 @@ export default function RegisterPage() {
               label="Password"
               type="password"
               required
-              minLength={6}
+              minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              placeholder="At least 8 characters"
             />
             <AuthField
               label="Confirm Password"
               type="password"
               required
-              minLength={6}
+              minLength={8}
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               placeholder="Re-enter your password"

@@ -158,8 +158,8 @@ export type AdminSyncResult = {
     phase: string
     indeterminate?: boolean
   }
-  push?: { hasMore?: boolean; successful?: number }
-  pull?: { hasMore?: boolean; applied?: number }
+  push?: { hasMore?: boolean; successful?: number; message?: string | null }
+  pull?: { hasMore?: boolean; applied?: number; message?: string | null }
 }
 
 export function adminSyncHasMore(data: AdminSyncResult): boolean {

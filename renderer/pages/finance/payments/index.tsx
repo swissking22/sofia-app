@@ -38,6 +38,7 @@ import {
   type FinanceMeta,
   type InvoiceDto,
   type InvoiceLineDto,
+  type OptionalStructureLineDto,
   type PaymentDto,
   type PaymentMethod,
 } from "../../../lib/finance-mgmt";
@@ -70,6 +71,9 @@ export default function PaymentsPage() {
   const [useCredit, setUseCredit] = React.useState(false);
   const [lastReceiptId, setLastReceiptId] = React.useState<string | null>(null);
   const [invoiceLines, setInvoiceLines] = React.useState<InvoiceLineDto[]>([]);
+  const [optionalLines, setOptionalLines] = React.useState<
+    OptionalStructureLineDto[]
+  >([]);
   const [lineSelections, setLineSelections] = React.useState<
     Record<string, { selected: boolean; amount: string }>
   >({});
@@ -157,8 +161,13 @@ export default function PaymentsPage() {
       .join(" ");
   }
 
+  function optionalKey(structureLineId: string) {
+    return `opt:${structureLineId}`;
+  }
+
   function clearLineSelections() {
     setInvoiceLines([]);
+    setOptionalLines([]);
     setLineSelections({});
     setCreditBalance(0);
   }
@@ -192,13 +201,21 @@ export default function PaymentsPage() {
       if (!sel?.selected) continue;
       total += Number(sel.amount) || 0;
     }
+    for (const line of optionalLines) {
+      const sel = lineSelections[optionalKey(line.id)];
+      if (!sel?.selected) continue;
+      total += Number(sel.amount) || 0;
+    }
     return Math.round(total * 100) / 100;
-  }, [invoiceLines, lineSelections]);
+  }, [invoiceLines, optionalLines, lineSelections]);
 
   const payableLines = React.useMemo(
     () => invoiceLines.filter((l) => (l.remaining ?? l.amount ?? 0) > 0.009),
     [invoiceLines],
   );
+
+  const hasSelectableLines =
+    payableLines.length > 0 || optionalLines.length > 0;
 
   React.useEffect(() => {
     if (!open && !onlineOpen) return;
@@ -342,7 +359,9 @@ export default function PaymentsPage() {
         return;
       }
       const lines = res.data.lines ?? [];
+      const optional = res.data.optional_lines ?? [];
       setInvoiceLines(lines);
+      setOptionalLines(optional);
       setCreditBalance(Number(res.data.credit_balance) || 0);
       const next: Record<string, { selected: boolean; amount: string }> = {};
       let total = 0;
@@ -356,6 +375,12 @@ export default function PaymentsPage() {
         };
         if (selected) total += remaining;
       }
+      for (const line of optional) {
+        next[optionalKey(line.id)] = {
+          selected: false,
+          amount: String(Math.round(line.amount * 100) / 100),
+        };
+      }
       setLineSelections(next);
       setAmount(total > 0 ? String(Math.round(total * 100) / 100) : "");
     });
@@ -365,7 +390,7 @@ export default function PaymentsPage() {
   }, [invoiceId, open]);
 
   React.useEffect(() => {
-    if (!open || !invoiceId || payableLines.length === 0) return;
+    if (!open || !invoiceId || !hasSelectableLines) return;
     const creditApplied = useCredit
       ? Math.min(creditBalance, selectedLineTotal)
       : 0;
@@ -378,7 +403,7 @@ export default function PaymentsPage() {
     selectedLineTotal,
     open,
     invoiceId,
-    payableLines.length,
+    hasSelectableLines,
     useCredit,
     creditBalance,
   ]);
@@ -424,17 +449,30 @@ export default function PaymentsPage() {
       );
       return;
     }
-    const allocations = payableLines
-      .map((line) => {
-        const sel = lineSelections[line.id];
-        if (!sel?.selected) return null;
-        const lineAmount = Number(sel.amount) || 0;
-        if (lineAmount <= 0) return null;
-        return { invoice_line_id: line.id, amount: lineAmount };
-      })
-      .filter(Boolean) as Array<{ invoice_line_id: string; amount: number }>;
+    const allocations: Array<{
+      invoice_line_id?: string | null;
+      fee_structure_line_id?: string | null;
+      amount: number;
+    }> = [];
+    for (const line of payableLines) {
+      const sel = lineSelections[line.id];
+      if (!sel?.selected) continue;
+      const lineAmount = Number(sel.amount) || 0;
+      if (lineAmount <= 0) continue;
+      allocations.push({ invoice_line_id: line.id, amount: lineAmount });
+    }
+    for (const line of optionalLines) {
+      const sel = lineSelections[optionalKey(line.id)];
+      if (!sel?.selected) continue;
+      const lineAmount = Number(sel.amount) || 0;
+      if (lineAmount <= 0) continue;
+      allocations.push({
+        fee_structure_line_id: line.id,
+        amount: lineAmount,
+      });
+    }
 
-    if (payableLines.length > 0 && allocations.length === 0) {
+    if (hasSelectableLines && allocations.length === 0) {
       setError("Select at least one fee line being paid for.");
       return;
     }
@@ -924,13 +962,14 @@ export default function PaymentsPage() {
                 Fee lines being paid
               </p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Select components so the receipt shows what this payment covers.
+                Mandatory lines are billed on the invoice. Optional lines can be
+                added here when the parent pays for them.
               </p>
               {linesLoading ? (
                 <p className="mt-3 text-sm text-slate-500">
                   Loading fee lines…
                 </p>
-              ) : payableLines.length === 0 ? (
+              ) : !hasSelectableLines ? (
                 <p className="mt-3 text-sm text-slate-500">
                   No open fee lines on this invoice.
                 </p>
@@ -980,9 +1019,52 @@ export default function PaymentsPage() {
                       </li>
                     );
                   })}
+                  {optionalLines.map((line) => {
+                    const key = optionalKey(line.id);
+                    const remaining = Math.round(line.amount * 100) / 100;
+                    const sel = lineSelections[key];
+                    const selected = sel?.selected ?? false;
+                    return (
+                      <li
+                        key={key}
+                        className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-200 bg-white px-2.5 py-2"
+                      >
+                        <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleFeeLine(key, remaining)}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="font-medium">{line.name}</span>
+                            <span className="ml-1.5 rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Optional
+                            </span>
+                            <span className="block text-xs text-slate-500">
+                              Not billed until selected ·{" "}
+                              {formatMoney(remaining, currency)}
+                            </span>
+                          </span>
+                        </label>
+                        <input
+                          type="number"
+                          min={0.01}
+                          max={remaining}
+                          step="0.01"
+                          disabled={!selected}
+                          className={`${fieldClass} w-28 shrink-0 py-1.5 text-right disabled:bg-slate-100`}
+                          value={selected ? (sel?.amount ?? "") : ""}
+                          onChange={(e) =>
+                            setFeeLineAmount(key, e.target.value)
+                          }
+                          aria-label={`Amount for ${line.name}`}
+                        />
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
-              {payableLines.length > 0 ? (
+              {hasSelectableLines ? (
                 <p className="mt-2 text-right text-xs font-medium text-slate-600">
                   Selected total {formatMoney(selectedLineTotal, currency)}
                 </p>
@@ -1001,9 +1083,9 @@ export default function PaymentsPage() {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               required={!useCredit}
-              readOnly={payableLines.length > 0}
+              readOnly={hasSelectableLines}
             />
-            {payableLines.length > 0 ? (
+            {hasSelectableLines ? (
               <p className="mt-1 text-xs text-slate-500">
                 {useCredit && creditBalance > 0
                   ? `Selected fee lines ${formatMoney(selectedLineTotal, currency)}; up to ${formatMoney(Math.min(creditBalance, selectedLineTotal), currency)} from credit.`

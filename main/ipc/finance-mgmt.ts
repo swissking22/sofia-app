@@ -173,6 +173,10 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
       lines: fm().getStructureLines(s.id),
       total: fm()
         .getStructureLines(s.id)
+        .filter((l) => l.is_mandatory === 1)
+        .reduce((sum, l) => sum + l.amount, 0),
+      package_total: fm()
+        .getStructureLines(s.id)
         .reduce((sum, l) => sum + l.amount, 0),
     }))
     return { ok: true, data: rows }
@@ -412,6 +416,7 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
               remaining: bal?.remaining ?? line.amount,
             }
           }),
+          optional_lines: fm().getAvailableOptionalStructureLines(inv.id),
           credit_balance: fm().studentCreditTotal(inv.school_id, inv.student_id),
         },
       }
@@ -671,7 +676,11 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
         paid_at?: string | null
         notes?: string | null
         use_credit?: boolean
-        allocations?: Array<{ invoice_line_id: string; amount: number }> | null
+        allocations?: Array<{
+          invoice_line_id?: string | null
+          fee_structure_line_id?: string | null
+          amount: number
+        }> | null
       }
     ): Result<unknown> => {
       const session = requireSession()
@@ -1090,6 +1099,11 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
           (byExpenseCategory[e.category] || 0) + e.amount
       }
 
+      const by_fee_line = repos.reports.feeLineCollections(sid, {
+        from,
+        to,
+      })
+
       return {
         ok: true,
         data: {
@@ -1102,6 +1116,7 @@ export function registerFinanceMgmtIpc(repos: Repositories): void {
           profit_loss: collected - expenseTotal,
           payment_by_method: byMethod,
           expense_by_category: byExpenseCategory,
+          by_fee_line,
           invoice_count: invoices.length,
           payment_count: payments.length,
         },

@@ -17,6 +17,7 @@ function memoryDb(): Database.Database {
       status TEXT NOT NULL,
       retry_count INTEGER NOT NULL DEFAULT 0,
       last_attempt_at TEXT,
+      last_error TEXT,
       created_at TEXT NOT NULL
     );
   `)

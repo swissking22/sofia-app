@@ -267,17 +267,18 @@ export async function pushPendingSync(
       console.error(
         `[SYNC] Validation error for operation ${item.id}: invalid JSON payload`
       )
-      markFailed(db, item.id)
+      markFailed(db, item.id, 'Invalid JSON payload')
       failed += 1
       continue
     }
 
     // Tenant check: ensure payload school_id matches authorized schoolId
     if (payload.school_id && payload.school_id !== schoolId) {
+      const tenantErr = `Tenant mismatch: payload school ${String(payload.school_id)} ≠ authorized ${schoolId}`
       console.error(
         `[SYNC] Tenant mismatch for operation ${item.id}: payload belongs to ${payload.school_id}, authorized school is ${schoolId}`
       )
-      markFailed(db, item.id)
+      markFailed(db, item.id, tenantErr)
       failed += 1
       continue
     }
@@ -403,7 +404,15 @@ export async function pushPendingSync(
           localJson: item.payload,
           remoteJson: JSON.stringify(response),
         })
-        markFailed(db, item.id)
+        markFailed(
+          db,
+          item.id,
+          `Version conflict${
+            response.cloudVersion != null
+              ? ` (cloud version ${response.cloudVersion})`
+              : ''
+          }`
+        )
         continue
       }
 
@@ -411,7 +420,11 @@ export async function pushPendingSync(
       console.error(
         `[SYNC] Validation error for operation ${item.id}: ${response.error}`
       )
-      markFailed(db, item.id)
+      markFailed(
+        db,
+        item.id,
+        response.error || 'Cloud rejected this sync operation'
+      )
 
       // Structural / tenant barriers fail every item the same way — stop the batch
       if (isPermanentSyncBarrier(response.error)) {

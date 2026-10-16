@@ -1,10 +1,11 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { Add01Icon, ViewIcon } from "@hugeicons/core-free-icons";
+import { Add01Icon, Edit02Icon, ViewIcon } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField, FormSection } from "../../../components/setup";
 import {
+  ConfirmModal,
   FormModal,
   EmptyRow,
   FilterBar,
@@ -20,10 +21,14 @@ import {
   useDebouncedValue,
 } from "../../../components/staff/ui";
 import { Icon } from "../../../components/ui/Icon";
-import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import {
   JOB_ROLE_LABELS,
   createStaff,
+  deleteStaff,
   fetchDirectory,
   fetchStaffMeta,
   type StaffDto,
@@ -47,6 +52,9 @@ export default function StaffDirectoryPage() {
   const [staffType, setStaffType] = React.useState<StaffType | "all">("all");
   const [jobRole, setJobRole] = React.useState<StaffJobRole | "all">("all");
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState<StaffDto | null>(
+    null,
+  );
 
   const [fullName, setFullName] = React.useState("");
   const [employeeCode, setEmployeeCode] = React.useState("");
@@ -113,9 +121,7 @@ export default function StaffDirectoryPage() {
         status: newStatus,
         address: address.trim() || null,
         staff_type: "administrative",
-        monthly_salary: monthlySalary.trim()
-          ? Number(monthlySalary)
-          : null,
+        monthly_salary: monthlySalary.trim() ? Number(monthlySalary) : null,
       });
       if (!res.ok) {
         setError(res.error);
@@ -133,6 +139,25 @@ export default function StaffDirectoryPage() {
   const canManage = meta?.can_manage ?? false;
   const [selected, setSelected] = React.useState<string[]>([]);
 
+  async function runDelete() {
+    if (!confirmDelete) return;
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const res = await deleteStaff(confirmDelete.id);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setSuccess(`${confirmDelete.full_name} removed.`);
+      setConfirmDelete(null);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const allSelected = staff.length > 0 && selected.length === staff.length;
   function toggle(id: string) {
     setSelected((prev) =>
@@ -147,12 +172,14 @@ export default function StaffDirectoryPage() {
     const target = staff.filter((s) => selected.includes(s.id));
     if (!target.length) return;
     const csv = [
-      ["Name", "Type", "Role", "Department", "Phone", "Email", "Status"].join(","),
+      ["Name", "Type", "Role", "Department", "Phone", "Email", "Status"].join(
+        ",",
+      ),
       ...target.map((s) =>
         [
           `"${s.full_name}"`,
           `"${s.staff_type}"`,
-          `"${s.job_role ? (JOB_ROLE_LABELS[s.job_role] || s.job_role) : ""}"`,
+          `"${s.job_role ? JOB_ROLE_LABELS[s.job_role] || s.job_role : ""}"`,
           `"${s.department_name || ""}"`,
           `"${s.phone || ""}"`,
           `"${s.email || ""}"`,
@@ -225,13 +252,13 @@ export default function StaffDirectoryPage() {
                 }
               >
                 <option value="all">All roles</option>
-                {(
-                  Object.keys(JOB_ROLE_LABELS) as StaffJobRole[]
-                ).map((role) => (
-                  <option key={role} value={role}>
-                    {JOB_ROLE_LABELS[role]}
-                  </option>
-                ))}
+                {(Object.keys(JOB_ROLE_LABELS) as StaffJobRole[]).map(
+                  (role) => (
+                    <option key={role} value={role}>
+                      {JOB_ROLE_LABELS[role]}
+                    </option>
+                  ),
+                )}
               </select>
             </FilterField>
           </>
@@ -310,14 +337,35 @@ export default function StaffDirectoryPage() {
               <td className="px-4 py-3">
                 <StatusBadge status={s.status} />
               </td>
-              <td className="px-4 py-3 text-right">
+              <td
+                className="px-4 py-3 text-right"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <TableActionGroup>
-                  <TableIconButton
-                    icon={ViewIcon}
-                    label="View staff"
-                    tone="primary"
-                    href={`/staff/directory/${s.id}`}
-                  />
+                  {s.staff_type === "teaching" && canManage ? (
+                    <TableIconButton
+                      icon={Edit02Icon}
+                      label="Edit teacher"
+                      tone="primary"
+                      href={`/staff/teachers/${s.id}`}
+                    />
+                  ) : (
+                    <TableIconButton
+                      icon={ViewIcon}
+                      label="View staff"
+                      tone="primary"
+                      href={`/staff/directory/${s.id}`}
+                    />
+                  )}
+                  {canManage ? (
+                    <button
+                      type="button"
+                      className="cursor-pointer rounded-lg px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                      onClick={() => setConfirmDelete(s)}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
                 </TableActionGroup>
               </td>
             </tr>
@@ -430,9 +478,7 @@ export default function StaffDirectoryPage() {
               <select
                 className={fieldClass}
                 value={newJobRole}
-                onChange={(e) =>
-                  setNewJobRole(e.target.value as StaffJobRole)
-                }
+                onChange={(e) => setNewJobRole(e.target.value as StaffJobRole)}
               >
                 <option value="support">Support</option>
                 <option value="admin">Admin</option>
@@ -473,6 +519,17 @@ export default function StaffDirectoryPage() {
           </FormSection>
         </form>
       </FormModal>
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        title="Delete staff member?"
+        description={`${confirmDelete?.full_name ?? "This person"} will be removed from the active roster.`}
+        confirmLabel="Delete"
+        danger
+        busy={busy}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={() => void runDelete()}
+      />
     </AppShell>
   );
 }

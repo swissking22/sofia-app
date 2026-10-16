@@ -27,6 +27,9 @@ import {
   computeInvoiceLineBalances,
   fifoPaymentAllocations,
   normalizePaymentLineAllocations,
+  mandatoryFeeLines,
+  availableOptionalStructureLines,
+  invoiceLineMatchesStructureName,
   padNum,
   resolveInvoiceStatus as invoiceStatus,
   round2,
@@ -699,6 +702,186 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
       .all(invoiceId) as InvoiceLine[]
   }
 
+  /**
+   * Optional fee-structure lines not yet on this invoice.
+   * Empty when the invoice has no linked fee structure.
+   */
+  getAvailableOptionalStructureLines(invoiceId: string): Array<{
+    id: string
+    name: string
+    amount: number
+    fee_category_id: string | null
+  }> {
+    const invoice = this.getInvoice(invoiceId)
+    if (!invoice?.fee_structure_id) return []
+    const structureLines = this.getStructureLines(invoice.fee_structure_id)
+    const existing = this.getInvoiceLines(invoiceId).map((l) => l.description)
+    return availableOptionalStructureLines(structureLines, existing).map(
+      (l) => ({
+        id: l.id,
+        name: l.name,
+        amount: round2(l.amount),
+        fee_category_id: l.fee_category_id,
+      })
+    )
+  }
+
+  /**
+   * Append optional structure lines to an invoice (increases expected balance).
+   * Returns updated invoice + map of structure_line_id → new invoice_line_id.
+   * Must be called inside an open transaction when used from recordPayment.
+   */
+  private appendOptionalStructureLines(
+    invoice: Invoice,
+    structureLineIds: string[],
+    userId: string | null
+  ): { invoice: Invoice; lineIdsByStructureLineId: Record<string, string> } {
+    const uniqueIds = [...new Set(structureLineIds.filter(Boolean))]
+    if (!uniqueIds.length) {
+      return { invoice, lineIdsByStructureLineId: {} }
+    }
+    if (!invoice.fee_structure_id) {
+      throw new Error('This invoice has no fee structure for optional lines.')
+    }
+    const structureLines = this.getStructureLines(invoice.fee_structure_id)
+    const byId = new Map(structureLines.map((l) => [l.id, l]))
+    const existing = this.getInvoiceLines(invoice.id)
+    const lineIdsByStructureLineId: Record<string, string> = {}
+    const toInsert: FeeStructureLine[] = []
+
+    for (const sid of uniqueIds) {
+      const sl = byId.get(sid)
+      if (!sl) {
+        throw new Error('One or more optional fee lines were not found.')
+      }
+      if (sl.is_mandatory === 1) {
+        throw new Error(
+          `"${sl.name}" is mandatory and should already be on the invoice.`
+        )
+      }
+      const already = existing.find((l) =>
+        invoiceLineMatchesStructureName(l.description, sl.name)
+      )
+      if (already) {
+        lineIdsByStructureLineId[sid] = already.id
+        continue
+      }
+      toInsert.push(sl)
+    }
+
+    if (!toInsert.length) {
+      return { invoice, lineIdsByStructureLineId }
+    }
+
+    let sortBase = existing.length
+    let addedAmount = 0
+    for (const sl of toInsert) {
+      const row: InvoiceLine = {
+        ...this.buildBaseFields(),
+        school_id: invoice.school_id,
+        invoice_id: invoice.id,
+        fee_category_id: sl.fee_category_id,
+        description: sl.name.trim(),
+        amount: round2(sl.amount),
+        is_adjustment: 0,
+        sort_order: sortBase++,
+      }
+      this.db
+        .prepare(
+          `INSERT INTO invoice_lines (
+             id, school_id, invoice_id, fee_category_id, description, amount,
+             is_adjustment, sort_order,
+             created_at, updated_at, deleted_at, sync_status, version
+           ) VALUES (
+             @id, @school_id, @invoice_id, @fee_category_id, @description, @amount,
+             @is_adjustment, @sort_order,
+             @created_at, @updated_at, @deleted_at, @sync_status, @version
+           )`
+        )
+        .run(row)
+      enqueueSync(
+        this.db,
+        'invoice_lines',
+        row.id,
+        'INSERT',
+        row as unknown as Record<string, unknown>
+      )
+      lineIdsByStructureLineId[sl.id] = row.id
+      addedAmount = round2(addedAmount + row.amount)
+      existing.push(row)
+    }
+
+    const subtotal = round2(invoice.subtotal + addedAmount)
+    const net_payable = round2(invoice.net_payable + addedAmount)
+    const balance = round2(Math.max(0, net_payable - invoice.amount_paid))
+    const updated: Invoice = {
+      ...invoice,
+      subtotal,
+      net_payable,
+      balance,
+      status: invoiceStatus(net_payable, invoice.amount_paid, invoice.due_date),
+      ...this.applyUpdateMeta(invoice),
+    }
+    this.db
+      .prepare(
+        `UPDATE invoices
+         SET subtotal = @subtotal,
+             net_payable = @net_payable,
+             balance = @balance,
+             status = @status,
+             updated_at = @updated_at,
+             version = @version,
+             sync_status = @sync_status
+         WHERE id = @id`
+      )
+      .run(updated)
+    enqueueSync(
+      this.db,
+      'invoices',
+      updated.id,
+      'UPDATE',
+      updated as unknown as Record<string, unknown>
+    )
+
+    if (addedAmount > 0.0001) {
+      this.postLedger(
+        invoice.school_id,
+        [
+          {
+            account: 'accounts_receivable',
+            debit: addedAmount,
+            credit: 0,
+            description: `Optional fees ${invoice.invoice_number}`,
+          },
+          {
+            account: 'fee_revenue',
+            debit: 0,
+            credit: addedAmount,
+            description: `Optional fees ${invoice.invoice_number}`,
+          },
+        ],
+        'invoice',
+        invoice.id,
+        userId,
+        todayIso()
+      )
+    }
+
+    this.audit(
+      invoice.school_id,
+      'invoice.add_optional_lines',
+      'invoice',
+      invoice.id,
+      userId,
+      {
+        structure_line_ids: toInsert.map((l) => l.id),
+        amount: addedAmount,
+      }
+    )
+
+    return { invoice: updated, lineIdsByStructureLineId }
+  }
+
   private insertInvoiceWithLines(
     invoice: Invoice,
     lines: Array<{
@@ -854,9 +1037,14 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
       throw new Error(feeStructureMismatchMessage(mismatch))
     }
 
-    const lines = this.getStructureLines(structure.id).filter(
-      (l) => l.is_mandatory === 1 || true
-    )
+    // Only mandatory lines form the school's expected fee / invoice total.
+    // Optional lines can be added later when recording a payment.
+    const lines = mandatoryFeeLines(this.getStructureLines(structure.id))
+    if (!lines.length) {
+      throw new Error(
+        'This fee structure has no mandatory lines. Mark at least one line as mandatory before generating invoices.'
+      )
+    }
     const chargeLines = lines.map((l) => ({
       fee_category_id: l.fee_category_id,
       description: l.name,
@@ -1303,8 +1491,16 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
     paid_at?: string | null
     notes?: string | null
     use_credit?: boolean
-    /** Cashier-selected fee lines; FIFO when omitted. */
-    allocations?: Array<{ invoice_line_id: string; amount: number }> | null
+    /**
+     * Cashier-selected fee lines; FIFO when omitted.
+     * Pass fee_structure_line_id for optional structure lines not yet on the invoice
+     * (they are appended to the invoice before allocation).
+     */
+    allocations?: Array<{
+      invoice_line_id?: string | null
+      fee_structure_line_id?: string | null
+      amount: number
+    }> | null
     userId: string | null
   }): { payment: Payment; receipt: Receipt } {
     const invoice = this.getInvoice(input.invoice_id)
@@ -1314,7 +1510,17 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
     if (invoice.status === 'cancelled') {
       throw new Error('Cannot pay a cancelled invoice.')
     }
-    if (invoice.balance <= 0) throw new Error('Invoice is already paid.')
+
+    const optionalStructureIds = [
+      ...new Set(
+        (input.allocations ?? [])
+          .map((a) => a.fee_structure_line_id?.trim() || '')
+          .filter(Boolean)
+      ),
+    ]
+    if (invoice.balance <= 0 && optionalStructureIds.length === 0) {
+      throw new Error('Invoice is already paid.')
+    }
 
     const settings = this.getSettings(input.school_id)
     const cashIn = round2(input.amount)
@@ -1323,78 +1529,124 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
       throw new Error('Payment amount must be positive.')
     }
 
-    let credit_applied = 0
-    if (input.use_credit) {
-      const available = this.studentCreditTotal(
-        input.school_id,
-        invoice.student_id
-      )
-      credit_applied = round2(Math.min(available, invoice.balance))
-    }
-
-    let remainingBalance = round2(invoice.balance - credit_applied)
-    let fromCash = round2(Math.min(cashIn, Math.max(0, remainingBalance)))
-    let overpay = round2(cashIn - fromCash)
-    if (overpay > 0 && !(settings.allow_credit ?? 1)) {
-      throw new Error(
-        'Payment exceeds outstanding balance. Enable credit or reduce amount.'
-      )
-    }
-
-    const applied = round2(fromCash + credit_applied)
-    if (applied <= 0 && overpay <= 0) {
-      throw new Error('Nothing to apply.')
-    }
-
-    const invoiceLines = this.getInvoiceLines(invoice.id)
-    const lineBalances = this.getInvoiceLineBalances(invoice.id)
-    const remainingByLineId: Record<string, number> = {}
-    for (const bal of lineBalances) {
-      remainingByLineId[bal.id] = bal.remaining
-    }
-
-    let normalizedAllocations: NormalizedPaymentAllocation[] = []
-    if (applied > 0 && invoiceLines.length > 0) {
-      const allocInput = {
-        lines: invoiceLines.map((l) => ({
-          id: l.id,
-          description: l.description,
-          amount: l.amount,
-        })),
-        remainingByLineId,
-        appliedAmount: applied,
-      }
-      normalizedAllocations =
-        input.allocations && input.allocations.length > 0
-          ? normalizePaymentLineAllocations({
-              ...allocInput,
-              allocations: input.allocations,
-            })
-          : fifoPaymentAllocations(allocInput)
-    }
-
     const payment_number = this.bumpCounter(input.school_id, 'payment')
     const receipt_number = this.bumpCounter(input.school_id, 'receipt')
     const paid_at = input.paid_at || todayIso()
 
-    const payment: Payment = {
-      ...this.buildBaseFields(),
-      school_id: input.school_id,
-      student_id: invoice.student_id,
-      invoice_id: invoice.id,
-      payment_number,
-      amount: cashIn,
-      method: input.method,
-      reference: input.reference?.trim() || null,
-      paid_at,
-      recorded_by: input.userId,
-      notes: input.notes?.trim() || null,
-      credit_applied,
-    }
-
     let receipt!: Receipt
+    let payment!: Payment
 
     const tx = this.db.transaction(() => {
+      let working = invoice
+      let structureToInvoiceLine: Record<string, string> = {}
+      if (optionalStructureIds.length > 0) {
+        const appended = this.appendOptionalStructureLines(
+          working,
+          optionalStructureIds,
+          input.userId
+        )
+        working = appended.invoice
+        structureToInvoiceLine = appended.lineIdsByStructureLineId
+      }
+
+      let credit_applied = 0
+      if (input.use_credit) {
+        const available = this.studentCreditTotal(
+          input.school_id,
+          working.student_id
+        )
+        credit_applied = round2(Math.min(available, working.balance))
+      }
+
+      const remainingBalance = round2(working.balance - credit_applied)
+      const fromCash = round2(Math.min(cashIn, Math.max(0, remainingBalance)))
+      const overpay = round2(cashIn - fromCash)
+      if (overpay > 0 && !(settings.allow_credit ?? 1)) {
+        throw new Error(
+          'Payment exceeds outstanding balance. Enable credit or reduce amount.'
+        )
+      }
+
+      const applied = round2(fromCash + credit_applied)
+      if (applied <= 0 && overpay <= 0) {
+        throw new Error('Nothing to apply.')
+      }
+
+      const invoiceLines = this.getInvoiceLines(working.id)
+      const lineBalances = this.getInvoiceLineBalances(working.id)
+      const remainingByLineId: Record<string, number> = {}
+      for (const bal of lineBalances) {
+        remainingByLineId[bal.id] = bal.remaining
+      }
+
+      const resolvedAllocations: Array<{
+        invoice_line_id: string
+        amount: number
+      }> = []
+      if (input.allocations && input.allocations.length > 0) {
+        for (const raw of input.allocations) {
+          const amount = round2(Number(raw.amount) || 0)
+          if (amount <= 0) continue
+          let lineId = raw.invoice_line_id?.trim() || ''
+          const structureId = raw.fee_structure_line_id?.trim() || ''
+          if (!lineId && structureId) {
+            lineId = structureToInvoiceLine[structureId] || ''
+            if (!lineId) {
+              const sl = this.getStructureLines(
+                working.fee_structure_id || ''
+              ).find((l) => l.id === structureId)
+              const match = sl
+                ? invoiceLines.find((l) =>
+                    invoiceLineMatchesStructureName(l.description, sl.name)
+                  )
+                : undefined
+              lineId = match?.id || ''
+            }
+          }
+          if (!lineId) {
+            throw new Error(
+              'One or more selected fee lines could not be resolved on this invoice.'
+            )
+          }
+          resolvedAllocations.push({ invoice_line_id: lineId, amount })
+        }
+      }
+
+      let normalizedAllocations: NormalizedPaymentAllocation[] = []
+      if (applied > 0 && invoiceLines.length > 0) {
+        const allocInput = {
+          lines: invoiceLines.map((l) => ({
+            id: l.id,
+            description: l.description,
+            amount: l.amount,
+          })),
+          remainingByLineId,
+          appliedAmount: applied,
+        }
+        normalizedAllocations =
+          resolvedAllocations.length > 0
+            ? normalizePaymentLineAllocations({
+                ...allocInput,
+                allocations: resolvedAllocations,
+              })
+            : fifoPaymentAllocations(allocInput)
+      }
+
+      payment = {
+        ...this.buildBaseFields(),
+        school_id: input.school_id,
+        student_id: working.student_id,
+        invoice_id: working.id,
+        payment_number,
+        amount: cashIn,
+        method: input.method,
+        reference: input.reference?.trim() || null,
+        paid_at,
+        recorded_by: input.userId,
+        notes: input.notes?.trim() || null,
+        credit_applied,
+      }
+
       this.db
         .prepare(
           `INSERT INTO payments (
@@ -1448,19 +1700,19 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
       if (credit_applied > 0) {
         this.consumeCredit(
           input.school_id,
-          invoice.student_id,
+          working.student_id,
           credit_applied
         )
       }
 
-      const newPaid = round2(invoice.amount_paid + applied)
-      const newBalance = round2(Math.max(0, invoice.net_payable - newPaid))
+      const newPaid = round2(working.amount_paid + applied)
+      const newBalance = round2(Math.max(0, working.net_payable - newPaid))
       const updated: Invoice = {
-        ...invoice,
+        ...working,
         amount_paid: newPaid,
         balance: newBalance,
-        status: invoiceStatus(invoice.net_payable, newPaid, invoice.due_date),
-        ...this.applyUpdateMeta(invoice),
+        status: invoiceStatus(working.net_payable, newPaid, working.due_date),
+        ...this.applyUpdateMeta(working),
       }
       this.db
         .prepare(
@@ -1550,11 +1802,11 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
         const credit: StudentCredit = {
           ...this.buildBaseFields(),
           school_id: input.school_id,
-          student_id: invoice.student_id,
+          student_id: working.student_id,
           source_payment_id: payment.id,
           amount: overpay,
           remaining: overpay,
-          notes: `Overpayment on ${invoice.invoice_number}`,
+          notes: `Overpayment on ${working.invoice_number}`,
         }
         this.db
           .prepare(
@@ -1580,7 +1832,7 @@ export class FinanceMgmtRepository extends BaseRepository<Invoice> {
         ...this.buildBaseFields(),
         school_id: input.school_id,
         payment_id: payment.id,
-        student_id: invoice.student_id,
+        student_id: working.student_id,
         receipt_number,
         amount: payment.amount,
         balance_remaining: newBalance,

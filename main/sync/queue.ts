@@ -311,14 +311,54 @@ export function markSynced(db: Database.Database, id: string): void {
 }
 
 /** Mark a sync_queue row as failed and bump retry_count. */
-export function markFailed(db: Database.Database, id: string): void {
+export function markFailed(
+  db: Database.Database,
+  id: string,
+  error?: string | null
+): void {
+  const message = (error ?? '').trim().slice(0, 2000) || null
   db.prepare(
     `UPDATE sync_queue
      SET status = 'failed',
          retry_count = retry_count + 1,
-         last_attempt_at = ?
+         last_attempt_at = ?,
+         last_error = ?
      WHERE id = ?`
-  ).run(new Date().toISOString(), id)
+  ).run(new Date().toISOString(), message, id)
+}
+
+export type FailedSyncItem = {
+  id: string
+  table_name: string
+  record_id: string
+  operation: string
+  retry_count: number
+  last_attempt_at: string | null
+  last_error: string | null
+  created_at: string
+}
+
+/** Failed Phase 1 outbox rows with the last error message for admin UI. */
+export function listFailedSyncItems(
+  db: Database.Database,
+  limit = 100
+): FailedSyncItem[] {
+  const rows = db
+    .prepare(
+      `SELECT id, table_name, record_id, operation, retry_count,
+              last_attempt_at, last_error, created_at
+       FROM sync_queue
+       WHERE status = 'failed'
+         AND table_name IN (${SUPPORTED_IN_LIST})
+       ORDER BY COALESCE(last_attempt_at, created_at) DESC
+       LIMIT ?`
+    )
+    .all(Math.max(1, Math.min(500, limit))) as FailedSyncItem[]
+  return rows.map((r) => ({
+    ...r,
+    retry_count: Number(r.retry_count) || 0,
+    last_error: r.last_error || null,
+  }))
 }
 
 /**
@@ -332,7 +372,7 @@ export function retryFailed(db: Database.Database, ids?: string[]): number {
     const result = db
       .prepare(
         `UPDATE sync_queue
-         SET status = 'pending'
+         SET status = 'pending', last_error = NULL
          WHERE status = 'failed'
            AND table_name IN (${SUPPORTED_IN_LIST})
            AND id IN (${placeholders})`
@@ -343,7 +383,7 @@ export function retryFailed(db: Database.Database, ids?: string[]): number {
   const result = db
     .prepare(
       `UPDATE sync_queue
-       SET status = 'pending'
+       SET status = 'pending', last_error = NULL
        WHERE status = 'failed'
          AND table_name IN (${SUPPORTED_IN_LIST})`
     )

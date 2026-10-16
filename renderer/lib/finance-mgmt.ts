@@ -80,7 +80,10 @@ export interface FeeStructureDto {
   class_name: string | null;
   applies_to_residence?: "all" | "day" | "boarding";
   lines: FeeStructureLineDto[];
+  /** Sum of mandatory lines — school expected fees / invoice total. */
   total: number;
+  /** Sum of all lines including optional. */
+  package_total?: number;
 }
 
 export function residenceLabel(
@@ -228,8 +231,17 @@ export interface InvoiceLineDto {
   remaining?: number;
 }
 
+export interface OptionalStructureLineDto {
+  id: string;
+  name: string;
+  amount: number;
+  fee_category_id: string | null;
+}
+
 export interface InvoiceDetailDto extends InvoiceDto {
   lines: InvoiceLineDto[];
+  /** Optional fee-structure lines not yet on this invoice. */
+  optional_lines?: OptionalStructureLineDto[];
   credit_balance: number;
 }
 
@@ -339,6 +351,8 @@ export interface FinanceReportDto {
   profit_loss: number;
   payment_by_method: Record<string, number>;
   expense_by_category: Record<string, number>;
+  /** Collected amounts by fee line (Tuition, PTA, etc.). */
+  by_fee_line: Array<{ name: string; amount: number }>;
   invoice_count: number;
   payment_count: number;
 }
@@ -614,7 +628,11 @@ export async function recordPayment(input: {
   paid_at?: string | null;
   notes?: string | null;
   use_credit?: boolean;
-  allocations?: Array<{ invoice_line_id: string; amount: number }> | null;
+  allocations?: Array<{
+    invoice_line_id?: string | null;
+    fee_structure_line_id?: string | null;
+    amount: number;
+  }> | null;
 }): Promise<Result<{ payment: PaymentDto; receipt: ReceiptDto }>> {
   return (await window.ipc.invoke(
     "finance-mgmt:payments-record",

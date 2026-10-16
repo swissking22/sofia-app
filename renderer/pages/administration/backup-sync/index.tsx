@@ -95,6 +95,18 @@ export default function AdminBackupSyncPage() {
     failed: number;
     synced: number;
   }>;
+  const failedItems = (
+    Array.isArray(dash.failed_items) ? dash.failed_items : []
+  ) as Array<{
+    id: string;
+    table_name: string;
+    record_id: string;
+    operation: string;
+    retry_count: number;
+    last_attempt_at: string | null;
+    last_error: string | null;
+    created_at: string;
+  }>;
   const syncBusy = syncing || retrying;
 
   async function handleSyncNow() {
@@ -132,8 +144,24 @@ export default function AdminBackupSyncPage() {
             `Synced ${synced} item(s). More remain — click Sync Now again.`,
           );
         } else if (failed > 0) {
-          setSuccess(
-            `Sync finished: ${synced} synced, ${failed} failed. Use Retry failed if needed.`,
+          const detail =
+            data.message ||
+            (data.pull &&
+            typeof data.pull === "object" &&
+            "message" in data.pull &&
+            data.pull.message
+              ? String(data.pull.message)
+              : null) ||
+            (data.push &&
+            typeof data.push === "object" &&
+            "message" in data.push &&
+            data.push.message
+              ? String(data.push.message)
+              : null);
+          setError(
+            detail
+              ? `Sync finished: ${synced} synced, ${failed} failed. ${detail}`
+              : `Sync finished: ${synced} synced, ${failed} failed. See Failed items below, then Retry failed.`,
           );
         } else {
           setSuccess(
@@ -191,7 +219,8 @@ export default function AdminBackupSyncPage() {
       const r = await resolveAdminConflict(conflictId, resolution);
       if (r.ok) {
         const count = Number(
-          (r.data as { resolvedCount?: number } | undefined)?.resolvedCount ?? 1,
+          (r.data as { resolvedCount?: number } | undefined)?.resolvedCount ??
+            1,
         );
         setSuccess(
           resolution === "local"
@@ -399,6 +428,58 @@ export default function AdminBackupSyncPage() {
             items — click Sync Now again if pending remains. Branding logos and
             student photos download when Storage has them.
           </p>
+          {failedCount > 0 || failedItems.length > 0 ? (
+            <div className="mb-6">
+              <h3 className="mb-1 text-sm font-semibold text-red-700">
+                Failed items ({failedCount})
+              </h3>
+              <p className="mb-2 text-xs text-slate-500">
+                Exact cloud/outbox errors for each failed row. Fix the cause,
+                then Retry failed.
+              </p>
+              <StudentTable
+                columns={["When", "Table", "Record", "Op", "Error", "Retries"]}
+              >
+                {failedItems.length === 0 ? (
+                  <EmptyRow
+                    colSpan={6}
+                    message="Failed count is set but no detail rows were found. Try Sync Now again."
+                  />
+                ) : (
+                  failedItems.map((item) => (
+                    <tr key={item.id} className="align-top">
+                      <td className="px-4 py-3 text-xs text-slate-600">
+                        {(item.last_attempt_at || item.created_at || "").slice(
+                          0,
+                          19,
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">
+                        {item.table_name}
+                      </td>
+                      <td
+                        className="max-w-36 truncate px-4 py-3 font-mono text-xs"
+                        title={item.record_id}
+                      >
+                        {item.record_id}
+                      </td>
+                      <td className="px-4 py-3 text-xs uppercase">
+                        {item.operation}
+                      </td>
+                      <td
+                        className="max-w-md px-4 py-3 text-sm text-red-700"
+                        title={item.last_error || undefined}
+                      >
+                        {item.last_error ||
+                          "No error message stored (failed before this update)."}
+                      </td>
+                      <td className="px-4 py-3">{item.retry_count}</td>
+                    </tr>
+                  ))
+                )}
+              </StudentTable>
+            </div>
+          ) : null}
           {byTable.length > 0 ? (
             <div className="mb-6">
               <h3 className="mb-2 text-sm font-semibold">Queue by table</h3>

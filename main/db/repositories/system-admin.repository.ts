@@ -7,6 +7,7 @@ import {
   countFailedPhase1,
   countPendingPhase1,
   enqueueSync,
+  listFailedSyncItems,
   queueStatsByTable,
   retryFailed,
 } from '../../sync/queue'
@@ -616,6 +617,7 @@ export class SystemAdminRepository {
       conflicts: openConflicts,
       timezone: settings.timezone,
       by_table: queueStatsByTable(this.db),
+      failed_items: listFailedSyncItems(this.db, 100),
     }
   }
 

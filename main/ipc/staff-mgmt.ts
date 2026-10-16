@@ -23,8 +23,25 @@ function requireSession(): SessionData | null {
   return getSession()
 }
 
-function isManager(role: string): boolean {
-  return role === 'admin' || role === 'secretary'
+/** School owner, principal, secretary, or anyone with staff write permissions. */
+function isManager(repos: Repositories, session: SessionData): boolean {
+  if (
+    session.role === 'admin' ||
+    session.role === 'secretary' ||
+    session.role === 'principal'
+  ) {
+    return true
+  }
+  try {
+    const perms = repos.roles.getPermissionNamesForUser(session.userId)
+    return (
+      perms.includes('staff.create') ||
+      perms.includes('staff.update') ||
+      perms.includes('staff.delete')
+    )
+  } catch {
+    return false
+  }
 }
 
 function resolveSchoolId(repos: Repositories, session: SessionData): string {
@@ -163,7 +180,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         max_teacher_periods: maxPeriods(repos, schoolId),
         leave_types: LEAVE_TYPES,
         job_roles: ['teacher', 'head_of_department', 'admin', 'support'],
-        can_manage: isManager(session.role),
+        can_manage: isManager(repos, session),
         self_staff_id: sessionStaffId(repos, session),
       },
     }
@@ -189,7 +206,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         .findBySchool(schoolId)
         .filter((s) => s.staff_type === 'teaching')
 
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         const selfId = sessionStaffId(repos, session)
         rows = selfId ? rows.filter((s) => s.id === selfId) : []
       }
@@ -242,7 +259,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
       if (!schoolId) return { ok: false, error: 'No school found.' }
 
       let rows = repos.staff.findBySchool(schoolId)
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         const selfId = sessionStaffId(repos, session)
         rows = selfId ? rows.filter((s) => s.id === selfId) : []
       }
@@ -288,7 +305,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
       if (!schoolId) return { ok: false, error: 'No school found.' }
       if (!input?.id) return { ok: false, error: 'Staff id is required.' }
 
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         const selfId = sessionStaffId(repos, session)
         if (selfId !== input.id) {
           return { ok: false, error: 'You can only view your own profile.' }
@@ -326,7 +343,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
     ): Promise<Result<StaffDto>> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         return { ok: false, error: 'Only admins can create staff.' }
       }
       const schoolId = resolveSchoolId(repos, session)
@@ -461,7 +478,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
     ): Promise<Result<StaffDto>> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         return { ok: false, error: 'Only admins can update staff.' }
       }
       const schoolId = resolveSchoolId(repos, session)
@@ -594,7 +611,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
     (_e, input: { id: string }): Result<{ id: string }> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         return { ok: false, error: 'Only admins can delete staff.' }
       }
       const schoolId = resolveSchoolId(repos, session)
@@ -620,7 +637,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
     ): Result<{ class_id: string; staff_id: string | null }> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         return { ok: false, error: 'Only admins can assign class teachers.' }
       }
       const schoolId = resolveSchoolId(repos, session)
@@ -675,7 +692,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         .findBySchool(schoolId)
         .filter((s) => s.staff_type === 'teaching' && s.status === 'active')
 
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         const selfId = sessionStaffId(repos, session)
         teachers = selfId ? teachers.filter((t) => t.id === selfId) : []
       }
@@ -729,7 +746,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
       const schoolId = resolveSchoolId(repos, session)
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         const selfId = sessionStaffId(repos, session)
         if (selfId !== input.staff_id) {
           return { ok: false, error: 'You can only view your own workload.' }
@@ -797,7 +814,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
     }> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         return { ok: false, error: 'Only admins can mark attendance.' }
       }
       const schoolId = resolveSchoolId(repos, session)
@@ -844,7 +861,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
     ): Result<{ saved: number }> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         return { ok: false, error: 'Only admins can mark attendance.' }
       }
       const schoolId = resolveSchoolId(repos, session)
@@ -901,7 +918,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
       let teachers = repos.staff
         .findBySchool(schoolId)
         .filter((s) => s.staff_type === 'teaching')
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         const selfId = sessionStaffId(repos, session)
         teachers = selfId ? teachers.filter((t) => t.id === selfId) : []
       }
@@ -941,7 +958,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
     }> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         const selfId = sessionStaffId(repos, session)
         if (selfId !== input.staff_id) {
           return { ok: false, error: 'You can only view your own attendance.' }
@@ -974,7 +991,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
     ): Result<{ filename: string; csv: string }> => {
       const session = requireSession()
       if (!session) return { ok: false, error: 'Not signed in.' }
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         return { ok: false, error: 'Only admins can export attendance.' }
       }
       const schoolId = resolveSchoolId(repos, session)
@@ -1025,7 +1042,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
       const schoolId = resolveSchoolId(repos, session)
       const year = input?.year ?? new Date().getFullYear()
       let staffIds: string[]
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         const selfId = sessionStaffId(repos, session)
         if (!selfId) return { ok: false, error: 'No staff profile linked.' }
         staffIds = [selfId]
@@ -1094,7 +1111,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
       if (!session) return { ok: false, error: 'Not signed in.' }
       const schoolId = resolveSchoolId(repos, session)
       let staffFilter = input?.staff_id ?? null
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         staffFilter = sessionStaffId(repos, session)
         if (!staffFilter) {
           return { ok: false, error: 'No staff profile linked.' }
@@ -1143,7 +1160,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
       const schoolId = resolveSchoolId(repos, session)
 
       let staffId = input.staff_id ?? null
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         staffId = sessionStaffId(repos, session)
       }
       if (!staffId) return { ok: false, error: 'Staff is required.' }
@@ -1216,7 +1233,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
       if (input.decision === 'cancelled') {
         const selfId = sessionStaffId(repos, session)
         if (
-          !isManager(session.role) &&
+          !isManager(repos, session) &&
           selfId !== existing.staff_id
         ) {
           return { ok: false, error: 'You can only cancel your own leave.' }
@@ -1224,7 +1241,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         if (existing.status !== 'pending') {
           return { ok: false, error: 'Only pending requests can be cancelled.' }
         }
-      } else if (!isManager(session.role)) {
+      } else if (!isManager(repos, session)) {
         return { ok: false, error: 'Only admins can approve or reject leave.' }
       } else if (existing.status !== 'pending') {
         return { ok: false, error: 'Only pending requests can be decided.' }
@@ -1286,7 +1303,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         return { ok: false, error: 'Date range is required.' }
       }
       let events = repos.leave.findCalendar(schoolId, input.from, input.to)
-      if (!isManager(session.role)) {
+      if (!isManager(repos, session)) {
         const selfId = sessionStaffId(repos, session)
         events = selfId ? events.filter((e) => e.staff_id === selfId) : []
       }

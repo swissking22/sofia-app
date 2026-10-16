@@ -567,6 +567,7 @@ export function createSchema(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'pending',
       retry_count INTEGER NOT NULL DEFAULT 0,
       last_attempt_at TEXT,
+      last_error TEXT,
       created_at TEXT NOT NULL
     );
 
@@ -1503,6 +1504,14 @@ function migrateSyncCursorTables(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sync_cursors_school_device
       ON sync_cursors(school_id, device_id);
   `)
+
+  // Existing installs: persist why a push item failed for Backup & Sync UI.
+  const queueCols = (
+    db.prepare(`PRAGMA table_info(sync_queue)`).all() as Array<{ name: string }>
+  ).map((c) => c.name)
+  if (queueCols.length > 0 && !queueCols.includes('last_error')) {
+    db.exec(`ALTER TABLE sync_queue ADD COLUMN last_error TEXT`)
+  }
 }
 
 /** Extended student profile fields + transfers, documents, admissions, promotions. */

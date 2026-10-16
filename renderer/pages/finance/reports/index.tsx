@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
   EmptyRow,
@@ -11,11 +12,17 @@ import {
   selectClass,
 } from "../../../components/finance/ui";
 import {
+  ReportChartPanel,
+  SofiaDonutChart,
+  SofiaHorizontalBarChart,
+} from "../../../components/reports/charts";
+import {
   EXPENSE_CATEGORY_LABELS,
   PAYMENT_METHOD_LABELS,
   downloadCsv,
   fetchFinanceMeta,
   fetchReports,
+  formatCompactMoney,
   formatMoney,
   type ExpenseCategory,
   type FinanceMeta,
@@ -74,18 +81,19 @@ export default function FinanceReportsPage() {
       `Payment count,${report.payment_count}`,
       "",
       "Payment method,Amount",
-      ...Object.entries(report.payment_by_method).map(
-        ([k, v]) => `${k},${v}`
-      ),
+      ...Object.entries(report.payment_by_method).map(([k, v]) => `${k},${v}`),
       "",
       "Expense category,Amount",
       ...Object.entries(report.expense_by_category).map(
-        ([k, v]) => `${k},${v}`
+        ([k, v]) => `${k},${v}`,
       ),
+      "",
+      "Fee line,Collected",
+      ...(report.by_fee_line ?? []).map((r) => `"${r.name}",${r.amount}`),
     ];
     downloadCsv(
       `finance-report-${report.from}-to-${report.to}.csv`,
-      lines.join("\n")
+      lines.join("\n"),
     );
   }
 
@@ -101,13 +109,15 @@ export default function FinanceReportsPage() {
 
   const methodRows = Object.entries(report?.payment_by_method ?? {});
   const expenseRows = Object.entries(report?.expense_by_category ?? {});
+  const feeLineRows = report?.by_fee_line ?? [];
+  const moneyCompact = (n: number) => formatCompactMoney(n, currency);
 
   return (
     <AppShell
       title="Financial Reports"
       breadcrumb={["Finance & Fees", "Financial Reports"]}
       heading="Financial Reports"
-      subtitle="Revenue, collections, expenses, and profit & loss for a date range."
+      subtitle="Revenue, collections by fee line, expenses, and profit & loss for a date range."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
 
@@ -170,6 +180,87 @@ export default function FinanceReportsPage() {
             ))}
           </div>
 
+          <div className="mb-6 grid gap-4 lg:grid-cols-2">
+            <ReportChartPanel
+              title="Collected by fee line"
+              description="How much came in for Tuition, PTA, uniforms, and other fee lines"
+            >
+              {feeLineRows.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-500">
+                  No fee-line collections in this period.
+                </p>
+              ) : (
+                <SofiaHorizontalBarChart
+                  data={feeLineRows.map((r, i) => ({
+                    id: `${r.name}-${i}`,
+                    label: r.name,
+                    value: r.amount,
+                  }))}
+                  valueFormatter={moneyCompact}
+                />
+              )}
+            </ReportChartPanel>
+            <ReportChartPanel
+              title="Payments by method"
+              description="Collection channels in the selected range"
+            >
+              {methodRows.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-500">
+                  No payments in range.
+                </p>
+              ) : (
+                <SofiaDonutChart
+                  data={methodRows.map(([method, amount], i) => ({
+                    id: `${method}-${i}`,
+                    label:
+                      PAYMENT_METHOD_LABELS[method as PaymentMethod] ?? method,
+                    value: amount,
+                  }))}
+                  totalLabel="Payments"
+                />
+              )}
+            </ReportChartPanel>
+          </div>
+
+          <div className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="flex flex-wrap items-end justify-between gap-2 border-b border-slate-100 px-4 py-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Collections by fee line
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Exact amounts allocated to each fee line (or FIFO for older
+                  payments).
+                </p>
+              </div>
+              <Link
+                href="/reports/financial"
+                className="text-xs font-semibold text-(--sofia-primary) hover:underline"
+              >
+                Open full analytics →
+              </Link>
+            </div>
+            <FinanceTable columns={["Fee line", "Collected"]}>
+              {feeLineRows.length === 0 ? (
+                <EmptyRow
+                  colSpan={2}
+                  message="No fee-line collections in this period."
+                />
+              ) : (
+                feeLineRows.map((row) => (
+                  <tr key={row.name} className="border-t border-slate-100">
+                    <td className="px-4 py-3 font-medium text-slate-900">
+                      {row.name}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium">
+                      {formatMoney(row.amount, currency)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </FinanceTable>
+          </div>
+
           <div className="grid gap-6 lg:grid-cols-2">
             <div>
               <h3 className="mb-2 text-sm font-semibold text-slate-900">
@@ -204,8 +295,7 @@ export default function FinanceReportsPage() {
                   expenseRows.map(([cat, amount]) => (
                     <tr key={cat} className="border-t border-slate-100">
                       <td className="px-4 py-3 text-slate-700">
-                        {EXPENSE_CATEGORY_LABELS[cat as ExpenseCategory] ??
-                          cat}
+                        {EXPENSE_CATEGORY_LABELS[cat as ExpenseCategory] ?? cat}
                       </td>
                       <td className="px-4 py-3 font-medium">
                         {formatMoney(amount, currency)}

@@ -319,9 +319,11 @@ export async function runSyncWorker(
   const message =
     pushResult.message ||
     pullResult.message ||
-    (hasMore
-      ? `Synced ${successful} item(s); more remain — Sync Now will continue.`
-      : undefined)
+    (failed > 0
+      ? `Sync finished with ${failed} failure(s). Open Failed items below for the exact error.`
+      : hasMore
+        ? `Synced ${successful} item(s); more remain — Sync Now will continue.`
+        : undefined)
 
   const progress =
     tracker && !hasMore

@@ -8,11 +8,21 @@ import {
   signInWithSupabasePassword,
   type CloudAuthSignInFn,
 } from '../services/cloud-login'
-import { tryProvisionStaffAuth } from '../services/cloud-auth'
+import {
+  provisionStaffAuth,
+  type ProvisionStaffAuthInput,
+  type ProvisionStaffAuthResult,
+} from '../services/cloud-auth'
 import { SystemAdminService } from '../services/system-admin'
 import { pullRemoteChanges } from '../sync/pull'
 
 const BCRYPT_ROUNDS = 10
+/** Matches Edge Function `provision-staff-auth` (min 8). */
+export const REGISTER_ADMIN_MIN_PASSWORD_LENGTH = 8
+
+export type ProvisionStaffAuthFn = (
+  input: ProvisionStaffAuthInput
+) => Promise<ProvisionStaffAuthResult>
 
 export type SafeUser = Omit<User, 'password_hash'>
 
@@ -41,6 +51,11 @@ export interface RegisterAdminInput {
   schoolId: string
   email: string
   password: string
+  /**
+   * Test seam — production always uses `provisionStaffAuth`.
+   * Founding-admin cloud Auth is required; failures abort registration.
+   */
+  provisionAuth?: ProvisionStaffAuthFn
 }
 
 export interface LoginInput {
@@ -205,7 +220,25 @@ export function registerSchool(
 }
 
 /**
+ * Undo a founding-admin insert when cloud Auth provision fails so the
+ * registration wizard can retry (needsSetup stays true).
+ */
+function revertUnprovisionedAdmin(repos: Repositories, userId: string): void {
+  const db = repos.users.getDb()
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM sync_queue WHERE table_name = 'users' AND record_id = ?`).run(
+      userId
+    )
+    db.prepare(`DELETE FROM users WHERE id = ?`).run(userId)
+  })
+  tx()
+}
+
+/**
  * Step 3: create admin for an existing school and open a session.
+ * Always provisions Supabase Auth for the founding admin (required for
+ * secondary-desk / Join login). On Auth failure the local user is rolled
+ * back and registration returns an error.
  */
 export async function registerAdmin(
   repos: Repositories,
@@ -225,8 +258,11 @@ export async function registerAdmin(
     return { ok: false, error: 'All fields are required.' }
   }
 
-  if (password.length < 6) {
-    return { ok: false, error: 'Password must be at least 6 characters.' }
+  if (password.length < REGISTER_ADMIN_MIN_PASSWORD_LENGTH) {
+    return {
+      ok: false,
+      error: `Password must be at least ${REGISTER_ADMIN_MIN_PASSWORD_LENGTH} characters.`,
+    }
   }
 
   const school = repos.schools.findById(input.schoolId)
@@ -247,16 +283,26 @@ export async function registerAdmin(
     role: 'admin',
   })
 
-  // Provision Supabase Auth so secondary desks can bootstrap online.
-  await tryProvisionStaffAuth({
-    email,
-    password,
-    role: 'admin',
-    schoolId: school.id,
-    schoolName: school.name,
-    displayName: email,
-    resetPassword: true,
-  })
+  const provision = input.provisionAuth ?? provisionStaffAuth
+  try {
+    await provision({
+      email,
+      password,
+      role: 'admin',
+      schoolId: school.id,
+      schoolName: school.name,
+      displayName: email,
+      resetPassword: true,
+    })
+  } catch (err) {
+    revertUnprovisionedAdmin(repos, user.id)
+    const message =
+      err instanceof Error ? err.message : 'Could not create cloud login.'
+    return {
+      ok: false,
+      error: `Could not create cloud login for this admin (needed for other desks). Check your internet connection and try again. ${message}`,
+    }
+  }
 
   const session: SessionData = {
     userId: user.id,

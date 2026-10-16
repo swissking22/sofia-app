@@ -111,6 +111,12 @@ describe('second desk join + Auth bootstrap', () => {
       schoolId: school.school.id,
       email: 'owner@main.test',
       password: 'Sofia@Demo1',
+      provisionAuth: async () => ({
+        id: 'auth-owner-1',
+        email: 'owner@main.test',
+        created: true,
+        updated: false,
+      }),
     })
     expect(admin.ok).toBe(true)
 

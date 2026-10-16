@@ -903,7 +903,12 @@ export default function FeeStructurePage() {
                             })
                           }
                         />
-                        Mandatory
+                        <span>
+                          Mandatory
+                          <span className="ml-1 font-normal text-slate-400">
+                            (on invoice)
+                          </span>
+                        </span>
                       </label>
                     </div>
 
