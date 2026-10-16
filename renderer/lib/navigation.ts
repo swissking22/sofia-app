@@ -212,12 +212,6 @@ export const NAV_SECTIONS: NavSection[] = [
             permissions: ['results.enter', 'results.read'],
           },
           {
-            id: 'examinations',
-            label: 'Examinations',
-            href: '/academic/exams',
-            permissions: ['results.enter', 'results.read'],
-          },
-          {
             id: 'assessment-questions',
             label: 'Assessment Questions',
             href: '/academic/assessment-questions',
@@ -227,6 +221,18 @@ export const NAV_SECTIONS: NavSection[] = [
             id: 'results',
             label: 'Results Processing',
             href: '/academic/results',
+            permissions: ['results.enter', 'results.read', 'results.approve'],
+          },
+          {
+            id: 'results-sequences',
+            label: 'Sequence Results',
+            href: '/academic/results/sequences',
+            permissions: ['results.enter', 'results.read', 'results.approve'],
+          },
+          {
+            id: 'results-annual',
+            label: 'Annual Results',
+            href: '/academic/results/annual',
             permissions: ['results.enter', 'results.read', 'results.approve'],
           },
           {

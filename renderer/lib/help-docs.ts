@@ -178,23 +178,37 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
   {
     id: "results",
-    title: "CA, exams, and results",
+    title: "Assessments and results",
     category: "Academic",
-    summary: "Enter scores, process results, and publish report cards.",
-    keywords: ["ca", "exam", "results", "report cards", "grades"],
+    summary:
+      "Open sequences, print sequence sheets, process term results (or all classes), and print report cards.",
+    keywords: [
+      "ca",
+      "sequence",
+      "results",
+      "report cards",
+      "grades",
+      "bulk",
+      "correction",
+    ],
     blocks: [
       {
         type: "steps",
         items: [
-          "Create continuous assessment (CA) items and enter scores.",
-          "Create exam sessions and papers, then enter exam scores.",
-          "Process results for a class and term, then approve/publish as permitted.",
-          "Generate report cards for printing.",
+          "Continuous Assessment → Create sequence, then Record marks for each class/subject.",
+          "Sequence Results → Correction sheet (raw /20) or Final sheet (weighted + average + position); Print → PDF.",
+          "Process results for one class or Process all classes for the term, then approve/publish.",
+          "Generate term report cards when you are ready (layouts coming next).",
         ],
       },
       {
         type: "tip",
-        text: "Calculation settings and subject coefficients control how averages are computed — change them carefully mid-term.",
+        text: "Sequence average = Σ(mark × coeff) / Σ coeff. Term subject average = mean of sequences, then × coeff for the term average.",
+      },
+      {
+        type: "link",
+        href: "/academic/results/sequences",
+        label: "Open Sequence Results",
       },
       {
         type: "link",

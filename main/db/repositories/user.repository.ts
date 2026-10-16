@@ -98,13 +98,16 @@ export class UserRepository extends BaseRepository<User> {
     return record
   }
 
-  /** Find active user by email (for login). */
+  /** Find active user by email (for login). Case-insensitive. */
   findByEmail(email: string): User | undefined {
+    const normalized = email.trim().toLowerCase()
     return this.db
       .prepare(
-        `SELECT * FROM users WHERE email = ? AND deleted_at IS NULL`
+        `SELECT * FROM users
+         WHERE lower(email) = ? AND deleted_at IS NULL
+         LIMIT 1`
       )
-      .get(email) as User | undefined
+      .get(normalized) as User | undefined
   }
 
   /** Return user without password_hash for safe IPC responses. */

@@ -110,12 +110,21 @@ export interface AnnualConfig {
   best_n: number | null
 }
 
+/** Per-term plan: how many sequences (tests) and exams a school runs. */
+export interface TermAssessmentPlan {
+  term_number: number
+  sequences_count: number
+  exams_count: number
+}
+
 export interface CalculationConfig {
   scale?: number
   ca_weight?: number
   exam_weight?: number
   expected_sequences?: number
   sequence_method?: GroupMethod
+  /** Optional per-term sequence/exam counts (MINESEC: 3 × 2 sequences). */
+  term_plans?: TermAssessmentPlan[]
   method: GroupMethod
   best_n: number | null
   components: AssessmentComponentConfig[]
@@ -132,6 +141,13 @@ export interface CalculationConfig {
   annual: AnnualConfig
   subject_overrides: SubjectOverrideConfig[]
 }
+
+/** Default MINESEC/MINEDUB secondary plan: 3 terms × 2 sequences, no separate exam. */
+export const MINESEC_TERM_PLANS: TermAssessmentPlan[] = [
+  { term_number: 1, sequences_count: 2, exams_count: 0 },
+  { term_number: 2, sequences_count: 2, exams_count: 0 },
+  { term_number: 3, sequences_count: 2, exams_count: 0 },
+]
 
 export interface ScoreInput {
   componentId: string
@@ -685,6 +701,10 @@ export const CAMEROON_20_BANDS: GradeBandConfig[] = [
   { grade: 'F', min_score: 0, max_score: 7.999, grade_point: 0, is_pass: false, remark: 'Fail', order: 6 },
 ]
 
+/**
+ * Legacy / optional CA+Exam mix (e.g. 40/60). Prefer
+ * {@link minesecCameroonSequences20} for official Cameroon secondary.
+ */
 export function cameroonStandardSecondary20(overrides?: Partial<CalculationConfig>): CalculationConfig {
   const caWeight = overrides?.ca_weight ?? 40
   const examWeight = overrides?.exam_weight ?? 60
@@ -739,12 +759,66 @@ export function cameroonStandardSecondary20(overrides?: Partial<CalculationConfi
         max_score: 20,
         weight_percent: examWeight,
         order: 2,
-        required: true,
+        required: examWeight > 0,
         group_id: null,
       },
     ],
     ...overrides,
   }
+}
+
+/**
+ * MINESEC / MINEDUB secondary: 3 terms × 2 sequences.
+ * Subject term mark = average of the two sequences (/20).
+ * Term average = Σ(mark × coeff) / Σ(coeffs). Annual = mean of 3 term averages.
+ * No separate exam component (exam weight 0).
+ */
+export function minesecCameroonSequences20(
+  overrides?: Partial<CalculationConfig>
+): CalculationConfig {
+  return cameroonStandardSecondary20({
+    ca_weight: 100,
+    exam_weight: 0,
+    expected_sequences: 2,
+    sequence_method: 'simple_average',
+    term_plans: MINESEC_TERM_PLANS,
+    components: [
+      {
+        id: 'ca',
+        name: 'Evaluation sequences',
+        code: 'SEQ',
+        type: 'continuous_assessment',
+        source: 'ca',
+        max_score: 20,
+        weight_percent: 100,
+        order: 1,
+        required: true,
+        group_id: null,
+      },
+      {
+        id: 'exam',
+        name: 'Final Examination',
+        code: 'EXAM',
+        type: 'final_exam',
+        source: 'exam',
+        max_score: 20,
+        weight_percent: 0,
+        order: 2,
+        required: false,
+        group_id: null,
+      },
+    ],
+    annual: {
+      method: 'average',
+      term_weights: [
+        { term_number: 1, weight_percent: 100 / 3 },
+        { term_number: 2, weight_percent: 100 / 3 },
+        { term_number: 3, weight_percent: 100 / 3 },
+      ],
+      best_n: null,
+    },
+    ...overrides,
+  })
 }
 
 function baseConfig(partial: Partial<CalculationConfig>): CalculationConfig {

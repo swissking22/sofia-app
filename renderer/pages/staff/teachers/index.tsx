@@ -18,7 +18,10 @@ import {
   useDebouncedValue,
 } from "../../../components/staff/ui";
 import { Icon } from "../../../components/ui/Icon";
-import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import {
   JOB_ROLE_LABELS,
   deleteStaff,
@@ -65,6 +68,15 @@ export default function TeachersIndexPage() {
     void load();
   }, [load]);
 
+  React.useEffect(() => {
+    const warning = window.sessionStorage.getItem(
+      "sofia.teacher.create.warning",
+    );
+    if (!warning) return;
+    window.sessionStorage.removeItem("sofia.teacher.create.warning");
+    setError(warning);
+  }, []);
+
   async function runDelete() {
     if (!rowAction) return;
     setBusy(true);
@@ -88,7 +100,8 @@ export default function TeachersIndexPage() {
   const canManage = meta?.can_manage ?? false;
   const [selected, setSelected] = React.useState<string[]>([]);
 
-  const allSelected = teachers.length > 0 && selected.length === teachers.length;
+  const allSelected =
+    teachers.length > 0 && selected.length === teachers.length;
   function toggle(id: string) {
     setSelected((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -102,13 +115,21 @@ export default function TeachersIndexPage() {
     const target = teachers.filter((t) => selected.includes(t.id));
     if (!target.length) return;
     const csv = [
-      ["Name", "Employee ID", "Department", "Role", "Phone", "Email", "Status"].join(","),
+      [
+        "Name",
+        "Employee ID",
+        "Department",
+        "Role",
+        "Phone",
+        "Email",
+        "Status",
+      ].join(","),
       ...target.map((t) =>
         [
           `"${t.full_name}"`,
           `"${t.employee_code || ""}"`,
           `"${t.department_name || ""}"`,
-          `"${t.job_role ? (JOB_ROLE_LABELS[t.job_role] || t.job_role) : ""}"`,
+          `"${t.job_role ? JOB_ROLE_LABELS[t.job_role] || t.job_role : ""}"`,
           `"${t.phone || ""}"`,
           `"${t.email || ""}"`,
           `"${t.status}"`,
@@ -338,16 +359,12 @@ export default function TeachersIndexPage() {
           </div>
           <div className="flex justify-between gap-3">
             <dt className="text-slate-500">Department</dt>
-            <dd className="font-medium">
-              {rowAction?.department_name || "—"}
-            </dd>
+            <dd className="font-medium">{rowAction?.department_name || "—"}</dd>
           </div>
           <div className="flex justify-between gap-3">
             <dt className="text-slate-500">Role</dt>
             <dd className="font-medium">
-              {rowAction?.job_role
-                ? JOB_ROLE_LABELS[rowAction.job_role]
-                : "—"}
+              {rowAction?.job_role ? JOB_ROLE_LABELS[rowAction.job_role] : "—"}
             </dd>
           </div>
         </dl>

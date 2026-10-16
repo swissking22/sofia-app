@@ -113,6 +113,7 @@ async function provisionForStaff(
   if (!staff.email?.trim()) return null
   if (role === 'teacher') {
     return prepareTeacherForMobile({
+      repos,
       schoolId,
       staffId: staff.id,
       email: staff.email,
@@ -221,6 +222,7 @@ export function registerStaffIpc(repos: Repositories): void {
         )
         // Teachers are mobile staff — always refresh Auth metadata + sync when email set.
         const warning = await prepareTeacherForMobile({
+          repos,
           schoolId,
           staffId: staff.id,
           email: staff.email,

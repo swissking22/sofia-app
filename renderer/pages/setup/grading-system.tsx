@@ -11,6 +11,7 @@ import { TableIconButton } from "../../components/ui/TableActions";
 import {
   DEFAULT_ASSESSMENT_TYPES,
   DEFAULT_GRADE_BANDS,
+  applyMinesecGradingPreset,
   fetchGradingSystemSetup,
   saveGradingSystemSetup,
   type GradingSystemSetupInput,
@@ -55,9 +56,13 @@ function GradingSystemAside() {
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-900">Used by</h3>
+        <h3 className="text-sm font-semibold text-slate-900">
+          Cameroon secondary
+        </h3>
         <p className="mt-1 text-xs text-slate-500">
-          This configuration drives how results are calculated and presented.
+          MINESEC / MINEDUB: 3 terms × 2 sequences. Subject mark = average of
+          the two sequences (/20). Term average uses subject coefficients.
+          Annual = mean of three term averages. Pass mark 10/20.
         </p>
         <ul className="mt-4 space-y-2.5 text-sm text-slate-700">
           <li className="flex items-start gap-2">
@@ -66,7 +71,7 @@ function GradingSystemAside() {
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-(--sofia-primary)" />
-            Report cards
+            Term report cards
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-(--sofia-primary)" />
@@ -253,6 +258,63 @@ function GradingSystemForm() {
           {success}
         </div>
       ) : null}
+
+      <div className="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-4">
+        <h3 className="text-sm font-semibold text-slate-900">
+          Cameroon MINESEC preset
+        </h3>
+        <p className="mt-1 text-xs text-slate-600">
+          Sets Sequence 1 &amp; 2 (50% each for display), /20 grade bands (pass
+          at 10), and activates the calculation profile: two sequences per term,
+          coefficient-weighted term average, annual mean of three terms.
+        </p>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => {
+            void (async () => {
+              setError("");
+              setSuccess("");
+              setSaving(true);
+              try {
+                const result = await applyMinesecGradingPreset();
+                if (!result.ok) {
+                  setError(result.error);
+                  return;
+                }
+                setAssessments(
+                  result.setup.assessment_types.map((t) => ({
+                    localId: newLocalId(),
+                    id: t.id,
+                    name: t.name,
+                    weight_percent: String(t.weight_percent),
+                  })),
+                );
+                setBands(
+                  result.setup.grade_bands.map((b) => ({
+                    localId: newLocalId(),
+                    id: b.id,
+                    grade: b.grade,
+                    min_score: String(b.min_score),
+                    max_score: String(b.max_score),
+                  })),
+                );
+                setEnableRanking(result.setup.enable_ranking);
+                setShowClassAverage(result.setup.show_class_average);
+                setShowTeacherRemarks(result.setup.show_teacher_remarks);
+                setSuccess(
+                  "MINESEC preset applied. Save & continue when ready.",
+                );
+              } finally {
+                setSaving(false);
+              }
+            })();
+          }}
+          className="mt-3 inline-flex cursor-pointer items-center rounded-xl bg-(--sofia-primary) px-3.5 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-60"
+        >
+          Apply MINESEC (3 terms × 2 sequences)
+        </button>
+      </div>
 
       <FormSection
         title="1. Assessment Types"

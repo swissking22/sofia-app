@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
 import {
   cameroonStandardSecondary20,
+  minesecCameroonSequences20,
   demoUpperSecondary,
   hashConfig,
   type CalculationConfig,
@@ -466,17 +467,27 @@ export class ResultsCalculationRepository {
       .get(schoolId) as { n: number }
     if (count.n > 0) return
 
-    // Cameroon Secondary Standard 40/60 out of 20 with 10 pass mark
+    // MINESEC / MINEDUB: 3 terms × 2 sequences, subject mark = mean of sequences
     const p1 = this.create({
       school_id: schoolId,
-      name: 'Cameroon Secondary Standard (40% CA + 60% Exam)',
+      name: 'Cameroon MINESEC (3 terms × 2 sequences)',
       description:
-        'Official standard: Continuous Assessment 40% (average of sequences), Final Examination 60%, Pass Mark 10/20, Rounding 2 decimal places, Subject coefficients.',
+        'Official secondary model: two evaluation sequences per term (average out of 20), coefficient-weighted term average, annual mean of three terms, pass mark 10/20. No separate exam weight.',
+      created_by: createdBy ?? null,
+      config: minesecCameroonSequences20(),
+      assignments: [],
+    })
+    this.setStatus(schoolId, p1.profile.id, 'active')
+
+    this.create({
+      school_id: schoolId,
+      name: 'Cameroon CA + Exam (40% / 60%)',
+      description:
+        'Optional mix: Continuous Assessment 40% (average of sequences) + Final Examination 60%, Pass Mark 10/20.',
       created_by: createdBy ?? null,
       config: cameroonStandardSecondary20(),
       assignments: [],
     })
-    this.setStatus(schoolId, p1.profile.id, 'active')
 
     this.create({
       school_id: schoolId,
@@ -487,5 +498,35 @@ export class ResultsCalculationRepository {
       config: demoUpperSecondary(),
       assignments: [],
     })
+  }
+
+  /** Activate or create the MINESEC sequences profile for a school (setup preset). */
+  applyMinesecPreset(schoolId: string, createdBy?: string | null): void {
+    this.ensureDemo(schoolId, createdBy)
+    let rows = this.list(schoolId)
+    let minesec = rows.find((r) =>
+      r.profile.name.toLowerCase().includes('minesec')
+    )
+    if (!minesec) {
+      minesec = this.create({
+        school_id: schoolId,
+        name: 'Cameroon MINESEC (3 terms × 2 sequences)',
+        description:
+          'Official secondary model: two evaluation sequences per term (average out of 20), coefficient-weighted term average, annual mean of three terms, pass mark 10/20.',
+        created_by: createdBy ?? null,
+        config: minesecCameroonSequences20(),
+        assignments: [],
+      })
+    }
+    // Demote other actives so resolveForClass prefers MINESEC
+    for (const row of this.list(schoolId)) {
+      if (
+        row.profile.id !== minesec.profile.id &&
+        row.profile.status === 'active'
+      ) {
+        this.setStatus(schoolId, row.profile.id, 'draft')
+      }
+    }
+    this.setStatus(schoolId, minesec.profile.id, 'active')
   }
 }

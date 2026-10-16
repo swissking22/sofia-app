@@ -1,15 +1,15 @@
 /**
- * Quiet background sync while the app is online.
+ * Background sync while the app is online.
  * Honours system_settings.auto_sync + sync_interval_minutes.
- * Does not emit sync:progress (manual Sync Now still does).
+ * Shares the app-wide sync session (live sync:progress) with Sync Now.
  */
 import { createRequire } from 'module'
 import type Database from 'better-sqlite3'
 import { getDatabase } from '../db'
 import { createRepositories } from '../db/repositories'
-import { runSyncWorkerUntilCaughtUp } from './worker'
+import { runBackgroundSync } from './session'
 
-const require = createRequire(import.meta.url)
+const nodeRequire = createRequire(import.meta.url)
 
 const DEFAULT_INTERVAL_MINUTES = 30
 const MIN_INTERVAL_MINUTES = 5
@@ -23,7 +23,7 @@ let started = false
 export type PeriodicSyncDeps = {
   getDb?: () => Database.Database
   isOnline?: () => boolean
-  /** Override sync runner (tests). Defaults to runSyncWorkerUntilCaughtUp. */
+  /** Override sync runner (tests). Defaults to shared runBackgroundSync. */
   runSync?: (
     db: Database.Database,
     options: { schoolId: string }
@@ -38,7 +38,7 @@ export type PeriodicSyncDeps = {
 function defaultIsOnline(): boolean {
   try {
     // Lazy require so unit tests can import this module without Electron.
-    const electron = require('electron') as {
+    const electron = nodeRequire('electron') as {
       net?: { isOnline?: () => boolean }
     }
     if (typeof electron.net?.isOnline === 'function') {
@@ -88,13 +88,18 @@ async function tick(deps: PeriodicSyncDeps = {}): Promise<void> {
   const prefs = readPeriodicSyncPrefs(db)
   if (!prefs?.enabled) return
 
-  const runSync = deps.runSync ?? runSyncWorkerUntilCaughtUp
+  const runSync =
+    deps.runSync ??
+    ((database, options) =>
+      runBackgroundSync(database, {
+        schoolId: options.schoolId,
+        trigger: 'periodic',
+      }))
 
   inflight = (async () => {
     try {
       const result = await runSync(db, {
         schoolId: prefs.schoolId,
-        // Quiet: no onProgress → no sync:progress spam in the UI
       })
       const repos = createRepositories(db)
       repos.backupSync.markSyncResult(prefs.schoolId, {

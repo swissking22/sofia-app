@@ -58,8 +58,7 @@ export default function AdminUsersPage() {
   const canDelete = meta?.can?.users_delete;
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
-  const allSelected =
-    rows.length > 0 && selectedIds.length === rows.length;
+  const allSelected = rows.length > 0 && selectedIds.length === rows.length;
   function toggleRow(id: string) {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -69,7 +68,9 @@ export default function AdminUsersPage() {
     if (allSelected) setSelectedIds([]);
     else setSelectedIds(rows.map((u) => String(u.id)));
   }
-  async function bulkUpdateStatus(newStatus: "active" | "inactive" | "suspended") {
+  async function bulkUpdateStatus(
+    newStatus: "active" | "inactive" | "suspended",
+  ) {
     if (!selectedIds.length) return;
     setBusy(true);
     setError("");
@@ -99,7 +100,8 @@ export default function AdminUsersPage() {
         else failures.push(res.error);
       }
       if (deleted) setSuccess(`Deleted ${deleted} user(s).`);
-      if (failures.length) setError(failures[0] || "Some users could not be deleted.");
+      if (failures.length)
+        setError(failures[0] || "Some users could not be deleted.");
       setSelectedIds([]);
       setConfirmBulkDelete(false);
       await load();
@@ -158,7 +160,7 @@ export default function AdminUsersPage() {
       title="Users"
       breadcrumb={["System Administration", "Users & Roles"]}
       heading="Users & Roles"
-      subtitle="School accounts inherit permissions from a single role. Prefer deactivate for temporary access; delete removes the account (soft-delete + sync)."
+      subtitle="All school logins, including teachers created under Staff → Teachers (Teacher role). Prefer deactivate for temporary access; delete removes the account (soft-delete + sync)."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
       {success ? <PageAlert tone="success">{success}</PageAlert> : null}
@@ -221,8 +223,7 @@ export default function AdminUsersPage() {
             type="checkbox"
             checked={allSelected}
             ref={(el) => {
-              if (el)
-                el.indeterminate = selectedIds.length > 0 && !allSelected;
+              if (el) el.indeterminate = selectedIds.length > 0 && !allSelected;
             }}
             onChange={toggleAll}
             aria-label="Select all"
@@ -252,7 +253,14 @@ export default function AdminUsersPage() {
                 {String(u.first_name || "")} {String(u.last_name || "")}
               </td>
               <td className="px-4 py-3 text-sm">{String(u.email)}</td>
-              <td className="px-4 py-3">{String(u.role_name || u.role)}</td>
+              <td className="px-4 py-3">
+                {String(u.role_name || u.role)}
+                {u.staff_id ? (
+                  <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                    Staff linked
+                  </span>
+                ) : null}
+              </td>
               <td className="px-4 py-3">
                 <StatusBadge status={String(u.status)} />
               </td>

@@ -453,6 +453,68 @@ export class CaRepository extends BaseRepository<CaAssessment> {
       .all(assessmentId) as CaScore[]
   }
 
+  /** Assessments for one named sequence in a term (case-insensitive name). */
+  findSequenceSheets(
+    schoolId: string,
+    name: string,
+    termId: string | null
+  ): CaAssessment[] {
+    const nameKey = name.trim().toLowerCase()
+    return this.findBySchool(schoolId).filter(
+      (a) =>
+        (a.term_id ?? null) === (termId ?? null) &&
+        a.name.trim().toLowerCase() === nameKey
+    )
+  }
+
+  /** True if any student has a non-null score on these assessments. */
+  hasRecordedMarks(assessmentIds: string[]): boolean {
+    if (!assessmentIds.length) return false
+    const placeholders = assessmentIds.map(() => '?').join(', ')
+    const row = this.db
+      .prepare(
+        `SELECT 1 AS ok FROM ca_scores
+         WHERE assessment_id IN (${placeholders})
+           AND deleted_at IS NULL
+           AND score IS NOT NULL
+         LIMIT 1`
+      )
+      .get(...assessmentIds) as { ok: number } | undefined
+    return Boolean(row)
+  }
+
+  softDeleteScore(id: string): void {
+    const existing = this.db
+      .prepare(
+        `SELECT * FROM ca_scores WHERE id = ? AND deleted_at IS NULL`
+      )
+      .get(id) as CaScore | undefined
+    if (!existing) return
+    const meta = this.applyUpdateMeta(existing)
+    const record: CaScore = {
+      ...existing,
+      deleted_at: meta.updated_at,
+      updated_at: meta.updated_at,
+      version: meta.version,
+      sync_status: meta.sync_status,
+    }
+    this.db
+      .prepare(
+        `UPDATE ca_scores
+         SET deleted_at = @deleted_at, updated_at = @updated_at,
+             version = @version, sync_status = @sync_status
+         WHERE id = @id`
+      )
+      .run(record)
+    enqueueSync(
+      this.db,
+      'ca_scores',
+      record.id,
+      'DELETE',
+      record as unknown as Record<string, unknown>
+    )
+  }
+
   findScoresForClassTerm(
     classId: string,
     termId: string | null

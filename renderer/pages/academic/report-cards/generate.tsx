@@ -77,8 +77,8 @@ export default function ReportCardsGeneratePage() {
     <AppShell
       title="Generate report cards"
       breadcrumb={["Academic Management", "Report Cards", "Generate"]}
-      heading="Generate report cards"
-      subtitle="Create printable report cards from processed term results."
+      heading="Generate term report cards"
+      subtitle="One bulletin per student for the selected class and term (after that term’s results are calculated)."
     >
       {error ? (
         <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -96,8 +96,16 @@ export default function ReportCardsGeneratePage() {
       ) : (
         <>
           <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Report cards require processed results for the selected class and
-            term. Run results computation first if none exist.
+            Pick the <strong>term</strong> (Term 1, 2, or 3). Report cards need
+            processed results for that class and term — run Results → Calculate
+            first. For year-end promotion averages see{" "}
+            <Link
+              href="/academic/results/annual"
+              className="font-semibold underline"
+            >
+              Annual results
+            </Link>
+            .
           </div>
 
           <div className="mb-4 flex flex-wrap gap-2">

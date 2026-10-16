@@ -67,10 +67,19 @@ export async function fetchGradingSystemSetup(): Promise<
 }
 
 export async function saveGradingSystemSetup(
-  input: GradingSystemSetupInput
+  input: GradingSystemSetupInput & { apply_minesec_preset?: boolean }
 ): Promise<Result<GradingSystemSetup>> {
   return (await window.ipc.invoke(
     'grading-system:save',
     input
+  )) as Result<GradingSystemSetup>
+}
+
+/** Apply Cameroon MINESEC grading bands + activate 3×2 sequences calculation profile. */
+export async function applyMinesecGradingPreset(): Promise<
+  Result<GradingSystemSetup>
+> {
+  return (await window.ipc.invoke(
+    'grading-system:apply-minesec-preset'
   )) as Result<GradingSystemSetup>
 }

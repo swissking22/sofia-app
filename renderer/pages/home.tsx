@@ -33,8 +33,7 @@ import { syncNowUntilCaughtUp, syncResultHasMore } from "../lib/backup-sync";
 import { formatDisplayDate, SOFIA_DATE_LOCALE } from "../lib/date-format";
 import { formatCompactMoney } from "../lib/finance-mgmt";
 import { useOnlineStatus } from "../lib/online";
-import { SyncProgressBar } from "../components/sync/SyncProgressBar";
-import type { SyncProgressEvent } from "../lib/sync-progress";
+import { useBackgroundSyncProgress } from "../lib/sync-progress";
 
 const selectClass =
   "cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
@@ -87,13 +86,14 @@ function initials(name: string): string {
 
 export default function HomePage() {
   const online = useOnlineStatus();
+  const { progress: syncProgress, active: syncActive } =
+    useBackgroundSyncProgress();
   const [data, setData] = React.useState<DashboardSummary | null>(null);
   const [error, setError] = React.useState("");
   const [syncMessage, setSyncMessage] = React.useState("");
   const [syncError, setSyncError] = React.useState("");
-  const [syncing, setSyncing] = React.useState(false);
-  const [syncProgress, setSyncProgress] =
-    React.useState<SyncProgressEvent | null>(null);
+  const [syncAwaiting, setSyncAwaiting] = React.useState(false);
+  const syncing = syncActive || syncAwaiting;
   const [loading, setLoading] = React.useState(true);
   const [yearId, setYearId] = React.useState<string>("");
   const [termId, setTermId] = React.useState<string>("");
@@ -136,24 +136,11 @@ export default function HomePage() {
 
   const handleSync = React.useCallback(async () => {
     if (!online || syncing) return;
-    setSyncing(true);
+    setSyncAwaiting(true);
     setSyncError("");
     setSyncMessage("");
-    setSyncProgress({
-      phase: "starting",
-      percent: 0,
-      message: "Starting sync…",
-      pushTotal: 0,
-      pushDone: 0,
-      pullTotal: 0,
-      pullDone: 0,
-    });
     try {
-      const res = await syncNowUntilCaughtUp({
-        onProgress: (event) => {
-          setSyncProgress(event as SyncProgressEvent);
-        },
-      });
+      const res = await syncNowUntilCaughtUp();
       if (!res.ok) {
         setSyncError(res.error);
         return;
@@ -161,9 +148,6 @@ export default function HomePage() {
       const synced = Number(res.data.successful ?? res.data.processed ?? 0);
       const failed = Number(res.data.failed ?? 0);
       const hasMore = syncResultHasMore(res.data);
-      if (res.data.progress) {
-        setSyncProgress(res.data.progress as SyncProgressEvent);
-      }
       if (res.data.message && hasMore) {
         setSyncMessage(String(res.data.message));
       } else if (hasMore) {
@@ -189,8 +173,7 @@ export default function HomePage() {
     } catch {
       setSyncError("Sync failed unexpectedly.");
     } finally {
-      setSyncing(false);
-      setSyncProgress(null);
+      setSyncAwaiting(false);
     }
   }, [online, syncing, load]);
 
@@ -297,11 +280,6 @@ export default function HomePage() {
       {syncError ? (
         <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
           {syncError}
-        </div>
-      ) : null}
-      {syncing || syncProgress ? (
-        <div className="mb-4 max-w-md rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <SyncProgressBar progress={syncProgress} />
         </div>
       ) : null}
       {syncMessage && !syncing ? (

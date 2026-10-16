@@ -3,12 +3,25 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { AppShell } from "../../../components/layout/AppShell";
 import { fetchCaScores, saveCaScores } from "../../../lib/academic-mgmt";
-import { handleScoreGridKeyDown } from "../../../lib/score-entry";
+import {
+  clampScoreInput,
+  handleScoreGridKeyDown,
+} from "../../../lib/score-entry";
 import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 import { TableSelectionBar } from "../../../components/students/ui";
 
-const inputClass =
-  "w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
+const inputClassBase =
+  "w-24 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
+
+function scoreInputClass(score: number | null, max: number) {
+  if (score === null || !(max > 0)) {
+    return `${inputClassBase} text-slate-900`;
+  }
+  if (score < max / 2) {
+    return `${inputClassBase} text-red-600`;
+  }
+  return `${inputClassBase} text-slate-900`;
+}
 
 export default function CaEntryPage() {
   const router = useRouter();
@@ -103,8 +116,8 @@ export default function CaEntryPage() {
       prev.map((s) => {
         if (s.id !== studentId) return s;
         if (value.trim() === "") return { ...s, score: null };
-        const num = Number(value);
-        return { ...s, score: Number.isNaN(num) ? s.score : num };
+        if (Number.isNaN(Number(value))) return s;
+        return { ...s, score: clampScoreInput(value, maxScore) };
       }),
     );
   }
@@ -284,7 +297,7 @@ export default function CaEntryPage() {
                       min={0}
                       max={maxScore}
                       step="0.01"
-                      className={inputClass}
+                      className={scoreInputClass(s.score, maxScore)}
                       value={s.score ?? ""}
                       onChange={(e) => updateScore(s.id, e.target.value)}
                       onKeyDown={(e) =>

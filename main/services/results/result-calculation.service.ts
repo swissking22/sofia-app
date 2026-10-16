@@ -319,13 +319,14 @@ export function calculateSubjectMark(
   } else if (examStatus === 'absent') {
     if (absentPolicy === 'zero') {
       examNormalized = 0
-    } else {
+    } else if (examWeightPercent > 0) {
       examIncomplete = true
     }
   } else if (examStatus === 'missing') {
     if (missingPolicy === 'zero') {
       examNormalized = 0
-    } else {
+    } else if (examWeightPercent > 0) {
+      // Missing exam only blocks when the profile actually weights exams.
       examIncomplete = true
     }
   } else if (examStatus === 'excused' || examStatus === 'na') {
@@ -339,7 +340,7 @@ export function calculateSubjectMark(
   const examContribution = examNormalized != null ? examNormalized * examWeight : null
 
   let subjectMark: number | null = null
-  let incomplete = examIncomplete
+  let incomplete = examWeightPercent > 0 ? examIncomplete : false
 
   if (caContribution != null && examContribution != null) {
     subjectMark = caContribution + examContribution
@@ -653,16 +654,39 @@ export function validateClassCalculation(input: {
     }
   }
 
-  // 5. Check missing exam / CA assessments
-  for (const subject of input.subjects) {
-    const paper = input.examPapers.find((p) => p.subject_id === subject.id)
-    if (!paper) {
-      warnings.push({
-        type: 'warning',
-        code: 'NO_EXAM_PAPER',
-        message: `Subject "${subject.name}" has no exam paper created.`,
-        details: { subject_id: subject.id },
-      })
+  // 5. Check missing exam / CA assessments (skip exams when weight is 0 — MINESEC sequences)
+  const examWeight =
+    input.config.exam_weight ??
+    input.config.components?.find((c) => c.source === 'exam' || c.type === 'final_exam')
+      ?.weight_percent ??
+    60
+  if (examWeight > 0) {
+    for (const subject of input.subjects) {
+      const paper = input.examPapers.find((p) => p.subject_id === subject.id)
+      if (!paper) {
+        warnings.push({
+          type: 'warning',
+          code: 'NO_EXAM_PAPER',
+          message: `Subject "${subject.name}" has no exam paper created.`,
+          details: { subject_id: subject.id },
+        })
+      }
+    }
+  }
+
+  const expectedSeqs = input.config.expected_sequences ?? 0
+  if (expectedSeqs > 0) {
+    for (const subject of input.subjects) {
+      const count = input.caAssessments.filter((a) => a.subject_id === subject.id)
+        .length
+      if (count < expectedSeqs) {
+        warnings.push({
+          type: 'warning',
+          code: 'MISSING_SEQUENCES',
+          message: `Subject "${subject.name}" has ${count} sequence(s); expected ${expectedSeqs}.`,
+          details: { subject_id: subject.id, found: count, expected: expectedSeqs },
+        })
+      }
     }
   }
 

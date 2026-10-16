@@ -447,6 +447,12 @@ export class RoleRepository extends BaseRepository<Role> {
       .get(schoolId, name) as Role | undefined
   }
 
+  /** Look up a system/custom role by exact name (e.g. Teacher). Seeds defaults first. */
+  findRoleIdByName(schoolId: string, name: string): string | null {
+    this.ensureDefaults(schoolId)
+    return this.findByName(schoolId, name)?.id ?? null
+  }
+
   private assertUniqueName(
     schoolId: string,
     name: string,

@@ -51,6 +51,14 @@ That sets `app_metadata.role = teacher` and `school_id` for LWM so the mobile ap
 
 Restart the app after `seed:dev` so Electron picks up the new database. Seed data includes academics, staff, ~300 students, finance (paid / partial / unpaid invoices), expenses, and attendance. Light World Mission subjects are **level-scoped**: the same title (e.g. Mathematics) is one subject shared by General, Commercial, and Technical classes at that level. Re-running `npm run seed -- --dev --light-world-only` repairs LWM subjects without a full reset.
 
+**Sunrise Academy — Term 1 CA for results testing** (does not reset the DB; fills Sequence 1 + Sequence 2 marks for every class × subject × active student on /20):
+
+```bash
+npx tsx scripts/seed/seedSunriseCaTerm1.ts --dev
+```
+
+Then sign in as `admin@sunrise.demo` / `Sofia@Demo1` → **Academic → Results → Process results** (Term 1, each class) → **Report cards → Generate**. Active profile should be **Cameroon MINESEC (3 terms × 2 sequences)** (CA 100%, exam weight 0).
+
 ### Desktop packaging (Windows)
 
 Build installers with Nextron + electron-builder:
@@ -115,8 +123,8 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 | Academic Year | `/setup/academic-year` | Current year dates + calendar events |
 | Academic Structure | `/setup/academic-structure` | Levels → sections → specializations → classes; **school day schedule** (start/close times, period duration, breaks) for the timetable |
 | Student ID Format | `/setup/student-id` | Pattern builder (default `{SCHOOL}-{SEQ}` e.g. `ABC-0001`), sequence scope (`school` continuous vs `year` / `year_level`), next sequence number counter. Student IDs are permanent school-wide identities and never change across academic years or class promotions. |
-| Grading System | `/setup/grading-system` | CA/exam weights + grade bands (A–F, etc.) |
-| Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments). **Teachers are mobile staff** (not Administration desktop users): email provisions Supabase Auth with `app_metadata.staff_id` and auto-syncs when online (`Sofia@Staff1` temp password). Admins with email still get a desktop login. |
+| Grading System | `/setup/grading-system` | Assessment types + grade bands. **Apply MINESEC** preset: Sequence 1 & 2, /20 bands (pass 10), and activates the Cameroon **3 terms × 2 sequences** calculation profile. |
+| Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments). **Teachers (with email):** creates a synced `users` membership (Teacher role) for mobile RBAC, provisions Supabase Auth with `app_metadata.staff_id`, and auto-syncs when online (`Sofia@Staff1` temp password). Admins with email still get a full desktop login. |
 | Permissions | `/setup/permissions` | Roles & permissions |
 | Student ID | `/setup/student-id` | ID pattern (school code, year, sequence, …) |
 | Students | `/setup/students` | Required profile fields, admission types, and **CSV bulk import**. Template columns: Full Name, Date of Birth, Place of Birth, Level, Department, Specialization, Residence Type, Gender, Parent Name, Parent Contact, Parent Email, Relationship. Sofia matches an **existing** class from level + department + specialization (never creates classes); residence is stored for day/boarding fee structures. |
@@ -344,20 +352,20 @@ Class roster marking and entrance Gate Scanner (USB HID QR). Class sessions and 
 
 **Gate Scanner architecture:** Renderer `renderer/lib/gate-attendance.ts` → IPC `gate-attendance:scan` / `gate-attendance:today-summary` → `main/services/gate-attendance.ts` → `parseStudentQrPayload` + `students.findBySchoolAndCode` → `gate_attendance` table (unique per school + student + date + type). Sync via `enqueueSync` like other domain tables. Audio feedback: `renderer/lib/scanner-feedback.ts` (Web Audio).
 
-### Continuous Assessment (CA)
+### Continuous Assessment (sequences)
+
+Cameroon MINESEC secondary default: **two sequences per term**. Subject term mark = average of the two sequence scores (/20).
 
 | Screen | Path | How to use |
 |--------|------|------------|
-| Assessments | `/academic/ca` | List with weights; create assessment (class, subject, term, weight, max score) |
-| Score entry | `/academic/ca/entry?assessment_id=` | Enter scores per student (capped at max score). Arrow Up/Down moves to the previous or next student. |
+| Sequences | `/academic/ca` | **Create sequence** (top right) — name, term, max score → sheets for every class × subject. Table shows **name**, **date created**, **status** (Inactive / Active / Complete), progress, and **Record marks**. **Inactive** sequences also offer **Edit** (name / max score) and **Delete**. |
+| Record marks | `/academic/ca/record?name=&term_id=` | Choose **class**, then **subject** (shows **Teacher: …** from the class–subject assignment), then enter marks for each student (clamped to **0–max**; cannot enter below 0 or above max). Marks below half of max show in **red**; half or above in **black**. **Save marks** stores the sheet. ↑ / ↓ / Enter moves between mark inputs. Status updates from score coverage. |
 
-### Examinations
+**Status:** *Inactive* = no marks yet (editable/deletable); *Active* = some marks entered; *Complete* = every student slot on every sheet has a mark.
 
-| Screen | Path | How to use |
-|--------|------|------------|
-| Sessions | `/academic/exams` | List exam sessions and paper counts |
-| Create | `/academic/exams/create` | Name, term, dates, status + one or more papers (subject, class, max score) |
-| Scores | `/academic/exams/scores` | Pick a paper → enter scores. Arrow Up/Down moves to the previous or next student. |
+**IPC:** `ca:list-sequences`, `ca:get-sequence`, `ca:open-sequence`, `ca:update-sequence`, `ca:delete-sequence`, `ca:get-scores`, `ca:save-scores`.
+
+The separate **Examinations** sidebar module is removed. Term marks use sequences only under the MINESEC profile (exam weight 0).
 
 ### Assessment Questions (review & print)
 
@@ -377,27 +385,40 @@ Desktop administration for teacher-submitted question paper PDFs. Teachers creat
 
 ### Results processing
 
-Sofia implements a school-configurable 7-step calculation pipeline for secondary education (Anglo-Saxon system in Cameroon):
-1. **Sequence / CA Average**: Continuous assessment sequences (1, 2, 3, 4, or more) are averaged (simple average, weighted average, or best N) and normalized to target scale (20/20). Configurable absent/missing score policy (default: exclude absent scores from average).
-2. **Subject Mark**: `(Average CA × CA Weight) + (Exam Mark × Exam Weight)`. Default is 40% CA + 60% Exam. Assessment weights must total 100%. Exam scores from different scales (e.g. 75/100) are normalized to 20/20 before weighting.
-3. **Subject Coefficient**: `Weighted Subject Mark = Subject Mark × Subject Coefficient`. Every subject can have its own coefficient (e.g. Mathematics = 5, Physics = 4, English = 3).
-4. **Total Weighted Marks**: `SUM(Subject Mark × Subject Coefficient)` across all applicable subjects.
-5. **Total Coefficients**: `SUM(Subject Coefficients)` across all applicable subjects.
-6. **Term Average**: `Total Weighted Marks / Total Coefficients`. Computed in full precision and formatted per school rounding rule (default: 2 decimal places).
-7. **Pass / Fail Determination**: `Term Average >= Configured Pass Mark` (default: 10/20). Configurable per school (e.g. 8/20, 10/20, 11/20, 12/20).
+Sofia implements a school-configurable calculation pipeline. **Default for new schools (MINESEC / MINEDUB secondary):**
+1. **Sequence average**: Two evaluation sequences per term → subject term mark = simple average, normalized to /20.
+**Sequence results** (one named CA sequence, e.g. Sequence 1):
+1. Sequence subject mark (on /20) × coefficient = sequence weighted mark.
+2. Student sequence average = Σ weighted marks / Σ coefficients.
+3. Position from ranking by average. Sheets: **Correction** (raw /20 scores; column = `Subject (coeff)`) and **Final** (weighted marks + total WM + total coeff. + average + position; optional sort by merit). Print → Save as PDF.
+
+**Term results** (all sequences in the term):
+1. Subject average = sum of that subject’s sequence scores ÷ number of sequences.
+2. Subject weighted score = subject average × coefficient.
+3. Term average = Σ weighted scores / Σ coefficients.
+4. With MINESEC, exam weight is **0** so subject mark = sequence average. Optional profiles can still blend exam `(CA × CA%) + (Exam × Exam%)`.
+5. Pass / Fail: term average ≥ pass mark (default **10/20**).
+6. **Bulk process**: Process → **Process all classes** runs term calculation for every active class (locked runs skipped). IPC `results:bulk-process`.
+
+**Annual (promotional)**: `(Term1 + Term2 + Term3) / 3` on **Annual Results** (report-card layouts for term/annual come next).
 
 | Screen | Path | How to use |
 |--------|------|------------|
-| Results Processing | `/academic/results` | View computed class results. Switch between **Class Results Overview** (ranked students with Total Weighted, Total Coeffs, Term Avg, Pass/Fail badge; click to view **Student Term Result Modal**) and **Subject Assessment Sheet** (all students with Seq 1..n, CA Avg, Exam, Subject Mark, Coeff, Weighted Mark; click to view step-by-step **Calculation Breakdown Modal**). Header displays class summary stats (Total Students, Processed, Incomplete, Passed, Failed, Class Average, Highest Average, Lowest Average) and compact calculation methodology card. Actions: `[Calculate Results]` (with pre-calculation validation modal and confirmation dialog showing calculation profile parameters), `[Approve Results]`, `[Publish Results]`, and `[Lock Results]`. |
-| Calculation Settings | `/academic/results/calculation-settings` | Dual-mode settings: **Formula Settings** tab for quick configuration (CA Weight %, Exam Weight %, Live 100% total validator, Pass Mark out of 20, Rounding rule, Sequence combination method, Expected sequences, Absent score policy, direct link to coefficients) and **Profiles & Advanced Wizard** tab for multi-step profile lifecycle management. |
-| Subject Coefficients | `/academic/results/coefficients` | Table of subjects with Code, Department, Scope, and Coefficient. Filter by class override and academic year. Click `[Edit Coefficients]` for bulk editing across all subjects and save in a transaction. Coefficients resolve hierarchically: Class + Year → Class Specific → Level → School Default → Base Subject. |
-| Publish / Lock | `/academic/results/publish` | Publish, or publish & **lock** (locked runs cannot be recomputed or silently overwritten). |
+| Results Processing | `/academic/results` | Per **term**: calculate / approve / publish class results. Links to sequence sheets and process. |
+| Sequence Results | `/academic/results/sequences` | Build **Correction** or **Final** sequence sheets (one class or all); print/PDF. IPC `results:sequence-sheet`. |
+| Process | `/academic/results/process` | One class or **all classes** for a term. |
+| Annual Results | `/academic/results/annual` | Class overview of T1/T2/T3 averages and annual mean for promotion. |
+| Calculation Settings | `/academic/results/calculation-settings` | Formula tab (CA/Exam %, expected sequences, pass mark) + **Load MINESEC** shortcut; Profiles wizard for advanced config. |
+| Subject Coefficients | `/academic/results/coefficients` | Per-subject coefficients (e.g. Maths 4–5). |
+| Publish / Lock | `/academic/results/publish` | Publish or lock a term run. |
+
+**Architecture:** Sequence calc `main/services/results/sequence-results.service.ts`; term process/bulk `main/services/results/process-class-term.ts`; IPC in `main/ipc/academic-mgmt.ts`.
 
 **Historical Versioning & Snapshots:** When results are calculated, Sofia records the exact profile ID, profile version, configuration hash, and JSON snapshot onto the `result_runs` record. If a school later changes rules (e.g. CA 40% to 30%), previously finalized or locked results retain their original calculations.
 
 ### Report cards
 
-Requires results that are computed / published / locked for that class + term. Report Cards **snapshot** finalized Results Processing data (no second calculation engine). Blank subject scores are omitted as “not offered” (blank ≠ zero), matching Sofia’s exclude policies.
+**Per term:** select class + term on Generate (`/academic/report-cards/generate`). Requires results that are computed / published / locked for that class + term. Report Cards **snapshot** that term’s Results Processing data (no second calculation engine). Blank subject scores are omitted as “not offered” (blank ≠ zero). Year-end promotion uses **Annual Results**, not a separate annual report-card engine (unless you generate after each term).
 
 | Screen | Path | How to use |
 |--------|------|------------|
@@ -436,7 +457,7 @@ Shared list/filter UI mirrors Student Management (`renderer/components/staff/ui.
 | Screen | Path | How to use |
 |--------|------|------------|
 | List | `/staff/teachers` | Filter by search, status, department, job role. Actions drawer: **View / Edit** or **Delete** (managers). |
-| Add | `/staff/teachers/create` | Personal + role fields; **Assignment Builder**; separate **Homeroom**. Employee ID auto-generated if blank. **Email** provisions Sofia Teacher Auth (`staff_id` in JWT) and **auto-syncs** staff + `staff_subjects` when online (temp password `Sofia@Staff1`). Teachers are **not** created as Administration → Users desktop accounts. |
+| Add | `/staff/teachers/create` | Personal + role fields; **Assignment Builder**; separate **Homeroom**. Employee ID auto-generated if blank. **Email** creates a Teacher-role `users` row (mobile membership), provisions Sofia Teacher Auth (`staff_id` in JWT), and **auto-syncs** when online (temp password `Sofia@Staff1`). Prefer this over Administration → Users for teachers. |
 | Profile / edit | `/staff/teachers/:id` | Edit personal, role, assignments, homeroom; **Save changes**. Managers can **Delete teacher** (clears homeroom). Saving teaching assignments re-provisions Auth metadata (keeps password) and auto-syncs again. |
 
 ### Staff directory
@@ -563,7 +584,7 @@ School-scoped control centre. There is no platform super-admin. Session role `ad
 | Screen | Path | How to use |
 |--------|------|------------|
 | Overview | `/administration` | Active users, audit volume today, last backup, sync health. |
-| Users & Roles | `/administration/users` | Desktop accounts only (admin/secretary). Creating a **teacher** role without a linked staff member is rejected — use **Staff → Teachers** instead. Optional staff link for admins; Auth provision + sync when online. |
+| Users & Roles | `/administration/users` | All school logins, including **teachers** created under Staff → Teachers (Teacher role + linked `staff_id`). Opening this list also backfills missing teacher memberships. Creating a bare teacher account here without a staff link is rejected — use Staff → Teachers. Optional staff link for admins; Auth provision + sync when online. |
 | Roles | `/administration/roles` | Create/edit/duplicate custom roles (must include ≥1 permission). System roles (Principal, Vice Principal, Teacher, Bursar, Secretary, Registrar, Read Only, …) cannot be deleted; Sofia re-applies their catalog permissions on login / role screens so older empty sets are repaired for every seeded role. Roles with assigned users cannot be deleted. Activate/deactivate. |
 | Permissions | `/administration/permissions` | Live matrix of catalog permissions × school roles. |
 | Audit logs | `/administration/audit-logs` | Paginated union of central `audit_events` plus finance and document audit tables. Append-only — no edit/delete API. |
@@ -780,10 +801,10 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
    - Runs Push phase first (`pushPendingSync()`), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters plus top-level **`hasMore`** / **`message`** from either phase. Until-caught-up drains across safety-cap rounds.
    - Pull uses a dedicated page size (default **500**) and loops while `pull.hasMore` (default up to 100 outer pages). Hard pull errors stop the drain (no tight retry loop) but leave `hasMore=true` for the next Sync Now.
    - Join school (`main/services/join-school.ts`) drains the same way (up to 200 pages).
-   - **Sync progress %:** main emits live `sync:progress` (phase, percent, upload/download counts). Push % = outbox drained; pull % uses cloud RPC `count_pending_sync_changes` (migration `20261009140000_count_pending_sync_changes.sql`). Home and Backup & Sync show a progress bar; without that migration, pull shows an indeterminate bar with applied counts. IPC: `backup-sync:sync-now`, `system-admin:sync-now`.
-4. **Quiet periodic background sync (`main/sync/periodic-sync.ts`)**:
-   - Started from `main/main.ts` after IPC registration. When `system_settings.auto_sync = 1` and Electron reports online, runs `runSyncWorkerUntilCaughtUp` on the interval in `sync_interval_minutes` (default 30, clamped 5–1440). First pass ~15s after startup.
-   - Does **not** emit `sync:progress` (stays out of the way while you work). Manual Sync Now still shows the progress bar.
+   - **Sync progress %:** main broadcasts live `sync:progress` to **all** windows (phase, percent, upload/download counts). Push % = outbox drained; pull % uses cloud RPC `count_pending_sync_changes` (migration `20261009140000_count_pending_sync_changes.sql`). Without that migration, pull shows an indeterminate bar with applied counts. IPC: `backup-sync:sync-now`, `system-admin:sync-now`, `sync:get-status`.
+   - **Shared session (`main/sync/session.ts`)**: one inflight catch-up run per school; Sync Now and periodic join the same promise. Renderer `useBackgroundSyncProgress` hydrates via `sync:get-status` on mount so the % bar survives navigation. AppShell shows the bar on every authenticated screen (Home, Backup & Sync, elsewhere).
+4. **Periodic background sync (`main/sync/periodic-sync.ts`)**:
+   - Started from `main/main.ts` after IPC registration. When `system_settings.auto_sync = 1` and Electron reports online, runs shared `runBackgroundSync` (with live progress) on the interval in `sync_interval_minutes` (default 30, clamped 5–1440). First pass ~15s after startup.
    - Settings UI: Administration → Settings → Backup & Sync. Saving calls `restartPeriodicSync()`. Existing installs get a one-time enable via `sofia_local_migrations` id `periodic_auto_sync_on`.
 
 ---
@@ -837,11 +858,12 @@ Key libs for built modules:
 - Reports: `renderer/lib/reports.ts` → `main/ipc/reports.ts`
 - Documents: `renderer/lib/documents-mgmt.ts` → `main/ipc/documents-mgmt.ts` (setup templates remain `renderer/lib/documents.ts`)
 - System Administration: `renderer/lib/system-admin.ts` → `main/ipc/system-admin.ts` (users soft-delete: `system-admin:users-delete` → `SystemAdminRepository.softDeleteUser` + `assertUserDeletable` in `main/domain/system-admin.ts`; RBAC `system.users.delete`; restore from file: `system-admin:backup-pick-restore-file` + `backup-restore-from-file` → `verifySqliteBackup` / `stageRestoreSource` in `main/db/sqlite-backup.ts` + `queueDatabaseRestore`)
-- Teacher mobile sync: domain `main/domain/teacher-sync.ts`; notifications stub `main/services/teacher-notifications.ts`; readiness `main/services/prepare-teacher-mobile.ts` + `main/sync/auto-sync.ts`; cloud RPCs in `supabase/migrations/20260923200000_teacher_mobile_rpcs.sql` + `20261001100000_teacher_mobile_sync_phase_ab.sql`; docs in `docs/teacher-*.md`
+- Teacher mobile sync: domain `main/domain/teacher-sync.ts`; notifications stub `main/services/teacher-notifications.ts`; readiness `main/services/prepare-teacher-mobile.ts` (desktop `users` Teacher membership + Auth + `scheduleTeacherReadySync`); cloud RPCs in `supabase/migrations/20260923200000_teacher_mobile_rpcs.sql` + `20261001100000_teacher_mobile_sync_phase_ab.sql`; mobile access `get_mobile_access` (see sofia-teacher-rbac migrations); docs in `docs/teacher-*.md`
 - Auto-update (Windows): `main/updater.ts` + `main/ipc/updater.ts` (`updater:*`); UI `UpdateNotifier` in `AppShell`. Sidebar **Check for updates** (`AppSidebar` → `checkAppUpdate` / `updater:check` with `force: true`) re-prompts after “Later”. **`electron-updater` must stay a runtime dynamic import** (`loadAutoUpdater()` in `main/updater.ts`) — a static import is evaluated with the main chunk and breaks packaged Windows launch. Startup still pins `userData` first via `main/pin-user-data.ts`. Recovery evaluation does not load the updater module graph for native update checks until after the window is ready.
 - Cloud Synchronization: Push engine in `main/sync/push.ts` (`pushPendingSync`), Pull engine in `main/sync/pull.ts` (`pullRemoteChanges`), cursor manager in `main/sync/cursor.ts`, coordinated worker in `main/sync/worker.ts` (`runSyncWorker`); table registry `main/sync/tables.ts`; generic apply `main/sync/apply-generic.ts`; conflict resolution in `main/sync/resolve-conflict.ts` (`applyConflictResolution`) via IPC `system-admin:sync-resolve` / `SystemAdminRepository.resolveConflict` (open-only list + keep-local/keep-remote side effects); PostgREST RPCs `process_sync_operation`, `process_synced_entity`, `register_device`, `pull_sync_changes`, and `update_sync_cursor`; client in `main/sync/supabase-client.ts`; device identity in `main/sync/device.ts`; outbox in `main/sync/queue.ts`; migrations in `supabase/migrations/`
 - Secondary-desk join / Auth bootstrap: `main/services/join-school.ts` (`joinSchoolByCode` via `auth:join-school`) looks up school + registers device + pulls; `main/services/cloud-login.ts` (`signInWithSupabasePassword`) + `main/auth` `login` verify Supabase Auth membership against the joined `school_id`, upsert local profile, and prime offline hash. Wrong-school logins return a clear membership error (not “Invalid email or password”).
 - Teacher / staff cloud Auth: `main/services/cloud-auth.ts` (`provisionStaffAuth`) calls Edge Function `supabase/functions/provision-staff-auth` (anon key); optional local fallback via `SUPABASE_SERVICE_ROLE_KEY`. Hooked from primary `registerAdmin` (**required** — rolls back local admin on failure), `staff:upsert-teacher`, `staff:upsert-admin`, `staff:import-teachers`, `staff-mgmt:create`, and `system-admin:users-create` / `users-reset-password`. Deploy with `npx supabase functions deploy provision-staff-auth`.
+- MINESEC results: `minesecCameroonSequences20()` in `main/domain/results-calculation.ts`; bulk sequences via `ca:open-sequence`; annual averages via `results:annual-summary`; setup preset `grading-system:apply-minesec-preset` → `ResultsCalculationRepository.applyMinesecPreset`.
 
 ---
 
@@ -849,6 +871,20 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-16 | **Sync tenant cleanup:** abandon foreign-school outbox rows (stop tenant-mismatch loops); bootstrap retries with a unique non-null short_code when cloud enforces NOT NULL/UNIQUE (`20261016150000_bootstrap_school_tenant_short_code.sql`). |
+| 2026-10-16 | **Teacher users list:** Administration → Users shows teacher memberships; opening the list backfills missing Teacher-role `users` rows for Staff → Teachers with email (`repairTeacherDesktopUsers`). |
+| 2026-10-16 | **Teacher mobile membership:** creating/updating a teacher with email now ensures a synced desktop `users` row (Teacher role + `staff_id`) so mobile `get_mobile_access` no longer returns `not_member`; Auth + sync unchanged (`prepareTeacherForMobile`). |
+| 2026-10-16 | **CA mark input:** scores are clamped to 0–max while typing (cannot enter below 0 or above max). |
+| 2026-10-16 | **CA Record marks:** show **Teacher: …** beside the subject filter (from `staff_subjects` class–subject assignment via `ca:get-scores`). |
+| 2026-10-16 | **Sequence + term results sheets:** Sequence correction/final printable sheets (`/academic/results/sequences`); term formula documented; **Process all classes** via `results:bulk-process`. |
+| 2026-10-16 | **Sunrise CA Term 1 seed:** `scripts/seed/seedSunriseCaTerm1.ts --dev` creates Sequence 1+2 sheets and fills /20 scores for all Sunrise students×subjects so you can run Results Processing and report cards. |
+| 2026-10-16 | **True background sync:** shared main session broadcasts `sync:progress` to all windows; periodic sync uses the same session; AppShell + Home/Backup & Sync keep % via `sync:get-status` across navigation. |
+| 2026-10-16 | **CA mark colour:** scores below half of max render in red; half or above in black (Record marks / score entry). |
+| 2026-10-16 | **CA inactive sequences:** edit name/max score or delete when no marks recorded (`ca:update-sequence` / `ca:delete-sequence`). |
+| 2026-10-16 | **CA Record marks:** sequence table (name, date, Inactive/Active/Complete) → **Record marks** with class then subject filters and student mark grid (↑/↓/Enter); IPC `ca:list-sequences` / `ca:get-sequence`. |
+| 2026-10-16 | **AppShell `actions`:** page heading can show a Create button on the right (fixes missing **Create sequence** on Continuous Assessment). |
+| 2026-10-16 | **CA simplified:** removed Examinations from the sidebar; **Create sequence** needs only name, term, and max score — creates sheets for all classes × all subjects (`ca:open-sequence` with `all_classes`). |
+| 2026-10-16 | **MINESEC sequences model:** default profile is 3 terms × 2 sequences (CA 100%, exam weight 0); setup **Apply MINESEC**; Annual Results `(T1+T2+T3)/3`; term report cards clarified; missing-exam warnings skipped when exam weight is 0. |
 | 2026-10-16 | **Founding admin Auth required:** `/register` admin step calls `provisionStaffAuth` (not best-effort). Failure rolls back the local user so setup can retry; password minimum raised to **8** (matches Edge Function). |
 | 2026-10-16 | **Ops — LWM seed tenant purge:** removed local + cloud data for seed school `0dd470f4-…` (short code `LWM`) only. Local Greenfield/Sunrise kept. Cloud LIWMAIC (`764c91ab-…` / `SOF-6849B4C8`) untouched. Auth user tied to the seed school deleted. |
 | 2026-10-16 | **Sync failed items:** `sync_queue.last_error` stores the exact push failure; Backup & Sync → Sync shows a Failed items table (table/record/op/error/retries) and surfaces failure messages after Sync Now. |
@@ -856,7 +892,7 @@ Key libs for built modules:
 | 2026-10-15 | **Teacher edit/delete:** managers include principal (+ RBAC `staff.*`); teacher profile has Delete; Staff Directory links teachers to edit and supports delete. Secretary/Vice Principal seeds gain `staff.create/update/delete`. |
 | 2026-10-15 | **Optional fee lines:** invoice generation bills **mandatory** structure lines only (school expected total). Optional lines can be selected when recording a payment — they are appended to the invoice then allocated (`fee_structure_line_id` on `payments-record`). Structure list **total** is the mandatory expected sum. |
 | 2026-10-12 | **Release 1.0.7:** bumped `package.json` to **1.0.7** and tagged `v1.0.7` for Windows GitHub Release publish (staff payslips/salaries + quiet periodic background sync). Apply cloud migration `20261009160000_payroll_payslips_sync.sql` for multi-desk payroll sync. |
-| 2026-10-12 | **Quiet background sync:** periodic online timer (`main/sync/periodic-sync.ts`) runs push+pull without progress UI; defaults on (30 min); toggle/interval under Administration → Settings → Backup & Sync. |
+| 2026-10-12 | **Periodic background sync:** online timer (`main/sync/periodic-sync.ts`) runs push+pull (now with shared progress UI as of 2026-10-16); defaults on (30 min); toggle/interval under Administration → Settings → Backup & Sync. |
 | 2026-10-09 | **Release 1.0.6:** bumped `package.json` to **1.0.6** and tagged `v1.0.6` for Windows GitHub Release publish (faster pull: 500-change pages + batched cloud cursor acks). |
 | 2026-10-09 | **Faster pull (safe):** default pull page size raised to cloud max **500**; cloud cursor ack batched every **5** pages (local cursor still advances each page). Fewer round-trips on second-desk hydrate without changing apply/FK rules. |
 | 2026-10-09 | **Release 1.0.5:** bumped `package.json` to **1.0.5** and tagged `v1.0.5` for Windows GitHub Release publish (second-desk Sync Now drain + live sync progress %). Apply cloud migration `20261009140000_count_pending_sync_changes.sql` for accurate download percentages. |

@@ -426,6 +426,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         if (staff_type === 'teaching') {
           // Teachers are Sofia Teacher (mobile) staff — not Administration desktop users.
           warning = await prepareTeacherForMobile({
+            repos,
             schoolId,
             staffId: staff.id,
             email,
@@ -579,6 +580,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
         if (updated.staff_type === 'teaching') {
           // Refresh Auth staff_id metadata; keep existing Auth password.
           warning = await prepareTeacherForMobile({
+            repos,
             schoolId,
             staffId: updated.id,
             email: updated.email,

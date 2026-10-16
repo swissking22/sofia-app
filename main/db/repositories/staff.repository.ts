@@ -509,8 +509,7 @@ export class StaffRepository extends BaseRepository<Staff> {
 
   /**
    * Create/update teaching staff + assignments.
-   * Teachers are mobile staff — no desktop `users` account is created here.
-   * Cloud Auth + sync are handled by IPC (`prepareTeacherForMobile`).
+   * Desktop `users` membership + cloud Auth are handled by IPC (`prepareTeacherForMobile`).
    */
   async upsertTeacher(
     schoolId: string,

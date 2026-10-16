@@ -1,7 +1,9 @@
 import type { Database } from 'better-sqlite3'
+import { randomUUID } from 'crypto'
 import {
   getPendingSyncItems,
   countReadyPendingSyncItems,
+  discardForeignTenantSyncItems,
   discardUnsupportedSyncItems,
   markFailed,
   markNetworkError,
@@ -9,6 +11,7 @@ import {
   recordSyncConflict,
   requeueFailedSupportedTables,
 } from './queue'
+import { normalizeShortCode } from '../helpers/school-short-code'
 import {
   getDeviceFingerprint,
   getDeviceName,
@@ -94,16 +97,54 @@ async function bootstrapCloudSchoolTenant(
     }
   }
 
+  const baseCode =
+    normalizeShortCode(school.short_code || '') ||
+    normalizeShortCode(school.school_code || '') ||
+    normalizeShortCode(school.id.replace(/-/g, '').slice(0, 8)) ||
+    'SCH'
+
   console.log(`[SYNC] Bootstrapping cloud school tenant ${schoolId}`)
-  return client.bootstrapSchoolTenant({
+  const first = await client.bootstrapSchoolTenant({
     id: school.id,
     name: school.name || 'School',
-    shortCode: school.short_code,
-    schoolCode: school.school_code,
+    shortCode: baseCode,
+    schoolCode: normalizeShortCode(school.school_code || '') || baseCode,
     address: school.address,
     phone: school.phone,
     email: school.email,
   })
+  if (first.ok) return first
+
+  // Unique / NOT NULL conflicts: retry with an id-derived unique short code (never null —
+  // some cloud schemas require short_code NOT NULL).
+  const err = (first.error || '').toLowerCase()
+  if (
+    err.includes('short_code') ||
+    err.includes('school_code') ||
+    err.includes('duplicate key') ||
+    err.includes('unique constraint') ||
+    err.includes('not-null') ||
+    err.includes('not null')
+  ) {
+    const unique =
+      normalizeShortCode(
+        `S${school.id.replace(/-/g, '').slice(0, 7)}${randomUUID().replace(/-/g, '').slice(0, 2)}`
+      ) || `S${Date.now().toString(36).toUpperCase().slice(-8)}`
+    console.warn(
+      `[SYNC] School tenant bootstrap hit code constraint (${first.error}); retrying with short_code=${unique}`
+    )
+    return client.bootstrapSchoolTenant({
+      id: school.id,
+      name: school.name || 'School',
+      shortCode: unique,
+      schoolCode: unique,
+      address: school.address,
+      phone: school.phone,
+      email: school.email,
+    })
+  }
+
+  return first
 }
 
 /** Once per process: lift historical "unsupported table" failures into the expanded allowlist. */
@@ -164,6 +205,14 @@ export async function pushPendingSync(
   if (unsupportedDrained > 0) {
     console.log(
       `[SYNC] Discarded ${unsupportedDrained} unsupported-table queue item(s) as synced`
+    )
+  }
+
+  // Drop leftovers from another school tenant (wrong-school outbox after switch/seed).
+  const foreignDrained = discardForeignTenantSyncItems(db, schoolId)
+  if (foreignDrained > 0) {
+    console.log(
+      `[SYNC] Abandoned ${foreignDrained} foreign-tenant queue item(s) (not school ${schoolId})`
     )
   }
 
@@ -272,14 +321,14 @@ export async function pushPendingSync(
       continue
     }
 
-    // Tenant check: ensure payload school_id matches authorized schoolId
+    // Tenant check: foreign-school leftovers are abandoned (not failed/retried).
     if (payload.school_id && payload.school_id !== schoolId) {
-      const tenantErr = `Tenant mismatch: payload school ${String(payload.school_id)} ≠ authorized ${schoolId}`
-      console.error(
-        `[SYNC] Tenant mismatch for operation ${item.id}: payload belongs to ${payload.school_id}, authorized school is ${schoolId}`
+      console.warn(
+        `[SYNC] Abandoning operation ${item.id}: payload belongs to ${payload.school_id}, authorized school is ${schoolId}`
       )
-      markFailed(db, item.id, tenantErr)
-      failed += 1
+      markSynced(db, item.id)
+      // Count as processed success for drain stats (intentionally skipped).
+      successful += 1
       continue
     }
 

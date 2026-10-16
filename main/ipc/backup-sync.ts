@@ -1,5 +1,4 @@
-import { dialog, BrowserWindow } from 'electron'
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { dialog, BrowserWindow, ipcMain } from 'electron'
 import { getSession } from '../auth'
 import { getDatabasePath } from '../db'
 import type { Repositories } from '../db/repositories'
@@ -7,21 +6,10 @@ import type {
   BackupSyncSaveInput,
   BackupSyncSetupDto,
 } from '../db/repositories/backup-sync.repository'
-import { runSyncWorkerUntilCaughtUp } from '../sync/worker'
-import type { SyncProgressEvent } from '../sync/progress'
-
-function emitSyncProgress(
-  event: IpcMainInvokeEvent,
-  progress: SyncProgressEvent
-): void {
-  try {
-    if (!event.sender.isDestroyed()) {
-      event.sender.send('sync:progress', progress)
-    }
-  } catch {
-    /* renderer gone */
-  }
-}
+import {
+  getSyncSessionStatus,
+  runBackgroundSync,
+} from '../sync/session'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -50,6 +38,11 @@ export function registerBackupSyncIpc(
   db: import('better-sqlite3').Database,
   repos: Repositories
 ): void {
+  ipcMain.handle('sync:get-status', () => ({
+    ok: true as const,
+    data: getSyncSessionStatus(),
+  }))
+
   ipcMain.handle('backup-sync:get-setup', (): Result<BackupSyncSetupDto> => {
     const data = loadSetup(repos)
     if (!data) {
@@ -110,18 +103,16 @@ export function registerBackupSyncIpc(
 
   ipcMain.handle(
     'backup-sync:sync-now',
-    async (
-      event: IpcMainInvokeEvent
-    ): Promise<
+    async (): Promise<
       Result<BackupSyncSetupDto & { processed: number; failed: number }>
     > => {
       const school = resolveSchool(repos)
       if (!school) return { ok: false, error: 'No school found.' }
 
       try {
-        const result = await runSyncWorkerUntilCaughtUp(db, {
+        const result = await runBackgroundSync(db, {
           schoolId: school.id,
-          onProgress: (p) => emitSyncProgress(event, p),
+          trigger: 'manual',
         })
         const ok = result.failed === 0
         repos.backupSync.markSyncResult(school.id, {

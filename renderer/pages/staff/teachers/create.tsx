@@ -86,8 +86,11 @@ export default function CreateTeacherPage() {
         return;
       }
       if (res.warning) {
-        setError(res.warning);
-        return;
+        // Teacher + Users membership were saved; cloud Auth may still need a retry.
+        window.sessionStorage.setItem(
+          "sofia.teacher.create.warning",
+          res.warning,
+        );
       }
       await router.push("/staff/teachers");
     } catch {
@@ -102,7 +105,7 @@ export default function CreateTeacherPage() {
       title="Add teacher"
       breadcrumb={["Staff Management", "Teachers", "Add"]}
       heading="Add teacher"
-      subtitle="Personal details, role, and teaching assignments. With an email, Sofia creates a desktop login and cloud Auth for the mobile teacher app (temporary password Sofia@Staff1)."
+      subtitle="Personal details, role, and teaching assignments. With an email, Sofia assigns the Teacher role, provisions cloud Auth, and syncs membership for the mobile app (temporary password Sofia@Staff1)."
     >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
 

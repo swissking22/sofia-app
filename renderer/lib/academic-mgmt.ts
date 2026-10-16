@@ -134,6 +134,38 @@ export interface CaAssessmentDto {
   assessment_date: string | null
 }
 
+export type CaSequenceStatus = 'inactive' | 'active' | 'complete'
+
+export interface CaSequenceDto {
+  name: string
+  term_id: string | null
+  term_name: string | null
+  max_score: number
+  created_at: string
+  sheet_count: number
+  class_count: number
+  expected_slots: number
+  scored_slots: number
+  status: CaSequenceStatus
+}
+
+export interface CaSequenceDetailDto {
+  name: string
+  term_id: string
+  term_name: string | null
+  max_score: number
+  status: CaSequenceStatus
+  classes: Array<{ id: string; name: string }>
+  sheets: Array<{
+    id: string
+    class_id: string
+    class_name: string | null
+    subject_id: string
+    subject_name: string | null
+    max_score: number
+  }>
+}
+
 export interface ExamSessionDto {
   id: string
   name: string
@@ -280,6 +312,44 @@ export async function fetchCaList() {
   return (await window.ipc.invoke('ca:list')) as Result<CaAssessmentDto[]>
 }
 
+export async function fetchCaSequences() {
+  return (await window.ipc.invoke('ca:list-sequences')) as Result<
+    CaSequenceDto[]
+  >
+}
+
+export async function fetchCaSequence(input: {
+  name: string
+  term_id: string
+}) {
+  return (await window.ipc.invoke(
+    'ca:get-sequence',
+    input
+  )) as Result<CaSequenceDetailDto>
+}
+
+export async function updateCaSequence(input: {
+  name: string
+  term_id: string
+  new_name?: string
+  max_score?: number
+}) {
+  return (await window.ipc.invoke('ca:update-sequence', input)) as Result<{
+    updated: number
+    name: string
+    max_score: number
+  }>
+}
+
+export async function deleteCaSequence(input: {
+  name: string
+  term_id: string
+}) {
+  return (await window.ipc.invoke('ca:delete-sequence', input)) as Result<{
+    deleted: number
+  }>
+}
+
 export async function createCaAssessment(input: {
   name: string
   subject_id: string
@@ -292,6 +362,63 @@ export async function createCaAssessment(input: {
   return (await window.ipc.invoke('ca:create', input)) as Result<unknown>
 }
 
+/** Create one assessment for a term across all (or selected) classes × subjects. */
+export async function openCaSequence(input: {
+  name: string
+  term_id: string
+  class_ids?: string[]
+  all_classes?: boolean
+  weight_percent?: number
+  max_score?: number
+  assessment_date?: string | null
+  skip_existing?: boolean
+}) {
+  return (await window.ipc.invoke('ca:open-sequence', input)) as Result<{
+    created: number
+    skipped: number
+    class_count: number
+    assessments: Array<{
+      id: string
+      class_id: string
+      subject_id: string
+      name: string
+    }>
+  }>
+}
+
+export async function fetchAnnualResultsSummary(input: {
+  class_id: string
+  academic_year_id?: string | null
+}) {
+  return (await window.ipc.invoke(
+    'results:annual-summary',
+    input
+  )) as Result<{
+    class_id: string
+    class_name: string
+    pass_mark: number
+    terms: Array<{
+      term_id: string | null
+      term_name: string
+      term_number: number
+      run_status: string | null
+      student_count: number
+    }>
+    students: Array<{
+      student_id: string
+      student_name: string
+      student_code: string | null
+      term_averages: Array<{
+        term_id: string | null
+        term_number: number
+        average: number | null
+      }>
+      annual_average: number | null
+      status: 'PASSED' | 'FAILED' | 'INCOMPLETE'
+    }>
+  }>
+}
+
 export async function fetchCaScores(assessmentId: string) {
   return (await window.ipc.invoke('ca:get-scores', {
     assessment_id: assessmentId,
@@ -302,6 +429,7 @@ export async function fetchCaScores(assessmentId: string) {
       max_score: number
       class_id: string
       subject_name: string | null
+      teacher_name: string | null
     }
     students: Array<{
       id: string
@@ -462,7 +590,99 @@ export async function processResults(input: {
   return (await window.ipc.invoke(
     'results:process',
     input
-  )) as Result<{ run_id: string; students: number; subjects: number; profile?: string }>
+  )) as Result<{
+    run_id: string
+    students: number
+    subjects: number
+    profile?: string
+    class_id?: string
+    class_name?: string
+  }>
+}
+
+export async function bulkProcessResults(input: {
+  term_id?: string | null
+}) {
+  return (await window.ipc.invoke(
+    'results:bulk-process',
+    input
+  )) as Result<{
+    succeeded: number
+    failed: number
+    skipped: number
+    results: Array<{
+      class_id: string
+      class_name: string
+      run_id?: string
+      students?: number
+      subjects?: number
+      profile?: string
+      error?: string
+    }>
+  }>
+}
+
+export type SequenceSheetKind = 'correction' | 'final'
+export type SequenceSortMode = 'name' | 'merit'
+
+export interface SequenceSheetPayload {
+  school: {
+    name: string
+    address: string | null
+    phone: string | null
+    email: string | null
+    logo_url: string | null
+    region: string | null
+  }
+  academic_year: { id: string; name: string } | null
+  term: { id: string; name: string; term_number: number } | null
+  sequence_name: string
+  sheet_kind: SequenceSheetKind
+  sort: SequenceSortMode
+  classes: Array<{
+    class_id: string
+    class_name: string
+    sequence_name: string
+    subjects: Array<{
+      subject_id: string
+      subject_name: string
+      coefficient: number
+    }>
+    students: Array<{
+      student_id: string
+      student_name: string
+      student_code: string | null
+      cells: Array<{
+        subject_id: string
+        mark: number | null
+        coefficient: number
+        weighted_mark: number | null
+        incomplete: boolean
+      }>
+      total_weighted_marks: number
+      total_coefficients: number
+      average: number | null
+      average_rounded: number | null
+      position: number | null
+      incomplete: boolean
+    }>
+    class_average: number | null
+  }>
+}
+
+export async function fetchSequenceSheet(input: {
+  class_id?: string | null
+  class_ids?: string[]
+  all_classes?: boolean
+  term_id: string
+  sequence_name: string
+  sheet_kind?: SequenceSheetKind
+  sort?: SequenceSortMode
+}) {
+  return (await window.ipc.invoke(
+    'results:sequence-sheet',
+    input
+  )) as Result<SequenceSheetPayload>
 }
 
 export async function approveResults(input: {

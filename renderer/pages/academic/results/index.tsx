@@ -69,9 +69,9 @@ export default function ResultsIndexPage() {
   const [classId, setClassId] = React.useState("");
   const [termId, setTermId] = React.useState("");
   const [subjectId, setSubjectId] = React.useState("");
-  const [viewMode, setViewMode] = React.useState<"class_overview" | "subject_sheet">(
-    "class_overview",
-  );
+  const [viewMode, setViewMode] = React.useState<
+    "class_overview" | "subject_sheet"
+  >("class_overview");
 
   const [run, setRun] = React.useState<{
     id: string;
@@ -150,20 +150,21 @@ export default function ResultsIndexPage() {
   // Modals & Drawers
   const [showConfirmModal, setShowConfirmModal] = React.useState(false);
   const [showValidationModal, setShowValidationModal] = React.useState(false);
-  const [validationResult, setValidationResult] = React.useState<CalculationValidationResponse | null>(
-    null,
-  );
+  const [validationResult, setValidationResult] =
+    React.useState<CalculationValidationResponse | null>(null);
   const [validating, setValidating] = React.useState(false);
   const [calculating, setCalculating] = React.useState(false);
 
   // Breakdown drawer state
-  const [breakdown, setBreakdown] = React.useState<CalculationBreakdownData | null>(null);
+  const [breakdown, setBreakdown] =
+    React.useState<CalculationBreakdownData | null>(null);
   const [breakdownStudentName, setBreakdownStudentName] = React.useState("");
   const [breakdownSubjectName, setBreakdownSubjectName] = React.useState("");
   const [loadingBreakdown, setLoadingBreakdown] = React.useState(false);
 
   // Student summary drawer state
-  const [studentSummary, setStudentSummary] = React.useState<StudentTermSummaryData | null>(null);
+  const [studentSummary, setStudentSummary] =
+    React.useState<StudentTermSummaryData | null>(null);
   const [loadingSummary, setLoadingSummary] = React.useState(false);
 
   React.useEffect(() => {
@@ -243,7 +244,9 @@ export default function ResultsIndexPage() {
     return max > 0 ? max : 3;
   }, [currentSubjectRows]);
 
-  const [selectedSummaries, setSelectedSummaries] = React.useState<string[]>([]);
+  const [selectedSummaries, setSelectedSummaries] = React.useState<string[]>(
+    [],
+  );
   const allSummariesSelected =
     summaries.length > 0 && selectedSummaries.length === summaries.length;
   function toggleSummary(id: string) {
@@ -256,10 +259,21 @@ export default function ResultsIndexPage() {
     else setSelectedSummaries(summaries.map((s) => s.student_id));
   }
   function exportSelectedSummaries() {
-    const target = summaries.filter((s) => selectedSummaries.includes(s.student_id));
+    const target = summaries.filter((s) =>
+      selectedSummaries.includes(s.student_id),
+    );
     if (!target.length) return;
     const csv = [
-      ["Rank", "Student", "Code", "Total Weighted", "Total Coeff", "Average", "Grade", "Status"].join(","),
+      [
+        "Rank",
+        "Student",
+        "Code",
+        "Total Weighted",
+        "Total Coeff",
+        "Average",
+        "Grade",
+        "Status",
+      ].join(","),
       ...target.map((s) =>
         [
           s.position ?? "",
@@ -282,7 +296,9 @@ export default function ResultsIndexPage() {
     URL.revokeObjectURL(url);
   }
 
-  const [selectedSubjectRows, setSelectedSubjectRows] = React.useState<string[]>([]);
+  const [selectedSubjectRows, setSelectedSubjectRows] = React.useState<
+    string[]
+  >([]);
   const allSubjectRowsSelected =
     currentSubjectRows.length > 0 &&
     selectedSubjectRows.length === currentSubjectRows.length;
@@ -301,9 +317,19 @@ export default function ResultsIndexPage() {
     );
     if (!target.length) return;
     const csv = [
-      ["Student", "CA Avg", "Exam", "Subject Mark", "Coeff", "Weighted", "Grade"].join(","),
+      [
+        "Student",
+        "CA Avg",
+        "Exam",
+        "Subject Mark",
+        "Coeff",
+        "Weighted",
+        "Grade",
+      ].join(","),
       ...target.map((r) => {
-        const studentSummaryObj = summaries.find((s) => s.student_id === r.student_id);
+        const studentSummaryObj = summaries.find(
+          (s) => s.student_id === r.student_id,
+        );
         const studentName = studentSummaryObj?.student_name ?? "Student";
         return [
           `"${studentName}"`,
@@ -330,7 +356,7 @@ export default function ResultsIndexPage() {
     setSuccess("");
     setValidating(true);
     const valRes = await validateResultsCalculation({
-    class_id: classId,
+      class_id: classId,
       term_id: termId || null,
     });
     setValidating(false);
@@ -400,7 +426,11 @@ export default function ResultsIndexPage() {
   }
 
   async function handleLock() {
-    if (!confirm("Are you sure you want to lock these results? Locked results cannot be modified or recomputed.")) {
+    if (
+      !confirm(
+        "Are you sure you want to lock these results? Locked results cannot be modified or recomputed.",
+      )
+    ) {
       return;
     }
     setError("");
@@ -417,7 +447,12 @@ export default function ResultsIndexPage() {
     await loadResults();
   }
 
-  async function openBreakdown(studentId: string, subjId: string, sName: string, subName: string) {
+  async function openBreakdown(
+    studentId: string,
+    subjId: string,
+    sName: string,
+    subName: string,
+  ) {
     setBreakdownStudentName(sName);
     setBreakdownSubjectName(subName);
     setLoadingBreakdown(true);
@@ -460,7 +495,7 @@ export default function ResultsIndexPage() {
       title="Results Processing"
       breadcrumb={["Academic Management", "Results Processing"]}
       heading="Results Processing"
-      subtitle="View, compute, review, and approve student results with school-configurable formulas."
+      subtitle="Term results (sequence averages × coefficients). Sequence correction/final sheets and bulk process are linked below."
     >
       {error ? (
         <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -473,51 +508,72 @@ export default function ResultsIndexPage() {
         </div>
       ) : null}
 
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Link
+          href="/academic/results/sequences"
+          className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Sequence result sheets
+        </Link>
+        <Link
+          href="/academic/results/process"
+          className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Process / bulk process
+        </Link>
+        <Link
+          href="/academic/results/annual"
+          className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Annual results
+        </Link>
+      </div>
+
       {/* Filter controls bar */}
       <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Class
+                Class
               </label>
-            <select
+              <select
                 className={`mt-1 min-w-44 ${selectClass}`}
-              value={classId}
-              onChange={(e) => setClassId(e.target.value)}
-            >
-              <option value="">Select class</option>
-              {(meta?.classes ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+                value={classId}
+                onChange={(e) => setClassId(e.target.value)}
+              >
+                <option value="">Select class</option>
+                {(meta?.classes ?? []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
                 Term
               </label>
-            <select
+              <select
                 className={`mt-1 min-w-36 ${selectClass}`}
-              value={termId}
-              onChange={(e) => setTermId(e.target.value)}
-            >
-              <option value="">All terms</option>
-              {(meta?.terms ?? []).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+                value={termId}
+                onChange={(e) => setTermId(e.target.value)}
+              >
+                <option value="">All terms</option>
+                {(meta?.terms ?? []).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {viewMode === "subject_sheet" ? (
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Subject
-          </label>
+                </label>
                 <select
                   className={`mt-1 min-w-44 ${selectClass}`}
                   value={subjectId}
@@ -532,21 +588,21 @@ export default function ResultsIndexPage() {
                 </select>
               </div>
             ) : null}
-        </div>
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
-          <Link
+            <Link
               href="/academic/results/calculation-settings"
               className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300"
-          >
+            >
               Calculation Settings
-          </Link>
-          <Link
+            </Link>
+            <Link
               href="/academic/results/coefficients"
               className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:border-slate-300"
-          >
+            >
               Subject Coefficients
-          </Link>
+            </Link>
           </div>
         </div>
       </div>
@@ -554,7 +610,9 @@ export default function ResultsIndexPage() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading results…</p>
       ) : !classId ? (
-        <p className="text-sm text-slate-500">Select a class to view and process results.</p>
+        <p className="text-sm text-slate-500">
+          Select a class to view and process results.
+        </p>
       ) : (
         <>
           {/* Top Section: Class Summary Header & Calculation Method Compact Card */}
@@ -564,74 +622,111 @@ export default function ResultsIndexPage() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 gap-2">
                 <div>
                   <h2 className="text-base font-bold text-slate-900 uppercase tracking-wide">
-                    {selectedClassObj?.name ?? "Class"} — {selectedTermObj?.name ?? "Term"} Results
+                    {selectedClassObj?.name ?? "Class"} —{" "}
+                    {selectedTermObj?.name ?? "Term"} Results
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    Academic Year 2026/2027 · Formula: CA {calcProfile?.ca_weight ?? 40}% + Exam {calcProfile?.exam_weight ?? 60}% · Pass Mark: {calcProfile?.pass_mark ?? 10}/20
+                    Academic Year 2026/2027 · Formula: CA{" "}
+                    {calcProfile?.ca_weight ?? 40}% + Exam{" "}
+                    {calcProfile?.exam_weight ?? 60}% · Pass Mark:{" "}
+                    {calcProfile?.pass_mark ?? 10}/20
                   </p>
                 </div>
                 <div>
-            {run ? (
+                  {run ? (
                     <div className="flex items-center gap-2">
-                <StatusBadge status={run.status} />
+                      <StatusBadge status={run.status} />
                       {run.calculation_version ? (
-                        <span className="text-xs text-slate-400 font-mono">v{run.calculation_version}</span>
-                ) : null}
+                        <span className="text-xs text-slate-400 font-mono">
+                          v{run.calculation_version}
+                        </span>
+                      ) : null}
                     </div>
                   ) : (
-                    <span className="text-xs font-semibold text-slate-400">Not Computed</span>
+                    <span className="text-xs font-semibold text-slate-400">
+                      Not Computed
+                    </span>
                   )}
                 </div>
-          </div>
+              </div>
 
               {/* Statistics Grid */}
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8 text-center">
                 <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
-                  <p className="text-[11px] font-medium uppercase text-slate-500">Students</p>
+                  <p className="text-[11px] font-medium uppercase text-slate-500">
+                    Students
+                  </p>
                   <p className="mt-0.5 text-base font-bold text-slate-900">
                     {classSummary?.total_students ?? summaries.length}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
-                  <p className="text-[11px] font-medium uppercase text-slate-500">Processed</p>
+                  <p className="text-[11px] font-medium uppercase text-slate-500">
+                    Processed
+                  </p>
                   <p className="mt-0.5 text-base font-bold text-slate-900">
-                    {classSummary?.processed_students ?? (run ? summaries.length : 0)}
+                    {classSummary?.processed_students ??
+                      (run ? summaries.length : 0)}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
-                  <p className="text-[11px] font-medium uppercase text-slate-500">Incomplete</p>
+                  <p className="text-[11px] font-medium uppercase text-slate-500">
+                    Incomplete
+                  </p>
                   <p className="mt-0.5 text-base font-bold text-amber-600">
                     {classSummary?.incomplete_students ?? 0}
                   </p>
                 </div>
                 <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
-                  <p className="text-[11px] font-medium uppercase text-emerald-700">Passed</p>
+                  <p className="text-[11px] font-medium uppercase text-emerald-700">
+                    Passed
+                  </p>
                   <p className="mt-0.5 text-base font-bold text-emerald-800">
-                    {classSummary?.passed_students ?? summaries.filter((s) => s.average >= (calcProfile?.pass_mark ?? 10)).length}
+                    {classSummary?.passed_students ??
+                      summaries.filter(
+                        (s) => s.average >= (calcProfile?.pass_mark ?? 10),
+                      ).length}
                   </p>
                 </div>
                 <div className="rounded-xl border border-red-100 bg-red-50/60 p-2.5">
-                  <p className="text-[11px] font-medium uppercase text-red-700">Failed</p>
+                  <p className="text-[11px] font-medium uppercase text-red-700">
+                    Failed
+                  </p>
                   <p className="mt-0.5 text-base font-bold text-red-800">
-                    {classSummary?.failed_students ?? summaries.filter((s) => s.average < (calcProfile?.pass_mark ?? 10)).length}
+                    {classSummary?.failed_students ??
+                      summaries.filter(
+                        (s) => s.average < (calcProfile?.pass_mark ?? 10),
+                      ).length}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
-                  <p className="text-[11px] font-medium uppercase text-slate-500">Class Avg</p>
+                  <p className="text-[11px] font-medium uppercase text-slate-500">
+                    Class Avg
+                  </p>
                   <p className="mt-0.5 text-base font-bold text-(--sofia-primary)">
-                    {classSummary?.class_average != null ? `${formatScore(classSummary.class_average)}/20` : "—"}
+                    {classSummary?.class_average != null
+                      ? `${formatScore(classSummary.class_average)}/20`
+                      : "—"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
-                  <p className="text-[11px] font-medium uppercase text-slate-500">Highest</p>
+                  <p className="text-[11px] font-medium uppercase text-slate-500">
+                    Highest
+                  </p>
                   <p className="mt-0.5 text-base font-bold text-slate-900">
-                    {classSummary?.highest_average != null ? formatScore(classSummary.highest_average) : "—"}
+                    {classSummary?.highest_average != null
+                      ? formatScore(classSummary.highest_average)
+                      : "—"}
                   </p>
                 </div>
                 <div className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
-                  <p className="text-[11px] font-medium uppercase text-slate-500">Lowest</p>
+                  <p className="text-[11px] font-medium uppercase text-slate-500">
+                    Lowest
+                  </p>
                   <p className="mt-0.5 text-base font-bold text-slate-900">
-                    {classSummary?.lowest_average != null ? formatScore(classSummary.lowest_average) : "—"}
+                    {classSummary?.lowest_average != null
+                      ? formatScore(classSummary.lowest_average)
+                      : "—"}
                   </p>
                 </div>
               </div>
@@ -654,20 +749,27 @@ export default function ResultsIndexPage() {
                 <div className="mt-3 space-y-1.5 text-slate-600">
                   <div className="flex justify-between">
                     <span>Continuous Assessment:</span>
-                    <span className="font-bold text-slate-900">{calcProfile?.ca_weight ?? 40}%</span>
+                    <span className="font-bold text-slate-900">
+                      {calcProfile?.ca_weight ?? 40}%
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Examination:</span>
-                    <span className="font-bold text-slate-900">{calcProfile?.exam_weight ?? 60}%</span>
+                    <span className="font-bold text-slate-900">
+                      {calcProfile?.exam_weight ?? 60}%
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Pass Mark:</span>
-                    <span className="font-bold text-slate-900">{calcProfile?.pass_mark ?? 10}/20</span>
+                    <span className="font-bold text-slate-900">
+                      {calcProfile?.pass_mark ?? 10}/20
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Sequence Method:</span>
                     <span className="font-semibold text-slate-900 capitalize">
-                      {calcProfile?.sequence_method?.replace("_", " ") ?? "Simple Average"}
+                      {calcProfile?.sequence_method?.replace("_", " ") ??
+                        "Simple Average"}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -727,7 +829,12 @@ export default function ResultsIndexPage() {
 
               <button
                 type="button"
-                disabled={!run || run.status === "locked" || run.status === "approved" || run.status === "published"}
+                disabled={
+                  !run ||
+                  run.status === "locked" ||
+                  run.status === "approved" ||
+                  run.status === "published"
+                }
                 onClick={() => void handleApprove()}
                 className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
@@ -736,7 +843,9 @@ export default function ResultsIndexPage() {
 
               <button
                 type="button"
-                disabled={!run || run.status === "locked" || run.status === "published"}
+                disabled={
+                  !run || run.status === "locked" || run.status === "published"
+                }
                 onClick={() => void handlePublish()}
                 className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
@@ -761,8 +870,8 @@ export default function ResultsIndexPage() {
               <ClientPaginatedTable
                 wrapClassName="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs"
                 head={
-              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <tr>
+                  <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
                       <th className="px-4 py-3.5 text-center">
                         <input
                           type="checkbox"
@@ -770,7 +879,8 @@ export default function ResultsIndexPage() {
                           ref={(el) => {
                             if (el)
                               el.indeterminate =
-                                selectedSummaries.length > 0 && !allSummariesSelected;
+                                selectedSummaries.length > 0 &&
+                                !allSummariesSelected;
                           }}
                           onChange={toggleAllSummaries}
                           aria-label="Select all"
@@ -784,104 +894,113 @@ export default function ResultsIndexPage() {
                       <th className="px-4 py-3.5 text-center">Grade</th>
                       <th className="px-4 py-3.5 text-center">Status</th>
                       <th className="px-5 py-3.5 text-right">Action</th>
-                </tr>
-              </thead>
+                    </tr>
+                  </thead>
                 }
               >
                 {summaries.length === 0 ? (
                   <tr>
-                        <td colSpan={9} className="px-5 py-12 text-center text-slate-500">
-                          No processed results found for this class and term.
-                          <div className="mt-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleStartCalculate()}
-                              className="inline-flex items-center gap-1 rounded-xl bg-(--sofia-primary) px-4 py-2 text-xs font-semibold text-white shadow-xs"
-                            >
-                              <Icon icon={Calculator01Icon} size={14} />
-                              Calculate Results Now
-                            </button>
-                          </div>
+                    <td
+                      colSpan={9}
+                      className="px-5 py-12 text-center text-slate-500"
+                    >
+                      No processed results found for this class and term.
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleStartCalculate()}
+                          className="inline-flex items-center gap-1 rounded-xl bg-(--sofia-primary) px-4 py-2 text-xs font-semibold text-white shadow-xs"
+                        >
+                          <Icon icon={Calculator01Icon} size={14} />
+                          Calculate Results Now
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                      summaries.map((s) => {
-                        const isPass =
-                          s.status === "PASSED" ||
-                          (s.status == null && s.average >= (calcProfile?.pass_mark ?? 10));
-                        return (
-                          <tr
-                            key={s.student_id}
-                            className="hover:bg-slate-50/70 transition cursor-pointer"
-                            onClick={() => void openStudentSummary(s.student_id)}
-                          >
-                            <td
-                              className="px-4 py-3.5 text-center"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedSummaries.includes(s.student_id)}
-                                onChange={() => toggleSummary(s.student_id)}
-                              />
-                      </td>
-                            <td className="px-4 py-3.5 text-center font-bold text-slate-700">
-                              {s.position != null ? (
-                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-800">
-                                  {s.position}
-                                </span>
-                              ) : (
-                                "—"
-                              )}
-                            </td>
-                            <td className="px-5 py-3.5">
-                              <span className="font-semibold text-slate-900 hover:text-(--sofia-primary)">
-                          {s.student_name}
-                        </span>
-                        {s.student_code ? (
-                                <span className="ml-2 font-mono text-xs text-slate-400">
-                            {s.student_code}
+                  summaries.map((s) => {
+                    const isPass =
+                      s.status === "PASSED" ||
+                      (s.status == null &&
+                        s.average >= (calcProfile?.pass_mark ?? 10));
+                    return (
+                      <tr
+                        key={s.student_id}
+                        className="hover:bg-slate-50/70 transition cursor-pointer"
+                        onClick={() => void openStudentSummary(s.student_id)}
+                      >
+                        <td
+                          className="px-4 py-3.5 text-center"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedSummaries.includes(s.student_id)}
+                            onChange={() => toggleSummary(s.student_id)}
+                          />
+                        </td>
+                        <td className="px-4 py-3.5 text-center font-bold text-slate-700">
+                          {s.position != null ? (
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-800">
+                              {s.position}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className="font-semibold text-slate-900 hover:text-(--sofia-primary)">
+                            {s.student_name}
                           </span>
-                        ) : null}
-                      </td>
-                            <td className="px-4 py-3.5 text-right font-medium text-slate-700">
-                              {formatScore(s.total_weighted_marks ?? s.total)}
-                      </td>
-                            <td className="px-4 py-3.5 text-center font-mono text-xs text-slate-600">
-                              {s.total_coefficients != null ? formatScore(s.total_coefficients, 1) : "—"}
-                      </td>
-                            <td className="px-4 py-3.5 text-right font-bold text-(--sofia-primary)">
-                              {formatScore(s.average)} <span className="text-xs font-normal text-slate-400">/20</span>
-                            </td>
-                            <td className="px-4 py-3.5 text-center font-bold text-slate-800">
-                        {s.grade ?? "—"}
-                      </td>
-                            <td className="px-4 py-3.5 text-center">
-                              <span
-                                className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                                  isPass
-                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                    : "bg-red-50 text-red-700 border border-red-200"
-                                }`}
-                              >
-                                {s.status ?? (isPass ? "PASSED" : "FAILED")}
-                              </span>
-                            </td>
-                            <td className="px-5 py-3.5 text-right">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void openStudentSummary(s.student_id);
-                                }}
-                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-slate-300"
-                              >
-                                Term Summary →
-                              </button>
-                            </td>
-                    </tr>
-                        );
-                      })
+                          {s.student_code ? (
+                            <span className="ml-2 font-mono text-xs text-slate-400">
+                              {s.student_code}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-medium text-slate-700">
+                          {formatScore(s.total_weighted_marks ?? s.total)}
+                        </td>
+                        <td className="px-4 py-3.5 text-center font-mono text-xs text-slate-600">
+                          {s.total_coefficients != null
+                            ? formatScore(s.total_coefficients, 1)
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-bold text-(--sofia-primary)">
+                          {formatScore(s.average)}{" "}
+                          <span className="text-xs font-normal text-slate-400">
+                            /20
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5 text-center font-bold text-slate-800">
+                          {s.grade ?? "—"}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                              isPass
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : "bg-red-50 text-red-700 border border-red-200"
+                            }`}
+                          >
+                            {s.status ?? (isPass ? "PASSED" : "FAILED")}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void openStudentSummary(s.student_id);
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-slate-300"
+                          >
+                            Term Summary →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </ClientPaginatedTable>
               <TableSelectionBar
@@ -923,7 +1042,9 @@ export default function ResultsIndexPage() {
                           aria-label="Select all"
                         />
                       </th>
-                      <th className="px-5 py-3.5 sticky left-12 bg-slate-50 z-10">Student</th>
+                      <th className="px-5 py-3.5 sticky left-12 bg-slate-50 z-10">
+                        Student
+                      </th>
                       {Array.from({ length: maxSequences }).map((_, i) => (
                         <th key={i} className="px-3 py-3.5 text-center">
                           Seq {i + 1}
@@ -940,107 +1061,117 @@ export default function ResultsIndexPage() {
                   </thead>
                 }
               >
-                    {currentSubjectRows.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={maxSequences + 8}
-                          className="px-5 py-12 text-center text-slate-500"
-                        >
-                          {subjectId
-                            ? "No marks recorded for this subject yet."
-                            : "Please select a subject from the filter bar above."}
-                        </td>
-                      </tr>
-                    ) : (
-                      currentSubjectRows.map((r) => {
-                        const studentSummaryObj = summaries.find(
-                          (s) => s.student_id === r.student_id,
-                        );
-                        const studentName = studentSummaryObj?.student_name ?? "Student";
+                {currentSubjectRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={maxSequences + 8}
+                      className="px-5 py-12 text-center text-slate-500"
+                    >
+                      {subjectId
+                        ? "No marks recorded for this subject yet."
+                        : "Please select a subject from the filter bar above."}
+                    </td>
+                  </tr>
+                ) : (
+                  currentSubjectRows.map((r) => {
+                    const studentSummaryObj = summaries.find(
+                      (s) => s.student_id === r.student_id,
+                    );
+                    const studentName =
+                      studentSummaryObj?.student_name ?? "Student";
 
-                        return (
-                          <tr
-                            key={r.student_id}
-                            className="hover:bg-slate-50/70 transition cursor-pointer"
-                            onClick={() =>
+                    return (
+                      <tr
+                        key={r.student_id}
+                        className="hover:bg-slate-50/70 transition cursor-pointer"
+                        onClick={() =>
+                          void openBreakdown(
+                            r.student_id,
+                            r.subject_id,
+                            studentName,
+                            r.subject_name ?? "Subject",
+                          )
+                        }
+                      >
+                        <td
+                          className="px-4 py-3.5 sticky left-0 bg-white z-20 text-center shadow-xs"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedSubjectRows.includes(r.student_id)}
+                            onChange={() => toggleSubjectRow(r.student_id)}
+                          />
+                        </td>
+                        <td className="px-5 py-3.5 sticky left-12 bg-white font-medium text-slate-900 z-10 shadow-xs">
+                          <span className="hover:text-(--sofia-primary)">
+                            {studentName}
+                          </span>
+                        </td>
+                        {Array.from({ length: maxSequences }).map((_, i) => {
+                          const seq = r.sequence_scores?.[i];
+                          return (
+                            <td
+                              key={i}
+                              className="px-3 py-3.5 text-center text-slate-600 font-mono text-xs"
+                            >
+                              {seq ? (
+                                seq.status === "absent" ? (
+                                  <span className="text-amber-600 font-sans text-[11px]">
+                                    Abs
+                                  </span>
+                                ) : seq.raw != null ? (
+                                  formatScore(seq.raw, 1)
+                                ) : (
+                                  "—"
+                                )
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-4 py-3.5 text-right font-medium text-slate-800">
+                          {formatScore(r.ca_average ?? r.ca_score)}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-medium text-slate-800">
+                          {formatScore(r.exam_score)}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-bold text-slate-900">
+                          {formatScore(r.subject_mark ?? r.total)}
+                        </td>
+                        <td className="px-3 py-3.5 text-center font-mono text-xs text-slate-600">
+                          {r.coefficient ?? 1}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-bold text-(--sofia-primary)">
+                          {formatScore(
+                            r.weighted_mark ?? r.total * (r.coefficient ?? 1),
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 text-center font-bold text-slate-700">
+                          {r.grade ?? "—"}
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
                               void openBreakdown(
                                 r.student_id,
                                 r.subject_id,
                                 studentName,
                                 r.subject_name ?? "Subject",
-                              )
-                            }
-                          >
-                            <td
-                              className="px-4 py-3.5 sticky left-0 bg-white z-20 text-center shadow-xs"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedSubjectRows.includes(r.student_id)}
-                                onChange={() => toggleSubjectRow(r.student_id)}
-                              />
-                            </td>
-                            <td className="px-5 py-3.5 sticky left-12 bg-white font-medium text-slate-900 z-10 shadow-xs">
-                              <span className="hover:text-(--sofia-primary)">{studentName}</span>
-                            </td>
-                            {Array.from({ length: maxSequences }).map((_, i) => {
-                              const seq = r.sequence_scores?.[i];
-                              return (
-                                <td key={i} className="px-3 py-3.5 text-center text-slate-600 font-mono text-xs">
-                                  {seq ? (
-                                    seq.status === "absent" ? (
-                                      <span className="text-amber-600 font-sans text-[11px]">Abs</span>
-                                    ) : seq.raw != null ? (
-                                      formatScore(seq.raw, 1)
-                                    ) : (
-                                      "—"
-                                    )
-                                  ) : (
-                                    "—"
-                                  )}
-                                </td>
                               );
-                            })}
-                            <td className="px-4 py-3.5 text-right font-medium text-slate-800">
-                              {formatScore(r.ca_average ?? r.ca_score)}
-                            </td>
-                            <td className="px-4 py-3.5 text-right font-medium text-slate-800">
-                              {formatScore(r.exam_score)}
-                            </td>
-                            <td className="px-4 py-3.5 text-right font-bold text-slate-900">
-                              {formatScore(r.subject_mark ?? r.total)}
-                            </td>
-                            <td className="px-3 py-3.5 text-center font-mono text-xs text-slate-600">
-                              {r.coefficient ?? 1}
-                            </td>
-                            <td className="px-4 py-3.5 text-right font-bold text-(--sofia-primary)">
-                              {formatScore(r.weighted_mark ?? (r.total * (r.coefficient ?? 1)))}
-                            </td>
-                            <td className="px-4 py-3.5 text-center font-bold text-slate-700">
-                              {r.grade ?? "—"}
-                            </td>
-                            <td className="px-5 py-3.5 text-right">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void openBreakdown(
-                                    r.student_id,
-                                    r.subject_id,
-                                    studentName,
-                                    r.subject_name ?? "Subject",
-                                  );
-                                }}
-                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-slate-300"
-                              >
-                                Breakdown →
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-slate-300"
+                          >
+                            Breakdown →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </ClientPaginatedTable>
               <TableSelectionBar
                 totalCount={currentSubjectRows.length}
@@ -1067,7 +1198,9 @@ export default function ResultsIndexPage() {
       {showConfirmModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-2xs">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-            <h3 className="text-base font-bold text-slate-900">Calculate Results?</h3>
+            <h3 className="text-base font-bold text-slate-900">
+              Calculate Results?
+            </h3>
             <p className="mt-2 text-xs text-slate-500">
               Sofia will calculate results using the active formula:
             </p>
@@ -1075,20 +1208,27 @@ export default function ResultsIndexPage() {
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs space-y-2">
               <div className="flex justify-between">
                 <span className="text-slate-600">Continuous Assessment:</span>
-                <span className="font-bold text-slate-900">{calcProfile?.ca_weight ?? 40}%</span>
+                <span className="font-bold text-slate-900">
+                  {calcProfile?.ca_weight ?? 40}%
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600">Examination:</span>
-                <span className="font-bold text-slate-900">{calcProfile?.exam_weight ?? 60}%</span>
+                <span className="font-bold text-slate-900">
+                  {calcProfile?.exam_weight ?? 60}%
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600">Pass Mark:</span>
-                <span className="font-bold text-slate-900">{calcProfile?.pass_mark ?? 10} / 20</span>
+                <span className="font-bold text-slate-900">
+                  {calcProfile?.pass_mark ?? 10} / 20
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-600">Sequence Method:</span>
                 <span className="font-semibold text-slate-900 capitalize">
-                  {calcProfile?.sequence_method?.replace("_", " ") ?? "Simple Average"}
+                  {calcProfile?.sequence_method?.replace("_", " ") ??
+                    "Simple Average"}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -1106,14 +1246,20 @@ export default function ResultsIndexPage() {
               <div className="flex justify-between text-slate-500 text-[11px]">
                 <span>Scope:</span>
                 <span>
-                  {validationResult?.validation.total_students ?? summaries.length} students · {validationResult?.validation.total_subjects ?? availableSubjects.length} subjects
+                  {validationResult?.validation.total_students ??
+                    summaries.length}{" "}
+                  students ·{" "}
+                  {validationResult?.validation.total_subjects ??
+                    availableSubjects.length}{" "}
+                  subjects
                 </span>
               </div>
             </div>
 
             {run && (run.status === "approved" || run.status === "locked") ? (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                ⚠ Warning: This run is currently <strong>{run.status}</strong>. Calculating will update the computed dataset.
+                ⚠ Warning: This run is currently <strong>{run.status}</strong>.
+                Calculating will update the computed dataset.
               </div>
             ) : null}
 
@@ -1157,34 +1303,59 @@ export default function ResultsIndexPage() {
             <div className="mt-4 space-y-2.5 text-xs">
               <div className="flex items-center gap-2 text-emerald-700">
                 <Icon icon={CheckmarkCircle02Icon} size={16} />
-                <span>{validationResult.validation.total_students} students enrolled</span>
+                <span>
+                  {validationResult.validation.total_students} students enrolled
+                </span>
               </div>
               <div className="flex items-center gap-2 text-emerald-700">
                 <Icon icon={CheckmarkCircle02Icon} size={16} />
-                <span>{validationResult.validation.total_subjects} subjects configured</span>
+                <span>
+                  {validationResult.validation.total_subjects} subjects
+                  configured
+                </span>
               </div>
               <div className="flex items-center gap-2 text-emerald-700">
                 <Icon icon={CheckmarkCircle02Icon} size={16} />
-                <span>Assessment weights = {validationResult.validation.assessment_weights_total}%</span>
+                <span>
+                  Assessment weights ={" "}
+                  {validationResult.validation.assessment_weights_total}%
+                </span>
               </div>
 
-              {[...validationResult.validation.blocking_issues, ...validationResult.validation.warnings].length > 0 ? (
+              {[
+                ...validationResult.validation.blocking_issues,
+                ...validationResult.validation.warnings,
+              ].length > 0 ? (
                 <div className="mt-3 space-y-2">
-                  <p className="font-semibold text-slate-700">Identified Issues:</p>
+                  <p className="font-semibold text-slate-700">
+                    Identified Issues:
+                  </p>
                   <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                    {[...validationResult.validation.blocking_issues, ...validationResult.validation.warnings].map((issue: { type: string; message: string }, idx: number) => (
-                      <div
-                        key={idx}
-                        className={`flex items-start gap-2 rounded-xl p-2.5 text-xs ${
-                          issue.type === "blocking"
-                            ? "bg-red-50 text-red-700 border border-red-200"
-                            : "bg-amber-50 text-amber-800 border border-amber-200"
-                        }`}
-                      >
-                        <Icon icon={Alert02Icon} size={16} className="shrink-0 mt-0.5" />
-                        <span>{issue.message}</span>
-                      </div>
-                    ))}
+                    {[
+                      ...validationResult.validation.blocking_issues,
+                      ...validationResult.validation.warnings,
+                    ].map(
+                      (
+                        issue: { type: string; message: string },
+                        idx: number,
+                      ) => (
+                        <div
+                          key={idx}
+                          className={`flex items-start gap-2 rounded-xl p-2.5 text-xs ${
+                            issue.type === "blocking"
+                              ? "bg-red-50 text-red-700 border border-red-200"
+                              : "bg-amber-50 text-amber-800 border border-amber-200"
+                          }`}
+                        >
+                          <Icon
+                            icon={Alert02Icon}
+                            size={16}
+                            className="shrink-0 mt-0.5"
+                          />
+                          <span>{issue.message}</span>
+                        </div>
+                      ),
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -1246,7 +1417,9 @@ export default function ResultsIndexPage() {
             </div>
 
             {loadingBreakdown ? (
-              <p className="py-8 text-center text-xs text-slate-500">Loading breakdown…</p>
+              <p className="py-8 text-center text-xs text-slate-500">
+                Loading breakdown…
+              </p>
             ) : breakdown ? (
               <div className="mt-4 space-y-4 text-xs">
                 {/* Sequences */}
@@ -1255,14 +1428,29 @@ export default function ResultsIndexPage() {
                     SEQUENCE SCORES
                   </h4>
                   <div className="mt-2 space-y-1">
-                    {breakdown.sequence_details.map((seq: { name: string; status: string; raw: number | null; max: number }, i: number) => (
-                      <div key={i} className="flex justify-between text-slate-700">
-                        <span>{seq.name}:</span>
-                        <span className="font-mono font-semibold">
-                          {seq.status === "absent" ? "Absent" : `${formatScore(seq.raw, 1)} / ${seq.max}`}
-                        </span>
-                      </div>
-                    ))}
+                    {breakdown.sequence_details.map(
+                      (
+                        seq: {
+                          name: string;
+                          status: string;
+                          raw: number | null;
+                          max: number;
+                        },
+                        i: number,
+                      ) => (
+                        <div
+                          key={i}
+                          className="flex justify-between text-slate-700"
+                        >
+                          <span>{seq.name}:</span>
+                          <span className="font-mono font-semibold">
+                            {seq.status === "absent"
+                              ? "Absent"
+                              : `${formatScore(seq.raw, 1)} / ${seq.max}`}
+                          </span>
+                        </div>
+                      ),
+                    )}
                   </div>
                   <div className="mt-2 pt-2 border-t border-slate-200 flex justify-between font-bold text-slate-900">
                     <span>CA Average:</span>
@@ -1286,7 +1474,10 @@ export default function ResultsIndexPage() {
                   <div className="mt-2 flex justify-between text-slate-700">
                     <span>Exam Score:</span>
                     <span className="font-mono font-semibold">
-                      {formatScore(breakdown.exam_normalized ?? breakdown.exam_raw)} / 20
+                      {formatScore(
+                        breakdown.exam_normalized ?? breakdown.exam_raw,
+                      )}{" "}
+                      / 20
                     </span>
                   </div>
                   <div className="flex justify-between text-slate-500 text-[11px] mt-1">
@@ -1306,7 +1497,8 @@ export default function ResultsIndexPage() {
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    ({formatScore(breakdown.ca_contribution)} CA + {formatScore(breakdown.exam_contribution)} Exam)
+                    ({formatScore(breakdown.ca_contribution)} CA +{" "}
+                    {formatScore(breakdown.exam_contribution)} Exam)
                   </p>
                 </div>
 
@@ -1314,7 +1506,9 @@ export default function ResultsIndexPage() {
                 <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 text-indigo-900">
                   <div className="flex justify-between text-xs">
                     <span>Subject Coefficient:</span>
-                    <span className="font-mono font-bold">{breakdown.coefficient}</span>
+                    <span className="font-mono font-bold">
+                      {breakdown.coefficient}
+                    </span>
                   </div>
                   <div className="mt-2 pt-2 border-t border-indigo-200/60 flex justify-between text-xs font-bold">
                     <span>WEIGHTED SCORE:</span>
@@ -1323,7 +1517,8 @@ export default function ResultsIndexPage() {
                     </span>
                   </div>
                   <p className="text-[11px] text-indigo-700/80 mt-0.5">
-                    ({formatScore(breakdown.subject_mark)} × {breakdown.coefficient})
+                    ({formatScore(breakdown.subject_mark)} ×{" "}
+                    {breakdown.coefficient})
                   </p>
                 </div>
               </div>
@@ -1365,31 +1560,41 @@ export default function ResultsIndexPage() {
             </div>
 
             {loadingSummary ? (
-              <p className="py-8 text-center text-xs text-slate-500">Loading summary…</p>
+              <p className="py-8 text-center text-xs text-slate-500">
+                Loading summary…
+              </p>
             ) : studentSummary ? (
               <div className="mt-4 space-y-5 text-xs">
                 {/* Overall Score Box */}
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-center">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                    <p className="text-[11px] text-slate-500 uppercase font-medium">Total Weighted</p>
+                    <p className="text-[11px] text-slate-500 uppercase font-medium">
+                      Total Weighted
+                    </p>
                     <p className="mt-0.5 font-mono text-base font-bold text-slate-900">
                       {formatScore(studentSummary.total_weighted_marks)}
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                    <p className="text-[11px] text-slate-500 uppercase font-medium">Total Coeffs</p>
+                    <p className="text-[11px] text-slate-500 uppercase font-medium">
+                      Total Coeffs
+                    </p>
                     <p className="mt-0.5 font-mono text-base font-bold text-slate-900">
                       {formatScore(studentSummary.total_coefficients, 1)}
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                    <p className="text-[11px] text-slate-500 uppercase font-medium">Term Average</p>
+                    <p className="text-[11px] text-slate-500 uppercase font-medium">
+                      Term Average
+                    </p>
                     <p className="mt-0.5 font-mono text-base font-bold text-(--sofia-primary)">
                       {formatScore(studentSummary.term_average)} / 20
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-                    <p className="text-[11px] text-slate-500 uppercase font-medium">Status</p>
+                    <p className="text-[11px] text-slate-500 uppercase font-medium">
+                      Status
+                    </p>
                     <p className="mt-0.5">
                       <span
                         className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${
@@ -1423,19 +1628,44 @@ export default function ResultsIndexPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {studentSummary.subjects.map((sub: { subject_name: string; ca_average: number | null; exam_score: number | null; subject_mark: number | null; coefficient: number; weighted_mark: number | null; grade: string | null }, i: number) => (
-                          <tr key={i} className="hover:bg-slate-50">
-                            <td className="px-3 py-2 font-medium text-slate-900">{sub.subject_name}</td>
-                            <td className="px-2 py-2 text-right text-slate-600">{formatScore(sub.ca_average)}</td>
-                            <td className="px-2 py-2 text-right text-slate-600">{formatScore(sub.exam_score)}</td>
-                            <td className="px-2 py-2 text-right font-bold text-slate-900">{formatScore(sub.subject_mark)}</td>
-                            <td className="px-2 py-2 text-center font-mono">{sub.coefficient}</td>
-                            <td className="px-2 py-2 text-right font-bold text-(--sofia-primary)">
-                              {formatScore(sub.weighted_mark)}
-                            </td>
-                            <td className="px-2 py-2 text-center font-bold">{sub.grade ?? "—"}</td>
-                          </tr>
-                        ))}
+                        {studentSummary.subjects.map(
+                          (
+                            sub: {
+                              subject_name: string;
+                              ca_average: number | null;
+                              exam_score: number | null;
+                              subject_mark: number | null;
+                              coefficient: number;
+                              weighted_mark: number | null;
+                              grade: string | null;
+                            },
+                            i: number,
+                          ) => (
+                            <tr key={i} className="hover:bg-slate-50">
+                              <td className="px-3 py-2 font-medium text-slate-900">
+                                {sub.subject_name}
+                              </td>
+                              <td className="px-2 py-2 text-right text-slate-600">
+                                {formatScore(sub.ca_average)}
+                              </td>
+                              <td className="px-2 py-2 text-right text-slate-600">
+                                {formatScore(sub.exam_score)}
+                              </td>
+                              <td className="px-2 py-2 text-right font-bold text-slate-900">
+                                {formatScore(sub.subject_mark)}
+                              </td>
+                              <td className="px-2 py-2 text-center font-mono">
+                                {sub.coefficient}
+                              </td>
+                              <td className="px-2 py-2 text-right font-bold text-(--sofia-primary)">
+                                {formatScore(sub.weighted_mark)}
+                              </td>
+                              <td className="px-2 py-2 text-center font-bold">
+                                {sub.grade ?? "—"}
+                              </td>
+                            </tr>
+                          ),
+                        )}
                       </tbody>
                     </table>
                   </div>

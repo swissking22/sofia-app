@@ -195,6 +195,7 @@ export function markUnsupportedPendingAsFailed(
  * because they were previously unsupported so historical Setup data can push.
  */
 export function requeueFailedSupportedTables(db: Database.Database): number {
+  // Do not revive permanent tenant-mismatch failures (wrong-school leftovers).
   const result = db
     .prepare(
       `UPDATE sync_queue
@@ -202,10 +203,63 @@ export function requeueFailedSupportedTables(db: Database.Database): number {
            retry_count = 0,
            last_attempt_at = NULL
        WHERE status = 'failed'
-         AND table_name IN (${SUPPORTED_IN_LIST})`
+         AND table_name IN (${SUPPORTED_IN_LIST})
+         AND (
+           last_error IS NULL
+           OR lower(last_error) NOT LIKE '%tenant mismatch%'
+         )`
     )
     .run()
   return result.changes
+}
+
+/**
+ * Abandon outbox rows whose payload.school_id is not the authorized school.
+ * Marks them synced so background sync stops looping on them forever.
+ */
+export function discardForeignTenantSyncItems(
+  db: Database.Database,
+  authorizedSchoolId: string
+): number {
+  if (!authorizedSchoolId) return 0
+  const rows = db
+    .prepare(
+      `SELECT id, payload FROM sync_queue
+       WHERE status IN ('pending', 'failed')
+         AND table_name IN (${SUPPORTED_IN_LIST})`
+    )
+    .all() as Array<{ id: string; payload: string }>
+
+  let discarded = 0
+  const now = new Date().toISOString()
+  const mark = db.prepare(
+    `UPDATE sync_queue
+     SET status = 'synced',
+         last_attempt_at = ?,
+         last_error = ?
+     WHERE id = ?`
+  )
+
+  for (const row of rows) {
+    let payloadSchool: string | null = null
+    try {
+      const parsed = JSON.parse(row.payload) as { school_id?: unknown }
+      if (parsed?.school_id != null) {
+        payloadSchool = String(parsed.school_id)
+      }
+    } catch {
+      continue
+    }
+    if (payloadSchool && payloadSchool !== authorizedSchoolId) {
+      mark.run(
+        now,
+        `Abandoned: tenant mismatch (payload ${payloadSchool} ≠ ${authorizedSchoolId})`,
+        row.id
+      )
+      discarded += 1
+    }
+  }
+  return discarded
 }
 
 function tableColumns(db: Database.Database, table: string): Set<string> {

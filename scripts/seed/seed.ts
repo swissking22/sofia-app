@@ -6,6 +6,7 @@
  *   npm run seed -- --dev     # seeds Electron development sofia.db
  *   npm run seed -- --dev --reset
  *   npm run seed -- --dev --light-world-only   # add or repair LWM subjects
+ *   npx tsx scripts/seed/seedSunriseCaTerm1.ts --dev  # Sunrise Term 1 Seq 1+2 scores
  *
  * Demo login (per school):
  *   admin@greenfield.demo / Sofia@Demo1

@@ -6,7 +6,10 @@ import { getDatabasePath, queueDatabaseRestore } from '../db'
 import type { Repositories } from '../db/repositories'
 import { SystemAdminService } from '../services/system-admin'
 import { tryProvisionStaffAuth, type CloudAuthRole } from '../services/cloud-auth'
-import { prepareTeacherForMobile } from '../services/prepare-teacher-mobile'
+import {
+  prepareTeacherForMobile,
+  repairTeacherDesktopUsers,
+} from '../services/prepare-teacher-mobile'
 import {
   assertUserDeletable,
   buildPermissionMatrix,
@@ -18,24 +21,9 @@ import {
 } from '../db/sqlite-backup'
 import { scheduleTeacherReadySync } from '../sync/auto-sync'
 import { restartPeriodicSync } from '../sync/periodic-sync'
-import { runSyncWorkerUntilCaughtUp } from '../sync/worker'
-import type { SyncProgressEvent } from '../sync/progress'
+import { runBackgroundSync } from '../sync/session'
 import type { RoleWriteInput } from '../db/repositories/role.repository'
 import type { UserRole } from '../db/types'
-import type { IpcMainInvokeEvent } from 'electron'
-
-function emitSyncProgress(
-  event: IpcMainInvokeEvent,
-  progress: SyncProgressEvent
-): void {
-  try {
-    if (!event.sender.isDestroyed()) {
-      event.sender.send('sync:progress', progress)
-    }
-  } catch {
-    /* renderer gone */
-  }
-}
 
 type Result<T> = { ok: true; data: T; warning?: string } | { ok: false; error: string }
 
@@ -96,12 +84,19 @@ export function registerSystemAdminIpc(repos: Repositories): void {
 
   ipcMain.handle(
     'system-admin:users-list',
-    (_e, input?: Record<string, unknown>): Result<unknown> => {
+    async (_e, input?: Record<string, unknown>): Promise<Result<unknown>> => {
       const s = session()
       if (!s || !allow(repos, s, ['system.users.view'])) return { ok: false, error: 'Access denied.' }
+      const schoolId = sid(repos, s)
+      // Teachers created under Staff → Teachers need a users row for mobile + this list.
+      try {
+        await repairTeacherDesktopUsers(repos, schoolId)
+      } catch (err) {
+        console.warn('[system-admin:users-list] teacher membership repair failed', err)
+      }
       return {
         ok: true,
-        data: admin().listUsers(sid(repos, s), {
+        data: admin().listUsers(schoolId, {
           query: input?.query as string,
           role_id: input?.role_id as string,
           status: input?.status as string,
@@ -216,6 +211,7 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         let warning: string | null = null
         if (shaped.role === 'teacher' && input.staff_id) {
           warning = await prepareTeacherForMobile({
+            repos,
             schoolId,
             staffId: input.staff_id,
             email: shaped.email,
@@ -392,6 +388,7 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         let warning: string | null = null
         if (cloudRole === 'teacher' && user.user.staff_id) {
           warning = await prepareTeacherForMobile({
+            repos,
             schoolId,
             staffId: user.user.staff_id,
             email: user.user.email,
@@ -782,7 +779,7 @@ export function registerSystemAdminIpc(repos: Repositories): void {
 
   ipcMain.handle(
     'system-admin:sync-now',
-    async (event: IpcMainInvokeEvent): Promise<Result<unknown>> => {
+    async (): Promise<Result<unknown>> => {
       const s = session()
       if (!s || !allow(repos, s, ['system.sync.run']))
         return { ok: false, error: 'Access denied.' }
@@ -790,9 +787,9 @@ export function registerSystemAdminIpc(repos: Repositories): void {
       const started = Date.now()
       try {
         const { getDatabase } = await import('../db')
-        const result = await runSyncWorkerUntilCaughtUp(getDatabase(), {
+        const result = await runBackgroundSync(getDatabase(), {
           schoolId,
-          onProgress: (p) => emitSyncProgress(event, p),
+          trigger: 'manual',
         })
         repos.backupSync.markSyncResult(schoolId, result)
         const hasMore = Boolean(

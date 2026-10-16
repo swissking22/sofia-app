@@ -6,7 +6,10 @@ import type {
   ExamSessionStatus,
   ResultRunStatus,
 } from '../db/types'
-import { cameroonStandardSecondary20, hasPermission, profileLabel } from '../domain/results-calculation'
+import {
+  calculateAnnual,
+  hasPermission,
+} from '../domain/results-calculation'
 import {
   CAMEROON_20_BANDS,
   computeClassStats,
@@ -24,8 +27,18 @@ import {
   findTeacherClashes,
   isCommonSubjectAtLevel,
 } from '../domain/timetable'
-import { calculateClassResults } from '../services/results/result-calculation.service'
+import {
+  processAllClassesTermResults,
+  processClassTermResults,
+} from '../services/results/process-class-term'
+import {
+  calculateSequenceClassSheet,
+  sequenceNamesMatch,
+  type SequenceSheetKind,
+  type SequenceSortMode,
+} from '../services/results/sequence-results.service'
 import { assetToDataUrl } from '../helpers/school-assets'
+import type { SequenceScoreInput } from '../services/results/result-calculation.service'
 
 const DAY_LABELS: Record<number, string> = {
   1: 'Monday',
@@ -676,6 +689,442 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
     }
   )
 
+  /**
+   * Create one named assessment for a term across classes × subjects.
+   * Default: all school classes and every subject taught in each class.
+   */
+  ipcMain.handle(
+    'ca:open-sequence',
+    (
+      _e,
+      input: {
+        name: string
+        class_ids?: string[]
+        /** When true (default), use every class in the school. */
+        all_classes?: boolean
+        term_id?: string | null
+        weight_percent?: number
+        max_score?: number
+        assessment_date?: string | null
+        skip_existing?: boolean
+      }
+    ): Result<{
+      created: number
+      skipped: number
+      class_count: number
+      assessments: Array<{ id: string; class_id: string; subject_id: string; name: string }>
+    }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      const name = input?.name?.trim()
+      if (!name) return { ok: false, error: 'Assessment name is required.' }
+      if (!input?.term_id) {
+        return { ok: false, error: 'Select a term for this assessment.' }
+      }
+
+      const allClasses = input.all_classes !== false
+      const explicitIds = Array.isArray(input.class_ids)
+        ? [...new Set(input.class_ids.filter(Boolean))]
+        : []
+      const schoolClasses = repos.classes.findBySchool(schoolId)
+      const classIds = allClasses
+        ? schoolClasses.map((c) => c.id)
+        : explicitIds
+      if (!classIds.length) {
+        return {
+          ok: false,
+          error: allClasses
+            ? 'No classes found. Add classes in Academic Structure first.'
+            : 'Select at least one class.',
+        }
+      }
+
+      const maxScore = Number(input.max_score) > 0 ? Number(input.max_score) : 20
+      const weight =
+        Number(input.weight_percent) > 0 ? Number(input.weight_percent) : 50
+      const skipExisting = input.skip_existing !== false
+      const year = repos.academicYears.getSetupDto(schoolId)
+      const termId = input.term_id
+
+      const existing = repos.ca.findBySchool(schoolId)
+      let created = 0
+      let skipped = 0
+      const assessments: Array<{
+        id: string
+        class_id: string
+        subject_id: string
+        name: string
+      }> = []
+
+      for (const classId of classIds) {
+        const subjects = repos.subjects.findByClassId(classId)
+        if (!subjects.length) continue
+        for (const subject of subjects) {
+          const dup = existing.find(
+            (a) =>
+              a.class_id === classId &&
+              a.subject_id === subject.id &&
+              (a.term_id ?? null) === termId &&
+              a.name.trim().toLowerCase() === name.toLowerCase()
+          )
+          if (dup) {
+            if (skipExisting) {
+              skipped += 1
+              continue
+            }
+            return {
+              ok: false,
+              error: `“${name}” already exists for ${repos.classes.findById(classId)?.name ?? 'class'} / ${subject.name}.`,
+            }
+          }
+          const row = repos.ca.create({
+            school_id: schoolId,
+            name,
+            subject_id: subject.id,
+            class_id: classId,
+            term_id: termId,
+            academic_year_id: year?.id ?? null,
+            weight_percent: weight,
+            max_score: maxScore,
+            assessment_date:
+              input.assessment_date ?? new Date().toISOString().slice(0, 10),
+          })
+          existing.push(row)
+          assessments.push({
+            id: row.id,
+            class_id: classId,
+            subject_id: subject.id,
+            name: row.name,
+          })
+          created += 1
+        }
+      }
+
+      if (created === 0 && skipped === 0) {
+        return {
+          ok: false,
+          error: 'No subjects found on any class. Link subjects to classes first.',
+        }
+      }
+      return {
+        ok: true,
+        data: { created, skipped, class_count: classIds.length, assessments },
+      }
+    }
+  )
+
+  type CaSequenceStatus = 'inactive' | 'active' | 'complete'
+
+  function caSequenceStatus(
+    expectedSlots: number,
+    scoredSlots: number
+  ): CaSequenceStatus {
+    if (scoredSlots <= 0) return 'inactive'
+    if (expectedSlots > 0 && scoredSlots >= expectedSlots) return 'complete'
+    return 'active'
+  }
+
+  ipcMain.handle('ca:list-sequences', (): Result<
+    Array<{
+      name: string
+      term_id: string | null
+      term_name: string | null
+      max_score: number
+      created_at: string
+      sheet_count: number
+      class_count: number
+      expected_slots: number
+      scored_slots: number
+      status: CaSequenceStatus
+    }>
+  > => {
+    const schoolId = resolveSchoolId(repos)
+    if (!schoolId) return { ok: false, error: 'No school found.' }
+    const year = repos.academicYears.getSetupDto(schoolId)
+    const termMap = new Map(
+      (year?.terms ?? []).map((t) => [t.id, t.name] as const)
+    )
+    const rows = repos.ca.findBySchool(schoolId)
+    type Acc = {
+      name: string
+      term_id: string | null
+      max_score: number
+      created_at: string
+      sheet_count: number
+      classIds: Set<string>
+      expected_slots: number
+      scored_slots: number
+    }
+    const groups = new Map<string, Acc>()
+    const studentCountCache = new Map<string, number>()
+
+    for (const a of rows) {
+      const key = `${(a.term_id ?? '')}\0${a.name.trim().toLowerCase()}`
+      let g = groups.get(key)
+      if (!g) {
+        g = {
+          name: a.name.trim(),
+          term_id: a.term_id,
+          max_score: a.max_score,
+          created_at: a.created_at,
+          sheet_count: 0,
+          classIds: new Set(),
+          expected_slots: 0,
+          scored_slots: 0,
+        }
+        groups.set(key, g)
+      }
+      g.sheet_count += 1
+      g.classIds.add(a.class_id)
+      if (a.created_at < g.created_at) g.created_at = a.created_at
+      if (!studentCountCache.has(a.class_id)) {
+        studentCountCache.set(
+          a.class_id,
+          repos.students
+            .findByClassId(a.class_id)
+            .filter((s) => s.status === 'active').length
+        )
+      }
+      const expected = studentCountCache.get(a.class_id) ?? 0
+      g.expected_slots += expected
+      const scored = repos.ca
+        .findScores(a.id)
+        .filter((s) => s.score != null).length
+      g.scored_slots += Math.min(scored, expected || scored)
+    }
+
+    const data = [...groups.values()]
+      .map((g) => ({
+        name: g.name,
+        term_id: g.term_id,
+        term_name: g.term_id ? termMap.get(g.term_id) ?? null : null,
+        max_score: g.max_score,
+        created_at: g.created_at,
+        sheet_count: g.sheet_count,
+        class_count: g.classIds.size,
+        expected_slots: g.expected_slots,
+        scored_slots: g.scored_slots,
+        status: caSequenceStatus(g.expected_slots, g.scored_slots),
+      }))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+
+    return { ok: true, data }
+  })
+
+  ipcMain.handle(
+    'ca:get-sequence',
+    (
+      _e,
+      input: { name: string; term_id: string }
+    ): Result<{
+      name: string
+      term_id: string
+      term_name: string | null
+      max_score: number
+      status: CaSequenceStatus
+      classes: Array<{ id: string; name: string }>
+      sheets: Array<{
+        id: string
+        class_id: string
+        class_name: string | null
+        subject_id: string
+        subject_name: string | null
+        max_score: number
+      }>
+    }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      const name = input?.name?.trim()
+      if (!name) return { ok: false, error: 'Sequence name is required.' }
+      if (!input?.term_id) return { ok: false, error: 'Term is required.' }
+
+      const year = repos.academicYears.getSetupDto(schoolId)
+      const termName =
+        year?.terms.find((t) => t.id === input.term_id)?.name ?? null
+      const nameKey = name.toLowerCase()
+      const sheets = repos.ca
+        .findBySchool(schoolId)
+        .filter(
+          (a) =>
+            (a.term_id ?? null) === input.term_id &&
+            a.name.trim().toLowerCase() === nameKey
+        )
+      if (!sheets.length) {
+        return { ok: false, error: 'Sequence not found for this term.' }
+      }
+
+      let expected = 0
+      let scored = 0
+      const classMap = new Map<string, string>()
+      const sheetDtos: Array<{
+        id: string
+        class_id: string
+        class_name: string | null
+        subject_id: string
+        subject_name: string | null
+        max_score: number
+      }> = []
+
+      for (const a of sheets) {
+        const className = repos.classes.findById(a.class_id)?.name ?? null
+        if (className) classMap.set(a.class_id, className)
+        else classMap.set(a.class_id, className ?? '—')
+        const students = repos.students
+          .findByClassId(a.class_id)
+          .filter((s) => s.status === 'active')
+        expected += students.length
+        scored += repos.ca
+          .findScores(a.id)
+          .filter((s) => s.score != null).length
+        sheetDtos.push({
+          id: a.id,
+          class_id: a.class_id,
+          class_name: className,
+          subject_id: a.subject_id,
+          subject_name:
+            repos.subjects.findById(a.subject_id)?.name ?? null,
+          max_score: a.max_score,
+        })
+      }
+
+      sheetDtos.sort((a, b) => {
+        const c = (a.class_name ?? '').localeCompare(b.class_name ?? '')
+        if (c !== 0) return c
+        return (a.subject_name ?? '').localeCompare(b.subject_name ?? '')
+      })
+
+      const classes = [...classMap.entries()]
+        .map(([id, n]) => ({ id, name: n }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      return {
+        ok: true,
+        data: {
+          name: sheets[0].name.trim(),
+          term_id: input.term_id,
+          term_name: termName,
+          max_score: sheets[0].max_score,
+          status: caSequenceStatus(expected, scored),
+          classes,
+          sheets: sheetDtos,
+        },
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ca:update-sequence',
+    (
+      _e,
+      input: {
+        name: string
+        term_id: string
+        new_name?: string
+        max_score?: number
+      }
+    ): Result<{ updated: number; name: string; max_score: number }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      const name = input?.name?.trim()
+      if (!name) return { ok: false, error: 'Sequence name is required.' }
+      if (!input?.term_id) return { ok: false, error: 'Term is required.' }
+
+      const sheets = repos.ca.findSequenceSheets(
+        schoolId,
+        name,
+        input.term_id
+      )
+      if (!sheets.length) {
+        return { ok: false, error: 'Sequence not found for this term.' }
+      }
+      if (repos.ca.hasRecordedMarks(sheets.map((s) => s.id))) {
+        return {
+          ok: false,
+          error: 'This sequence already has marks and cannot be edited.',
+        }
+      }
+
+      const newName = (input.new_name ?? name).trim()
+      if (!newName) return { ok: false, error: 'Sequence name is required.' }
+      const maxScore =
+        input.max_score !== undefined
+          ? Number(input.max_score)
+          : sheets[0].max_score
+      if (!maxScore || maxScore <= 0) {
+        return { ok: false, error: 'Max score must be greater than zero.' }
+      }
+
+      if (newName.toLowerCase() !== name.toLowerCase()) {
+        const clash = repos.ca.findSequenceSheets(
+          schoolId,
+          newName,
+          input.term_id
+        )
+        if (clash.length) {
+          return {
+            ok: false,
+            error: `“${newName}” already exists for this term.`,
+          }
+        }
+      }
+
+      let updated = 0
+      for (const sheet of sheets) {
+        repos.ca.updateAssessment(sheet.id, {
+          name: newName,
+          max_score: maxScore,
+        })
+        updated += 1
+      }
+      return {
+        ok: true,
+        data: { updated, name: newName, max_score: maxScore },
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'ca:delete-sequence',
+    (
+      _e,
+      input: { name: string; term_id: string }
+    ): Result<{ deleted: number }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      const name = input?.name?.trim()
+      if (!name) return { ok: false, error: 'Sequence name is required.' }
+      if (!input?.term_id) return { ok: false, error: 'Term is required.' }
+
+      const sheets = repos.ca.findSequenceSheets(
+        schoolId,
+        name,
+        input.term_id
+      )
+      if (!sheets.length) {
+        return { ok: false, error: 'Sequence not found for this term.' }
+      }
+      if (repos.ca.hasRecordedMarks(sheets.map((s) => s.id))) {
+        return {
+          ok: false,
+          error: 'This sequence already has marks and cannot be deleted.',
+        }
+      }
+
+      let deleted = 0
+      const tx = repos.ca.getDb().transaction(() => {
+        for (const sheet of sheets) {
+          for (const score of repos.ca.findScores(sheet.id)) {
+            repos.ca.softDeleteScore(score.id)
+          }
+          repos.ca.delete(sheet.id)
+          deleted += 1
+        }
+      })
+      tx()
+      return { ok: true, data: { deleted } }
+    }
+  )
+
   ipcMain.handle(
     'ca:get-scores',
     (
@@ -688,6 +1137,7 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         max_score: number
         class_id: string
         subject_name: string | null
+        teacher_name: string | null
       }
       students: Array<{
         id: string
@@ -712,6 +1162,13 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
           student_code: s.student_code,
           score: byStudent.has(s.id) ? byStudent.get(s.id)! : null,
         }))
+      const teacherStaffId = repos.staff.findStaffIdForClassSubject(
+        assessment.class_id,
+        assessment.subject_id
+      )
+      const teacherName = teacherStaffId
+        ? repos.staff.findById(teacherStaffId)?.full_name ?? null
+        : null
       return {
         ok: true,
         data: {
@@ -722,6 +1179,7 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
             class_id: assessment.class_id,
             subject_name:
               repos.subjects.findById(assessment.subject_id)?.name ?? null,
+            teacher_name: teacherName,
           },
           students,
         },
@@ -1066,10 +1524,10 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
           }
         : {
             id: 'default',
-            name: 'Cameroon Secondary Standard (40/60)',
+            name: 'Cameroon MINESEC (3 terms × 2 sequences)',
             version: 1,
-            ca_weight: 40,
-            exam_weight: 60,
+            ca_weight: 100,
+            exam_weight: 0,
             pass_mark: 10,
             sequence_method: 'simple_average',
             rounding_places: 2,
@@ -1187,7 +1645,14 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
     (
       _e,
       input: { class_id: string; term_id?: string | null }
-    ): Result<{ run_id: string; students: number; subjects: number; profile?: string }> => {
+    ): Result<{
+      run_id: string
+      students: number
+      subjects: number
+      profile?: string
+      class_id?: string
+      class_name?: string
+    }> => {
       const schoolId = resolveSchoolId(repos)
       if (!schoolId) return { ok: false, error: 'No school found.' }
       if (!input?.class_id) return { ok: false, error: 'Class is required.' }
@@ -1213,236 +1678,306 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         return { ok: false, error: 'Access denied.' }
       }
 
-      const year = repos.academicYears.getSetupDto(schoolId)
-      const classRow = repos.classes.findById(input.class_id)
-      const students = repos.students
-        .findByClassId(input.class_id)
-        .filter((s) => s.status === 'active')
-      const subjects = repos.subjects.findByClassId(input.class_id)
-      if (!students.length) {
-        return { ok: false, error: 'No active students in this class.' }
-      }
-      if (!subjects.length) {
-        return { ok: false, error: 'No subjects assigned to this class.' }
-      }
-
-      let run = repos.results.findByClassTerm(
+      const existing = repos.results.findByClassTerm(
         input.class_id,
         input.term_id ?? null
       )
-      if (run?.status === 'locked') {
-        return { ok: false, error: 'Results are locked and cannot be recomputed.' }
-      }
       if (
-        run &&
-        (run.status === 'computed' ||
-          run.status === 'approved' ||
-          run.status === 'published') &&
+        existing &&
+        (existing.status === 'computed' ||
+          existing.status === 'approved' ||
+          existing.status === 'published') &&
         session &&
-        !hasPermission(names, ['results.recalculate', 'results.calculate'], isAdmin)
+        !hasPermission(
+          names,
+          ['results.recalculate', 'results.calculate'],
+          isAdmin
+        )
       ) {
-        return { ok: false, error: 'Access denied to recalculate existing results.' }
-      }
-      if (!run) {
-        run = repos.results.createRun({
-          school_id: schoolId,
-          class_id: input.class_id,
-          term_id: input.term_id ?? null,
-          academic_year_id: year?.id ?? null,
-          status: 'draft',
-        })
-      } else {
-        repos.results.softDeleteRows(run.id)
-      }
-
-      const profile = repos.resultCalc.resolveForClass(
-        schoolId,
-        input.class_id,
-        classRow?.academic_level_id ?? null,
-        year?.id ?? null
-      )
-
-      const effectiveProfile = profile ?? {
-        profile: {
-          id: 'default-profile',
-          school_id: schoolId,
-          name: 'Cameroon Secondary Standard (40% CA + 60% Exam)',
-          description: 'Default calculation profile',
-          academic_year_id: year?.id ?? null,
-          period_mode: 'term' as const,
-          status: 'active' as const,
-          created_by: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          deleted_at: null,
-          sync_status: 'synced',
-          version: 1,
-        },
-        version_number: 1,
-        config_hash: '',
-        config: cameroonStandardSecondary20(),
-        assignments: [],
-        used_in_results: false,
-      }
-
-      const coeffMap = repos.subjectCoefficients.resolveCoefficientsMap(
-        schoolId,
-        subjects.map((s) => s.id),
-        input.class_id,
-        classRow?.academic_level_id ?? null,
-        year?.id ?? null
-      )
-
-      const caAssessments = repos.ca.findScoresForClassTerm(
-        input.class_id,
-        input.term_id ?? null
-      )
-      const examPapers = repos.exams.findPapersByClass(
-        input.class_id,
-        input.term_id ?? null
-      )
-
-      const scoresLookup = new Map<
-        string,
-        {
-          sequences: Array<{ name: string; max: number; raw: number | null; status?: any }>
-          exam: { name: string; max: number; raw: number | null; status?: any } | null
-        }
-      >()
-
-      for (const student of students) {
-        for (const subject of subjects) {
-          const ca = caAssessments
-            .filter((a) => a.subject_id === subject.id)
-            .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
-            .map((a) => {
-              const row = a.scores.find((x) => x.student_id === student.id)
-              return {
-                name: a.name,
-                max: a.max_score,
-                raw: row?.score ?? null,
-                status: (row?.score_status as never) ?? undefined,
-              }
-            })
-
-          const paper = examPapers.find((p) => p.subject_id === subject.id)
-          let exam = null
-          if (paper) {
-            const row = repos.exams
-              .findScores(paper.id)
-              .find((x) => x.student_id === student.id)
-            exam = {
-              name: 'Exam',
-              max: paper.max_score,
-              raw: row?.score ?? null,
-              status: (row?.score_status as never) ?? undefined,
-            }
-          }
-
-          scoresLookup.set(`${student.id}:${subject.id}`, { sequences: ca, exam })
+        return {
+          ok: false,
+          error: 'Access denied to recalculate existing results.',
         }
       }
 
-      const out = calculateClassResults({
+      const res = processClassTermResults(repos, {
+        schoolId,
         classId: input.class_id,
         termId: input.term_id ?? null,
-        academicYearId: year?.id ?? null,
-        config: effectiveProfile.config,
-        students: students.map((s) => ({
-          id: s.id,
-          name: s.name,
-          student_code: s.student_code,
-        })),
-        subjects: subjects.map((s) => ({
-          id: s.id,
-          name: s.name,
-          department_id: s.department_id,
-        })),
-        coefficientsMap: coeffMap,
-        scoresLookup,
+        actorUserId: session?.userId ?? null,
       })
+      if (!res.ok) return { ok: false, error: res.error }
+      return {
+        ok: true,
+        data: {
+          run_id: res.data.run_id,
+          students: res.data.students,
+          subjects: res.data.subjects,
+          profile: res.data.profile,
+          class_id: res.data.class_id,
+          class_name: res.data.class_name,
+        },
+      }
+    }
+  )
 
-      for (const st of out.student_results) {
-        for (const sr of st.subject_results) {
-          repos.results.insertSubjectRow({
-            result_run_id: run.id,
-            student_id: st.student_id,
-            subject_id: sr.subject_id,
-            ca_score: sr.ca_contribution ?? sr.ca_average ?? 0,
-            exam_score: sr.exam_contribution ?? sr.exam_normalized ?? 0,
-            total: sr.subject_mark_rounded ?? sr.subject_mark ?? 0,
-            grade: sr.grade,
-            sequence_scores_json: JSON.stringify(sr.sequence_details),
-            ca_average: sr.ca_average,
-            subject_mark: sr.subject_mark_rounded ?? sr.subject_mark ?? 0,
-            coefficient: sr.coefficient,
-            weighted_mark: sr.weighted_mark_rounded ?? sr.weighted_mark ?? 0,
-            remark: sr.remark,
-          })
-        }
-
-        repos.results.insertSummary({
-          result_run_id: run.id,
-          student_id: st.student_id,
-          average: st.term_average_rounded ?? st.term_average ?? 0,
-          total: st.total_weighted_marks,
-          grade: st.grade,
-          position: st.position,
-          remark: st.remark,
-          promotion_outcome: st.promotion_outcome,
-          gpa: st.gpa,
-          failed_subjects: st.failed_subjects,
-          total_coefficients: st.total_coefficients,
-          total_weighted_marks: st.total_weighted_marks,
-          passed_subjects: st.passed_subjects,
-          status: st.status,
-        })
+  ipcMain.handle(
+    'results:bulk-process',
+    (
+      _e,
+      input: { term_id?: string | null }
+    ): Result<{
+      succeeded: number
+      failed: number
+      skipped: number
+      results: Array<{
+        class_id: string
+        class_name: string
+        run_id?: string
+        students?: number
+        subjects?: number
+        profile?: string
+        error?: string
+      }>
+    }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      const session = getSession()
+      const names = session
+        ? (() => {
+            try {
+              return repos.roles.getPermissionNamesForUser(session.userId)
+            } catch {
+              return [] as string[]
+            }
+          })()
+        : []
+      const isAdmin = session?.role === 'admin'
+      if (
+        session &&
+        !hasPermission(
+          names,
+          ['results.calculate', 'results.enter', 'results.update'],
+          isAdmin
+        )
+      ) {
+        return { ok: false, error: 'Access denied.' }
       }
 
-      repos.results.attachCalculationSnapshot(run.id, {
-        calculation_profile_id: effectiveProfile.profile.id,
-        calculation_version: effectiveProfile.version_number,
-        calculation_hash: out.config_hash,
-        snapshot_json: JSON.stringify({
-          label: profileLabel(
-            effectiveProfile.profile.name,
-            year?.name ?? null,
-            effectiveProfile.version_number
+      const out = processAllClassesTermResults(repos, {
+        schoolId,
+        termId: input?.term_id ?? null,
+        actorUserId: session?.userId ?? null,
+      })
+      return {
+        ok: true,
+        data: {
+          succeeded: out.data.succeeded,
+          failed: out.data.failed,
+          skipped: out.data.skipped,
+          results: out.data.results.map((r) =>
+            'run_id' in r
+              ? {
+                  class_id: r.class_id,
+                  class_name: r.class_name,
+                  run_id: r.run_id,
+                  students: r.students,
+                  subjects: r.subjects,
+                  profile: r.profile,
+                }
+              : {
+                  class_id: r.class_id,
+                  class_name: r.class_name,
+                  error: r.error,
+                }
           ),
-          config: effectiveProfile.config,
-        }),
-        calculated_by: session?.userId ?? null,
-      })
+        },
+      }
+    }
+  )
 
-      repos.results.updateStatus(run.id, 'computed', {
-        computed_at: new Date().toISOString(),
-      })
+  ipcMain.handle(
+    'results:sequence-sheet',
+    (
+      _e,
+      input: {
+        class_id?: string | null
+        class_ids?: string[]
+        all_classes?: boolean
+        term_id: string
+        sequence_name: string
+        sheet_kind?: SequenceSheetKind
+        sort?: SequenceSortMode
+      }
+    ): Result<{
+      school: {
+        name: string
+        address: string | null
+        phone: string | null
+        email: string | null
+        logo_url: string | null
+        region: string | null
+      }
+      academic_year: { id: string; name: string } | null
+      term: { id: string; name: string; term_number: number } | null
+      sequence_name: string
+      sheet_kind: SequenceSheetKind
+      sort: SequenceSortMode
+      classes: ReturnType<typeof calculateSequenceClassSheet>[]
+    }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.term_id) return { ok: false, error: 'Select a term.' }
+      const sequenceName = input.sequence_name?.trim()
+      if (!sequenceName) {
+        return { ok: false, error: 'Select a sequence (e.g. Sequence 1).' }
+      }
 
-      try {
-        repos.systemAdmin.writeAudit({
-          school_id: schoolId,
-          actor_user_id: session?.userId ?? null,
-          action: run ? 'results.recalculate' : 'results.calculate',
-          module_key: 'results',
-          entity_type: 'result_run',
-          entity_id: run.id,
-          description: `Calculated results for ${students.length} students using ${effectiveProfile.profile.name}`,
-        })
-      } catch {
-        /* ignore */
+      const session = getSession()
+      const names = session
+        ? (() => {
+            try {
+              return repos.roles.getPermissionNamesForUser(session.userId)
+            } catch {
+              return [] as string[]
+            }
+          })()
+        : []
+      if (
+        session &&
+        !hasPermission(
+          names,
+          ['results.read', 'results.enter', 'results.calculate'],
+          session.role === 'admin'
+        )
+      ) {
+        return { ok: false, error: 'Access denied.' }
+      }
+
+      const school = repos.schools.findById(schoolId)
+      if (!school) return { ok: false, error: 'No school found.' }
+      const year = repos.academicYears.getSetupDto(schoolId)
+      const termRow = year?.terms.find((t) => t.id === input.term_id)
+      const termDto: { id: string; name: string; term_number: number } | null =
+        termRow
+          ? {
+              id: termRow.id,
+              name: termRow.name,
+              term_number: termRow.term_number,
+            }
+          : null
+
+      const schoolClasses = repos.classes.findBySchool(schoolId)
+      let classIds: string[] = []
+      if (input.all_classes) {
+        classIds = schoolClasses.map((c) => c.id)
+      } else if (Array.isArray(input.class_ids) && input.class_ids.length) {
+        classIds = [...new Set(input.class_ids.filter(Boolean))]
+      } else if (input.class_id) {
+        classIds = [input.class_id]
+      }
+      if (!classIds.length) {
+        return { ok: false, error: 'Select at least one class.' }
+      }
+
+      const sheetKind: SequenceSheetKind =
+        input.sheet_kind === 'final' ? 'final' : 'correction'
+      const sort: SequenceSortMode =
+        input.sort === 'merit' ? 'merit' : 'name'
+
+      const sheets: ReturnType<typeof calculateSequenceClassSheet>[] = []
+
+      for (const classId of classIds) {
+        const classRow = repos.classes.findById(classId)
+        if (!classRow) continue
+        const students = repos.students
+          .findByClassId(classId)
+          .filter((s) => s.status === 'active')
+        const subjects = repos.subjects.findByClassId(classId)
+        if (!students.length || !subjects.length) continue
+
+        const coeffMap = repos.subjectCoefficients.resolveCoefficientsMap(
+          schoolId,
+          subjects.map((s) => s.id),
+          classId,
+          classRow.academic_level_id ?? null,
+          year?.id ?? null
+        )
+
+        const caAssessments = repos.ca
+          .findScoresForClassTerm(classId, input.term_id)
+          .filter((a) => sequenceNamesMatch(a.name, sequenceName))
+
+        const scoresLookup = new Map<string, SequenceScoreInput | null>()
+        for (const student of students) {
+          for (const subject of subjects) {
+            const assessment = caAssessments.find(
+              (a) => a.subject_id === subject.id
+            )
+            if (!assessment) {
+              scoresLookup.set(`${student.id}:${subject.id}`, null)
+              continue
+            }
+            const row = assessment.scores.find(
+              (x) => x.student_id === student.id
+            )
+            scoresLookup.set(`${student.id}:${subject.id}`, {
+              name: assessment.name,
+              max: assessment.max_score,
+              raw: row?.score ?? null,
+              status: (row?.score_status as SequenceScoreInput['status']) ?? undefined,
+            })
+          }
+        }
+
+        sheets.push(
+          calculateSequenceClassSheet({
+            classId,
+            className: classRow.name,
+            sequenceName,
+            students: students.map((s) => ({
+              id: s.id,
+              name: s.name,
+              student_code: s.student_code,
+            })),
+            subjects: subjects.map((s) => ({
+              id: s.id,
+              name: s.name,
+              coefficient: coeffMap.get(s.id) ?? 1,
+            })),
+            scoresLookup,
+            sort,
+          })
+        )
+      }
+
+      if (!sheets.length) {
+        return {
+          ok: false,
+          error:
+            'No sequence sheets could be built. Check that Sequence assessments and students exist for the selected classes.',
+        }
       }
 
       return {
         ok: true,
         data: {
-          run_id: run.id,
-          students: students.length,
-          subjects: subjects.length,
-          profile: profileLabel(
-            effectiveProfile.profile.name,
-            year?.name ?? null,
-            effectiveProfile.version_number
-          ),
+          school: {
+            name: school.name,
+            address: school.address ?? null,
+            phone: school.phone ?? null,
+            email: school.email ?? null,
+            logo_url: assetToDataUrl(school.logo_path) ?? null,
+            region: school.region ?? null,
+          },
+          academic_year: year
+            ? { id: year.id, name: year.name }
+            : null,
+          term: termDto,
+          sequence_name: sequenceName,
+          sheet_kind: sheetKind,
+          sort,
+          classes: sheets,
         },
       }
     }
@@ -1493,6 +2028,133 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         published_at: new Date().toISOString(),
       })
       return { ok: true, data: { status } }
+    }
+  )
+
+  /**
+   * Annual (promotional) average from the three term averages for a class.
+   * MINESEC: (T1 + T2 + T3) / 3; pass mark default 10/20.
+   */
+  ipcMain.handle(
+    'results:annual-summary',
+    (
+      _e,
+      input: { class_id: string; academic_year_id?: string | null }
+    ): Result<{
+      class_id: string
+      class_name: string
+      pass_mark: number
+      terms: Array<{
+        term_id: string | null
+        term_name: string
+        term_number: number
+        run_status: string | null
+        student_count: number
+      }>
+      students: Array<{
+        student_id: string
+        student_name: string
+        student_code: string | null
+        term_averages: Array<{
+          term_id: string | null
+          term_number: number
+          average: number | null
+        }>
+        annual_average: number | null
+        status: 'PASSED' | 'FAILED' | 'INCOMPLETE'
+      }>
+    }> => {
+      const schoolId = resolveSchoolId(repos)
+      if (!schoolId) return { ok: false, error: 'No school found.' }
+      if (!input?.class_id) return { ok: false, error: 'Class is required.' }
+
+      const year = repos.academicYears.getSetupDto(schoolId)
+      const terms = [...(year?.terms ?? [])].sort((a, b) => {
+        const an = (a as { term_number?: number }).term_number ?? 0
+        const bn = (b as { term_number?: number }).term_number ?? 0
+        if (an !== bn) return an - bn
+        return a.name.localeCompare(b.name)
+      })
+      const classRow = repos.classes.findById(input.class_id)
+      const profile = repos.resultCalc.resolveForClass(
+        schoolId,
+        input.class_id,
+        classRow?.academic_level_id ?? null,
+        year?.id ?? null
+      )
+      const passMark = profile?.config.pass_mark ?? 10
+      const annualCfg = profile?.config.annual ?? {
+        method: 'average' as const,
+        term_weights: [],
+        best_n: null,
+      }
+
+      const termMeta = terms.map((t, i) => {
+        const termNumber =
+          (t as { term_number?: number }).term_number ?? i + 1
+        const run = repos.results.findByClassTerm(input.class_id, t.id)
+        const summaries = run ? repos.results.findSummaries(run.id) : []
+        return {
+          term_id: t.id as string | null,
+          term_name: t.name,
+          term_number: termNumber,
+          run_status: run?.status ?? null,
+          student_count: summaries.length,
+          summaries,
+        }
+      })
+
+      const studentIds = new Set<string>()
+      for (const t of termMeta) {
+        for (const s of t.summaries) studentIds.add(s.student_id)
+      }
+
+      const students = [...studentIds].map((studentId) => {
+        const student = repos.students.findById(studentId)
+        const term_averages = termMeta.map((t) => {
+          const row = t.summaries.find((s) => s.student_id === studentId)
+          return {
+            term_id: t.term_id,
+            term_number: t.term_number,
+            average: row?.average ?? null,
+          }
+        })
+        const present = term_averages
+          .map((t) => t.average)
+          .filter((v): v is number => v != null && !Number.isNaN(v))
+        const annual_average =
+          termMeta.length > 0 && present.length === termMeta.length
+            ? calculateAnnual(present, annualCfg)
+            : null
+        let status: 'PASSED' | 'FAILED' | 'INCOMPLETE' = 'INCOMPLETE'
+        if (annual_average != null) {
+          status = annual_average >= passMark ? 'PASSED' : 'FAILED'
+        }
+        return {
+          student_id: studentId,
+          student_name: student?.name ?? 'Student',
+          student_code: student?.student_code ?? null,
+          term_averages,
+          annual_average:
+            annual_average != null
+              ? Math.round(annual_average * 100) / 100
+              : null,
+          status,
+        }
+      })
+
+      students.sort((a, b) => a.student_name.localeCompare(b.student_name))
+
+      return {
+        ok: true,
+        data: {
+          class_id: input.class_id,
+          class_name: classRow?.name ?? '',
+          pass_mark: passMark,
+          terms: termMeta.map(({ summaries: _s, ...rest }) => rest),
+          students,
+        },
+      }
     }
   )
 

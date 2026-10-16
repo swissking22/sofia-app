@@ -1,18 +1,28 @@
 import React from "react";
-import { Add01Icon, PencilEdit01Icon } from "@hugeicons/core-free-icons";
+import Link from "next/link";
+import {
+  Add01Icon,
+  Delete02Icon,
+  PencilEdit01Icon,
+} from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import { FormField } from "../../../components/setup";
 import { Icon } from "../../../components/ui/Icon";
-import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
+import {
+  TableActionGroup,
+  TableIconButton,
+} from "../../../components/ui/TableActions";
 import { ClientPaginatedTable } from "../../../components/ui/table-pagination";
 import {
-  createCaAssessment,
+  deleteCaSequence,
   fetchAcademicMeta,
-  fetchCaList,
+  fetchCaSequences,
+  openCaSequence,
+  updateCaSequence,
   type AcademicMeta,
-  type CaAssessmentDto,
+  type CaSequenceDto,
+  type CaSequenceStatus,
 } from "../../../lib/academic-mgmt";
-import { TableSelectionBar } from "../../../components/students/ui";
 import { formatDisplayDate } from "../../../lib/date-format";
 
 const selectClass =
@@ -21,40 +31,57 @@ const selectClass =
 const fieldClass =
   "w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition focus:border-(--sofia-primary) focus:ring-2 focus:ring-(--sofia-primary)/15";
 
-function formatDate(value: string | null) {
-  return formatDisplayDate(value);
+function statusLabel(status: CaSequenceStatus) {
+  if (status === "complete") return "Complete";
+  if (status === "active") return "Active";
+  return "Inactive";
+}
+
+function StatusBadge({ status }: { status: CaSequenceStatus }) {
+  const styles: Record<CaSequenceStatus, string> = {
+    inactive: "bg-slate-100 text-slate-600",
+    active: "bg-amber-50 text-amber-800",
+    complete: "bg-emerald-50 text-emerald-800",
+  };
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${styles[status]}`}
+    >
+      {statusLabel(status)}
+    </span>
+  );
 }
 
 export default function CaIndexPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
-  const [assessments, setAssessments] = React.useState<CaAssessmentDto[]>([]);
+  const [sequences, setSequences] = React.useState<CaSequenceDto[]>([]);
   const [meta, setMeta] = React.useState<AcademicMeta | null>(null);
-  const [classFilter, setClassFilter] = React.useState("");
-  const [subjectFilter, setSubjectFilter] = React.useState("");
+  const [termFilter, setTermFilter] = React.useState("");
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [editTarget, setEditTarget] = React.useState<CaSequenceDto | null>(
+    null,
+  );
   const [saving, setSaving] = React.useState(false);
 
-  const [name, setName] = React.useState("");
-  const [subjectId, setSubjectId] = React.useState("");
-  const [classId, setClassId] = React.useState("");
+  const [name, setName] = React.useState("Sequence 1");
   const [termId, setTermId] = React.useState("");
-  const [weight, setWeight] = React.useState("20");
   const [maxScore, setMaxScore] = React.useState("20");
-  const [assessmentDate, setAssessmentDate] = React.useState("");
 
   const load = React.useCallback(async () => {
     setLoading(true);
     setError("");
     const [listRes, metaRes] = await Promise.all([
-      fetchCaList(),
+      fetchCaSequences(),
       fetchAcademicMeta(),
     ]);
-    if (listRes.ok) setAssessments(listRes.data);
+    if (listRes.ok) setSequences(listRes.data);
     else setError(listRes.error);
-    if (metaRes.ok) setMeta(metaRes.data);
-    else if (!listRes.ok) setError(metaRes.error);
+    if (metaRes.ok) {
+      setMeta(metaRes.data);
+      setTermId((prev) => prev || metaRes.data.terms[0]?.id || "");
+    } else if (!listRes.ok) setError(metaRes.error);
     setLoading(false);
   }, []);
 
@@ -62,75 +89,28 @@ export default function CaIndexPage() {
     void load();
   }, [load]);
 
-  const subjectOptions = React.useMemo(() => {
-    if (!meta) return [];
-    if (!classFilter) return meta.subjects;
-    return meta.subjects.filter((s) => s.class_ids.includes(classFilter));
-  }, [meta, classFilter]);
-
   const filtered = React.useMemo(() => {
-    return assessments.filter((a) => {
-      if (classFilter && a.class_id !== classFilter) return false;
-      if (subjectFilter && a.subject_id !== subjectFilter) return false;
-      return true;
-    });
-  }, [assessments, classFilter, subjectFilter]);
-
-  const formSubjects = React.useMemo(() => {
-    if (!meta) return [];
-    if (!classId) return meta.subjects;
-    return meta.subjects.filter((s) => s.class_ids.includes(classId));
-  }, [meta, classId]);
-
-  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
-  const allSelected =
-    filtered.length > 0 && selectedIds.length === filtered.length;
-  function toggleRow(id: string) {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  }
-  function toggleAll() {
-    if (allSelected) setSelectedIds([]);
-    else setSelectedIds(filtered.map((a) => a.id));
-  }
-  function exportSelected() {
-    const target = filtered.filter((a) => selectedIds.includes(a.id));
-    if (!target.length) return;
-    const csv = [
-      ["Assessment", "Subject", "Class", "Weight %", "Max Score", "Date"].join(","),
-      ...target.map((a) =>
-        [
-          `"${a.name}"`,
-          `"${a.subject_name || ""}"`,
-          `"${a.class_name || ""}"`,
-          a.weight_percent,
-          a.max_score,
-          `"${formatDate(a.assessment_date)}"`,
-        ].join(","),
-      ),
-    ].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ca-assessments-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+    if (!termFilter) return sequences;
+    return sequences.filter((s) => s.term_id === termFilter);
+  }, [sequences, termFilter]);
 
   function resetForm() {
-    setName("");
-    setSubjectId("");
-    setClassId("");
-    setTermId("");
-    setWeight("20");
+    setName("Sequence 1");
     setMaxScore("20");
-    setAssessmentDate("");
+    if (meta?.terms[0]) setTermId(meta.terms[0].id);
   }
 
   function openCreate() {
+    setEditTarget(null);
     resetForm();
+    setCreateOpen(true);
+  }
+
+  function openEdit(seq: CaSequenceDto) {
+    setEditTarget(seq);
+    setName(seq.name);
+    setTermId(seq.term_id ?? "");
+    setMaxScore(String(seq.max_score));
     setCreateOpen(true);
   }
 
@@ -139,19 +119,14 @@ export default function CaIndexPage() {
     setError("");
     setSuccess("");
     if (!name.trim()) {
-      setError("Assessment name is required.");
+      setError("Enter a name (e.g. Sequence 1).");
       return;
     }
-    if (!subjectId || !classId) {
-      setError("Subject and class are required.");
+    if (!termId) {
+      setError("Select the term.");
       return;
     }
-    const weightNum = Number(weight);
     const maxNum = Number(maxScore);
-    if (!weightNum || weightNum <= 0 || weightNum > 100) {
-      setError("Weight must be between 1 and 100.");
-      return;
-    }
     if (!maxNum || maxNum <= 0) {
       setError("Max score must be greater than zero.");
       return;
@@ -159,21 +134,47 @@ export default function CaIndexPage() {
 
     setSaving(true);
     try {
-      const res = await createCaAssessment({
-        name: name.trim(),
-        subject_id: subjectId,
-        class_id: classId,
-        term_id: termId || null,
-        weight_percent: weightNum,
-        max_score: maxNum,
-        assessment_date: assessmentDate || null,
-      });
-      if (!res.ok) {
-        setError(res.error);
-        return;
+      if (editTarget) {
+        if (!editTarget.term_id) {
+          setError("This sequence has no term and cannot be edited.");
+          return;
+        }
+        const res = await updateCaSequence({
+          name: editTarget.name,
+          term_id: editTarget.term_id,
+          new_name: name.trim(),
+          max_score: maxNum,
+        });
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        setSuccess(
+          `Updated “${res.data.name}” (${res.data.updated} sheet(s), max ${res.data.max_score}).`,
+        );
+      } else {
+        const res = await openCaSequence({
+          name: name.trim(),
+          term_id: termId,
+          max_score: maxNum,
+          all_classes: true,
+          skip_existing: true,
+        });
+        if (!res.ok) {
+          setError(res.error);
+          return;
+        }
+        const termLabel =
+          meta?.terms.find((t) => t.id === termId)?.name ?? "this term";
+        setSuccess(
+          `Created “${name.trim()}” for ${termLabel}: ${res.data.created} subject sheet(s) across ${res.data.class_count} class(es)` +
+            (res.data.skipped
+              ? ` (${res.data.skipped} already existed and were skipped).`
+              : "."),
+        );
       }
-      setSuccess("Assessment created.");
       setCreateOpen(false);
+      setEditTarget(null);
       resetForm();
       await load();
     } finally {
@@ -181,12 +182,50 @@ export default function CaIndexPage() {
     }
   }
 
+  async function handleDelete(seq: CaSequenceDto) {
+    if (!seq.term_id) return;
+    if (seq.status !== "inactive") return;
+    const ok = window.confirm(
+      `Delete “${seq.name}” for ${seq.term_name ?? "this term"}? This removes all empty score sheets. This cannot be undone.`,
+    );
+    if (!ok) return;
+    setError("");
+    setSuccess("");
+    setSaving(true);
+    try {
+      const res = await deleteCaSequence({
+        name: seq.name,
+        term_id: seq.term_id,
+      });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setSuccess(`Deleted “${seq.name}” (${res.data.deleted} sheet(s)).`);
+      await load();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const isEditing = Boolean(editTarget);
+
   return (
     <AppShell
       title="Continuous Assessment"
       breadcrumb={["Academic Management", "Continuous Assessment"]}
       heading="Continuous Assessment"
-      subtitle="Manage CA assessments and enter student scores."
+      subtitle="Create a sequence for the term, then Record marks — pick a class and subject, and enter scores."
+      actions={
+        <button
+          type="button"
+          onClick={openCreate}
+          className="inline-flex items-center gap-2 rounded-lg bg-(--sofia-primary) px-3.5 py-2 text-sm font-semibold text-white hover:opacity-95"
+        >
+          <Icon icon={Add01Icon} size={16} />
+          Create sequence
+        </button>
+      }
     >
       {error ? (
         <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -199,162 +238,128 @@ export default function CaIndexPage() {
         </div>
       ) : null}
 
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex flex-wrap gap-2">
-          <label className="block text-xs font-medium text-slate-500">
-            Class
-            <select
-              className={`mt-1 block ${selectClass}`}
-              value={classFilter}
-              onChange={(e) => {
-                setClassFilter(e.target.value);
-                setSubjectFilter("");
-              }}
-            >
-              <option value="">All classes</option>
-              {(meta?.classes ?? []).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-xs font-medium text-slate-500">
-            Subject
-            <select
-              className={`mt-1 block ${selectClass}`}
-              value={subjectFilter}
-              onChange={(e) => setSubjectFilter(e.target.value)}
-            >
-              <option value="">All subjects</option>
-              {subjectOptions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <button
-          type="button"
-          onClick={openCreate}
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-(--sofia-primary) px-4 py-2.5 text-sm font-semibold text-white"
+      <div className="mb-4 flex flex-wrap gap-3">
+        <select
+          className={selectClass}
+          value={termFilter}
+          onChange={(e) => setTermFilter(e.target.value)}
         >
-          <Icon icon={Add01Icon} size={16} />
-          Add assessment
-        </button>
+          <option value="">All terms</option>
+          {(meta?.terms ?? []).map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {loading ? (
-        <p className="text-sm text-slate-500">Loading assessments…</p>
+        <p className="text-sm text-slate-500">Loading…</p>
       ) : (
-        <>
-          <ClientPaginatedTable
-            head={
-              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      ref={(el) => {
-                        if (el)
-                          el.indeterminate =
-                            selectedIds.length > 0 && !allSelected;
-                      }}
-                      onChange={toggleAll}
-                      aria-label="Select all"
-                    />
-                  </th>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Subject</th>
-                  <th className="px-4 py-3">Class</th>
-                  <th className="px-4 py-3">Weight %</th>
-                  <th className="px-4 py-3">Max score</th>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-            }
-          >
-            {filtered.length === 0 ? (
+        <ClientPaginatedTable
+          pageSize={25}
+          head={
+            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
-                <td
-                  colSpan={8}
-                  className="px-4 py-8 text-center text-slate-500"
-                >
-                  No assessments match these filters.
-                </td>
+                <th className="px-4 py-3 text-left">Name</th>
+                <th className="px-4 py-3 text-left">Term</th>
+                <th className="px-4 py-3 text-left">Date created</th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Progress</th>
+                <th className="px-4 py-3 text-left">Actions</th>
               </tr>
-            ) : (
-              filtered.map((a) => (
-                <tr key={a.id} className="hover:bg-slate-50/80">
-                  <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(a.id)}
-                      onChange={() => toggleRow(a.id)}
-                    />
-                  </td>
+            </thead>
+          }
+        >
+          {filtered.length === 0 ? (
+            <tr>
+              <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                No sequences yet. Click Create sequence to open Sequence 1 for
+                the whole school.
+              </td>
+            </tr>
+          ) : (
+            filtered.map((s) => {
+              const recordHref =
+                s.term_id != null
+                  ? `/academic/ca/record?name=${encodeURIComponent(s.name)}&term_id=${encodeURIComponent(s.term_id)}`
+                  : null;
+              const canMutate = s.status === "inactive" && Boolean(s.term_id);
+              return (
+                <tr
+                  key={`${s.term_id ?? ""}:${s.name}`}
+                  className="hover:bg-slate-50/80"
+                >
                   <td className="px-4 py-3 font-medium text-slate-900">
-                    {a.name}
+                    {s.name}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {a.subject_name || "—"}
+                    {s.term_name || "—"}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {a.class_name || "—"}
+                    {formatDisplayDate(s.created_at)}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {a.weight_percent}%
+                  <td className="px-4 py-3">
+                    <StatusBadge status={s.status} />
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{a.max_score}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {formatDate(a.assessment_date)}
+                  <td className="px-4 py-3 text-sm text-slate-600">
+                    {s.scored_slots}/{s.expected_slots || "—"} marks
+                    <span className="ml-1 text-slate-400">
+                      ({s.class_count} classes)
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <TableActionGroup>
-                      <TableIconButton
-                        icon={PencilEdit01Icon}
-                        label="Enter scores"
-                        tone="primary"
-                        href={`/academic/ca/entry?assessment_id=${a.id}`}
-                      />
+                      {recordHref ? (
+                        <Link
+                          href={recordHref}
+                          className="inline-flex rounded-lg bg-(--sofia-primary) px-3 py-1.5 text-xs font-semibold text-white hover:opacity-95"
+                        >
+                          Record marks
+                        </Link>
+                      ) : null}
+                      {canMutate ? (
+                        <>
+                          <TableIconButton
+                            icon={PencilEdit01Icon}
+                            label="Edit sequence"
+                            tone="primary"
+                            disabled={saving}
+                            onClick={() => openEdit(s)}
+                          />
+                          <TableIconButton
+                            icon={Delete02Icon}
+                            label="Delete sequence"
+                            tone="danger"
+                            disabled={saving}
+                            onClick={() => void handleDelete(s)}
+                          />
+                        </>
+                      ) : null}
                     </TableActionGroup>
                   </td>
                 </tr>
-              ))
-            )}
-          </ClientPaginatedTable>
-
-          <TableSelectionBar
-            totalCount={filtered.length}
-            selectedCount={selectedIds.length}
-            allSelected={allSelected}
-            onToggleAll={toggleAll}
-            onClear={() => setSelectedIds([])}
-            actions={
-              <button
-                type="button"
-                onClick={exportSelected}
-                className="cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Export selected ({selectedIds.length})
-              </button>
-            }
-          />
-        </>
+              );
+            })
+          )}
+        </ClientPaginatedTable>
       )}
 
       {createOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
             <h3 className="text-base font-semibold text-slate-900">
-              Add CA assessment
+              {isEditing ? "Edit sequence" : "Create sequence"}
             </h3>
             <p className="mt-1 text-sm text-slate-500">
-              Create a new continuous assessment for a class and subject.
+              {isEditing ? (
+                "Change the name or max score. Only sequences with no marks can be edited."
+              ) : (
+                <>
+                  Name it and set the max mark. Sofia creates score sheets for{" "}
+                  <strong>every subject in every class</strong> for this term.
+                </>
+              )}
             </p>
 
             <form
@@ -362,61 +367,24 @@ export default function CaIndexPage() {
               className="mt-4 space-y-1"
             >
               <FormField
-                label="Name"
+                label="Sequence name"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Test 1, Quiz 2"
+                placeholder="Sequence 1"
                 fullWidth
+                autoFocus
               />
               <label className="mb-4 block">
                 <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Class <span className="text-red-500">*</span>
-                </span>
-                <select
-                  className={fieldClass}
-                  value={classId}
-                  onChange={(e) => {
-                    setClassId(e.target.value);
-                    setSubjectId("");
-                  }}
-                  required
-                >
-                  <option value="">Select class…</option>
-                  {(meta?.classes ?? []).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="mb-4 block">
-                <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Subject <span className="text-red-500">*</span>
-                </span>
-                <select
-                  className={fieldClass}
-                  value={subjectId}
-                  onChange={(e) => setSubjectId(e.target.value)}
-                  required
-                  disabled={!classId}
-                >
-                  <option value="">Select subject…</option>
-                  {formSubjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="mb-4 block">
-                <span className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Term
+                  Term <span className="text-red-500">*</span>
                 </span>
                 <select
                   className={fieldClass}
                   value={termId}
                   onChange={(e) => setTermId(e.target.value)}
+                  required
+                  disabled={isEditing}
                 >
                   <option value="">Select term…</option>
                   {(meta?.terms ?? []).map((t) => (
@@ -427,44 +395,37 @@ export default function CaIndexPage() {
                 </select>
               </label>
               <FormField
-                label="Weight %"
-                type="number"
-                min={1}
-                max={100}
-                required
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-              />
-              <FormField
                 label="Max score"
                 type="number"
-                min={1}
                 required
                 value={maxScore}
                 onChange={(e) => setMaxScore(e.target.value)}
-              />
-              <FormField
-                label="Date"
-                type="date"
-                value={assessmentDate}
-                onChange={(e) => setAssessmentDate(e.target.value)}
                 fullWidth
               />
 
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateOpen(false);
+                    setEditTarget(null);
+                  }}
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="cursor-pointer rounded-xl bg-(--sofia-primary) px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                  className="flex-1 rounded-lg bg-(--sofia-primary) px-3 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                 >
-                  {saving ? "Saving…" : "Create assessment"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCreateOpen(false)}
-                  className="cursor-pointer rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700"
-                >
-                  Cancel
+                  {saving
+                    ? isEditing
+                      ? "Saving…"
+                      : "Creating…"
+                    : isEditing
+                      ? "Save changes"
+                      : "Create for all classes"}
                 </button>
               </div>
             </form>

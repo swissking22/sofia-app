@@ -29,14 +29,15 @@ import {
 } from "../../../lib/system-admin";
 import { listPreUpdateBackups } from "../../../lib/updater";
 import { formatSyncTime } from "../../../lib/backup-sync";
-import { SyncProgressBar } from "../../../components/sync/SyncProgressBar";
-import type { SyncProgressEvent } from "../../../lib/sync-progress";
+import { useBackgroundSyncProgress } from "../../../lib/sync-progress";
 
 type RestoreTarget =
   | { kind: "record"; id: string }
   | { kind: "file"; path: string; fileName: string };
 
 export default function AdminBackupSyncPage() {
+  const { progress: syncProgress, active: syncActive } =
+    useBackgroundSyncProgress();
   const [tab, setTab] = React.useState<"backup" | "sync">("backup");
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
@@ -57,9 +58,8 @@ export default function AdminBackupSyncPage() {
     React.useState<RestoreTarget | null>(null);
   const [phrase, setPhrase] = React.useState("");
   const [restoring, setRestoring] = React.useState(false);
-  const [syncing, setSyncing] = React.useState(false);
-  const [syncProgress, setSyncProgress] =
-    React.useState<SyncProgressEvent | null>(null);
+  const [syncAwaiting, setSyncAwaiting] = React.useState(false);
+  const syncing = syncActive || syncAwaiting;
   const [retrying, setRetrying] = React.useState(false);
   const [resolvingId, setResolvingId] = React.useState<string | null>(null);
 
@@ -111,32 +111,16 @@ export default function AdminBackupSyncPage() {
 
   async function handleSyncNow() {
     if (syncBusy) return;
-    setSyncing(true);
+    setSyncAwaiting(true);
     setError("");
     setSuccess("");
-    setSyncProgress({
-      phase: "starting",
-      percent: 0,
-      message: "Starting sync…",
-      pushTotal: 0,
-      pushDone: 0,
-      pullTotal: 0,
-      pullDone: 0,
-    });
     try {
-      const r = await runAdminSyncUntilCaughtUp({
-        onProgress: (event) => {
-          setSyncProgress(event as SyncProgressEvent);
-        },
-      });
+      const r = await runAdminSyncUntilCaughtUp();
       if (r.ok) {
         const data = r.data;
         const synced = Number(data.successful ?? data.processed ?? 0);
         const failed = Number(data.failed ?? 0);
         const hasMore = adminSyncHasMore(data);
-        if (data.progress) {
-          setSyncProgress(data.progress as SyncProgressEvent);
-        }
         if (data.message && hasMore) {
           setSuccess(String(data.message));
         } else if (hasMore) {
@@ -182,8 +166,7 @@ export default function AdminBackupSyncPage() {
     } catch {
       setError("Sync failed unexpectedly.");
     } finally {
-      setSyncing(false);
-      setSyncProgress(null);
+      setSyncAwaiting(false);
     }
   }
 
@@ -392,11 +375,6 @@ export default function AdminBackupSyncPage() {
               (setup?.synchronization?.last_sync_at as string) || null,
             )}
           </p>
-          {syncing || syncProgress ? (
-            <div className="mb-3 max-w-md rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-              <SyncProgressBar progress={syncProgress} />
-            </div>
-          ) : null}
           <div className="mb-4 flex gap-2">
             <PrimaryButton
               disabled={syncBusy}
@@ -408,7 +386,9 @@ export default function AdminBackupSyncPage() {
                     className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white"
                     aria-hidden
                   />
-                  Syncing…
+                  {syncProgress && !syncProgress.indeterminate
+                    ? `Syncing ${syncProgress.percent}%`
+                    : "Syncing…"}
                 </>
               ) : (
                 "Sync now"
