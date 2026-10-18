@@ -781,9 +781,10 @@ where school_id = '<school_uuid>' and table_name = 'staff_subjects'
 Push synchronization mirrors local SQLite state to Supabase. **Students / student_id_settings** use `process_sync_operation`. **Multi-desk MVP tables** use `process_synced_entity` → `synced_entities` + `sync_changes`.
 
 1. **Local Outbox & Push Service (`main/sync/push.ts` - `pushPendingSync()`)**:
-   - Queries `sync_queue` in **lane** then priority order (`SYNC_LANE_CASE` + `SYNC_PRIORITY_CASE` in `main/sync/queue.ts` / `lanes.ts`): **critical** (school → RBAC → users → staff / timetable) → **operational** (academics → students) → **bulk** (attendance/results → communication → finance → documents), then `created_at ASC` within a band (`LIMIT 50`).
+   - Queries `sync_queue` in **lane** then priority order (`SYNC_LANE_CASE` + `SYNC_PRIORITY_CASE` in `main/sync/queue.ts` / `lanes.ts`): **critical** (school → RBAC → users → staff / timetable) → **operational** (academics → students) → **bulk** (attendance/results → communication → finance → documents), then `created_at ASC` within a band (`LIMIT` adaptive 25–100).
    - Resolves authorized school identity from the local database; rejects payload cross-tenant tampering.
-   - Dispatches operations via `SupabaseSyncClient` to `process_sync_operation` RPC with PostgREST `/rest/v1/rpc/process_sync_operation`.
+   - Skips unchanged rows already `sync_status='synced'` at the same-or-newer version (`watermark.ts`).
+   - Prefers one round-trip via `process_synced_entities_batch` (falls back to per-item `process_synced_entity` / `process_sync_operation` if the batch RPC is missing).
    - Upon successful acknowledgement, marks local `sync_queue` record as `status = 'synced'` and updates `last_attempt_at`. **Successful records are retained for auditability and debugging, never deleted.**
    - Error classification:
      - **Network error** (`ECONNREFUSED`, timeout, 5xx): retains `status = 'pending'`, increments `retry_count`, halts batch to prevent connection churn.
@@ -902,6 +903,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-18 | **Batch push RPC + version watermark:** cloud `process_synced_entities_batch` (migration `20261018140000`) pushes many outbox rows in one round-trip; desk falls back to per-item if undeployed. Local watermark skips unchanged already-synced versions (`main/sync/watermark.ts`). |
 | 2026-10-18 | **Auto mobile RBAC provisioning:** creating/updating a teacher (or staff with Auth) calls `ensureMobileAccessCatalog` — seeds Teacher role grants, force-enqueues permissions/roles/role_permissions for the school, then `scheduleTeacherReadySync` pushes the **critical** lane (no manual SQL/scripts). Also runs at founding-admin registration. |
 | 2026-10-18 | **Mobile Teacher empty permissions:** SRA cloud lacked `permissions` in `synced_entities` (orphan scan skipped the catalog). Mobile `get_mobile_access` then returned role Teacher with `permissions: []`. One-shot repair: `scripts/repushSunrisePermissions.ts --dev`; orphan enqueue no longer skips `permissions`. |
 | 2026-10-18 | **Sync re-enqueue loop fixed:** successful push now sets domain `sync_status='synced'`; orphan backfill skips rows already in a synced outbox entry; Sync Now repairs duplicate pending + stale domain flags (was re-queuing ~14k CA/attendance after overnight sync hit 98%). |

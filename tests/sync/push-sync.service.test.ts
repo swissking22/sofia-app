@@ -362,12 +362,12 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     })
 
     const result = await pushPendingSync({ db, schoolId, client: mockClient })
-    expect(result.failed).toBe(1)
-    expect(result.successful).toBe(0)
+    // Cross-tenant outbox rows are abandoned locally (not sent / not failed-retried).
+    expect(result.failed).toBe(0)
+    expect(mockClient.receivedOperations.filter((o) => o.recordId === student.id && o.operation === 'UPDATE').length).toBe(0)
 
-    // The operation must not have been sent with mismatched tenant
-    const failedOp = db.prepare(`SELECT status FROM sync_queue WHERE record_id = ? AND operation = 'UPDATE'`).get(student.id) as { status: string }
-    expect(failedOp.status).toBe('failed')
+    const abandoned = db.prepare(`SELECT status FROM sync_queue WHERE record_id = ? AND operation = 'UPDATE'`).get(student.id) as { status: string }
+    expect(abandoned.status).toBe('synced')
   })
 
   // 9. DELETE performs soft delete
@@ -533,11 +533,12 @@ describe('Sofia Phase 1: Local Push Sync Service', () => {
     })
 
     const result = await pushPendingSync({ db, schoolId, client: mockClient })
-    expect(result.failed).toBe(1)
-    expect(result.successful).toBe(0)
+    // Foreign-tenant leftovers are abandoned as synced (no cloud write, no retry storm).
+    expect(result.failed).toBe(0)
+    expect(mockClient.receivedOperations.some((o) => o.recordId === '88888888-8888-8888-8888-888888888888')).toBe(false)
 
     const item = db.prepare(`SELECT status FROM sync_queue WHERE record_id = ?`).get('88888888-8888-8888-8888-888888888888') as { status: string }
-    expect(item.status).toBe('failed')
+    expect(item.status).toBe('synced')
   })
 
   // 15. Unsupported tables are discarded locally without RPC calls

@@ -37,6 +37,24 @@ export interface ProcessSyncRpcError {
 
 export type ProcessSyncRpcResult = ProcessSyncRpcSuccess | ProcessSyncRpcError
 
+/** One outbox row for process_synced_entities_batch. */
+export interface ProcessSyncBatchItem {
+  id: string
+  tableName: string
+  recordId: string
+  operation: SyncOperation | string
+  payload: Record<string, unknown>
+}
+
+export interface ProcessSyncBatchResult {
+  ok: boolean
+  /** Per-item results aligned to the request (by id). */
+  results: Array<{ id: string; result: ProcessSyncRpcResult }>
+  error?: string
+  /** RPC missing / not deployed — caller should fall back to per-item push. */
+  unsupported?: boolean
+}
+
 export interface RegisterDeviceRpcResult {
   ok: boolean
   error?: string
@@ -271,6 +289,12 @@ export interface LookupSchoolByCodeResult {
 
 export interface SupabaseSyncClientInterface {
   processSyncOperation(params: ProcessSyncRpcParams): Promise<ProcessSyncRpcResult>
+  /** Optional multi-row push (one round-trip). */
+  processSyncedEntitiesBatch?(params: {
+    schoolId: string
+    deviceId: string | null
+    items: ProcessSyncBatchItem[]
+  }): Promise<ProcessSyncBatchResult>
   registerDevice(params: RegisterDeviceRpcParams): Promise<RegisterDeviceRpcResult>
   bootstrapSchoolTenant?(
     params: BootstrapSchoolTenantParams

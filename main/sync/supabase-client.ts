@@ -7,6 +7,8 @@ import { SCHOOL_ASSETS_BUCKET } from './assets'
 import type {
   CountPendingSyncChangesParams,
   CountPendingSyncChangesResult,
+  ProcessSyncBatchItem,
+  ProcessSyncBatchResult,
   ProcessSyncRpcParams,
   ProcessSyncRpcResult,
   PullSyncRpcParams,
@@ -263,6 +265,44 @@ function isNetworkLikeError(err: unknown): boolean {
   )
 }
 
+function parseProcessSyncRpcBody(data: unknown): ProcessSyncRpcResult {
+  const result = data as Record<string, unknown> | null
+
+  if (!result || typeof result !== 'object') {
+    return {
+      ok: false,
+      errorType: 'validation',
+      error: 'Invalid response received from RPC',
+    }
+  }
+
+  if (result.conflict) {
+    return {
+      ok: false,
+      errorType: 'conflict',
+      conflict: true,
+      cloudVersion: result.cloud_version as number | undefined,
+      incomingVersion: result.incoming_version as number | undefined,
+      error: (result.error as string) || 'Version conflict detected',
+    }
+  }
+
+  if (result.success === false) {
+    return {
+      ok: false,
+      errorType: 'validation',
+      error: (result.error as string) || 'Operation failed in cloud database',
+    }
+  }
+
+  return {
+    ok: true,
+    duplicate: Boolean(result.duplicate),
+    changeId: result.change_id as number | string | undefined,
+    status: result.status as string | undefined,
+  }
+}
+
 function rpcErrorMessage(error: {
   message?: string
   details?: string
@@ -450,42 +490,7 @@ export class SupabaseSyncClient implements SupabaseSyncClientInterface {
         }
       }
 
-      const result = data as Record<string, unknown> | null
-
-      if (!result || typeof result !== 'object') {
-        return {
-          ok: false,
-          errorType: 'validation',
-          error: 'Invalid response received from RPC',
-        }
-      }
-
-      if (result.conflict) {
-        return {
-          ok: false,
-          errorType: 'conflict',
-          conflict: true,
-          cloudVersion: result.cloud_version as number | undefined,
-          incomingVersion: result.incoming_version as number | undefined,
-          error: (result.error as string) || 'Version conflict detected',
-        }
-      }
-
-      if (result.success === false) {
-        return {
-          ok: false,
-          errorType: 'validation',
-          error:
-            (result.error as string) || 'Operation failed in cloud database',
-        }
-      }
-
-      return {
-        ok: true,
-        duplicate: Boolean(result.duplicate),
-        changeId: result.change_id as number | string | undefined,
-        status: result.status as string | undefined,
-      }
+      return parseProcessSyncRpcBody(data)
     } catch (err: any) {
       const message = err?.message || 'Network error during sync RPC'
       return {
@@ -493,6 +498,86 @@ export class SupabaseSyncClient implements SupabaseSyncClientInterface {
         errorType: 'network',
         error: message,
       }
+    }
+  }
+
+  async processSyncedEntitiesBatch(params: {
+    schoolId: string
+    deviceId: string | null
+    items: ProcessSyncBatchItem[]
+  }): Promise<ProcessSyncBatchResult> {
+    if (!params.items.length) {
+      return { ok: true, results: [] }
+    }
+    try {
+      const { data, error } = await this.supabase.rpc(
+        'process_synced_entities_batch',
+        {
+          p_school_id: params.schoolId,
+          p_device_id: params.deviceId,
+          p_items: params.items.map((item) => ({
+            id: item.id,
+            table_name: item.tableName,
+            record_id: item.recordId,
+            operation: item.operation,
+            payload: item.payload,
+          })),
+        }
+      )
+
+      if (error) {
+        const message = rpcErrorMessage(error)
+        const lower = message.toLowerCase()
+        if (
+          lower.includes('could not find the function') ||
+          lower.includes('pgrst202') ||
+          (lower.includes('process_synced_entities_batch') &&
+            (lower.includes('does not exist') || lower.includes('not found')))
+        ) {
+          return {
+            ok: false,
+            unsupported: true,
+            results: [],
+            error: message,
+          }
+        }
+        if (isNetworkLikeError(error)) {
+          return { ok: false, results: [], error: message }
+        }
+        return { ok: false, results: [], error: message }
+      }
+
+      const body = data as {
+        success?: boolean
+        error?: string
+        results?: Array<Record<string, unknown>>
+      } | null
+
+      if (!body || body.success === false) {
+        return {
+          ok: false,
+          results: [],
+          error: body?.error || 'Batch sync failed',
+        }
+      }
+
+      const results: ProcessSyncBatchResult['results'] = []
+      for (const row of body.results || []) {
+        const id = String(row.id || '')
+        if (!id) continue
+        results.push({ id, result: parseProcessSyncRpcBody(row) })
+      }
+      return { ok: true, results }
+    } catch (err: any) {
+      const message = err?.message || 'Network error during batch sync RPC'
+      const lower = message.toLowerCase()
+      if (
+        lower.includes('could not find the function') ||
+        lower.includes('process_synced_entities_batch')
+      ) {
+        return { ok: false, unsupported: true, results: [], error: message }
+      }
+      return { ok: false, results: [], error: message }
     }
   }
 

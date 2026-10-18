@@ -24,10 +24,13 @@ import {
 import { leanSyncPayload } from './lean-payload'
 import { getSupabaseSyncClient } from './supabase-client'
 import type {
+  ProcessSyncBatchItem,
+  ProcessSyncRpcResult,
   PushSyncOptions,
   PushSyncResult,
   SupabaseSyncClientInterface,
 } from './types'
+import { isUnchangedAlreadySynced } from './watermark'
 
 /** Structural / tenant barriers that would fail every remaining item the same way. */
 function isPermanentSyncBarrier(error: string | undefined): boolean {
@@ -324,9 +327,13 @@ export async function pushPendingSync(
   let failed = 0
   let conflicts = 0
 
-  // 4. Process each operation deterministically
+  type Prepared = ProcessSyncBatchItem & {
+    rawPayload: string
+  }
+  const toPush: Prepared[] = []
+
+  // 4. Prepare items (lean payload + watermark skip of unchanged synced rows)
   for (const item of pendingRows) {
-    processed += 1
     let payload: Record<string, unknown>
     try {
       payload = JSON.parse(item.payload)
@@ -336,47 +343,144 @@ export async function pushPendingSync(
       )
       markFailed(db, item.id, 'Invalid JSON payload')
       failed += 1
+      processed += 1
       continue
     }
 
-    // Tenant check: foreign-school leftovers are abandoned (not failed/retried).
     if (payload.school_id && payload.school_id !== schoolId) {
       console.warn(
         `[SYNC] Abandoning operation ${item.id}: payload belongs to ${payload.school_id}, authorized school is ${schoolId}`
       )
       markSynced(db, item.id)
-      // Count as processed success for drain stats (intentionally skipped).
       successful += 1
+      processed += 1
       continue
     }
 
-    // Attach authorized school_id if omitted
-    if (!payload.school_id) {
-      payload.school_id = schoolId
-    }
-
-    // Lean again for historical outbox rows enqueued before strip rules.
+    if (!payload.school_id) payload.school_id = schoolId
     payload = leanSyncPayload(item.table_name, payload)
-    if (!payload.school_id) {
-      payload.school_id = schoolId
+    if (!payload.school_id) payload.school_id = schoolId
+
+    if (
+      isUnchangedAlreadySynced(
+        db,
+        item.table_name,
+        item.record_id,
+        payload,
+        item.operation
+      )
+    ) {
+      markSynced(db, item.id)
+      successful += 1
+      processed += 1
+      continue
     }
 
-    // 5. Send operation to Supabase RPC
-    let response = await client.processSyncOperation({
+    toPush.push({
       id: item.id,
-      schoolId,
-      deviceId,
       tableName: item.table_name,
       recordId: item.record_id,
       operation: item.operation,
       payload,
+      rawPayload: item.payload,
+    })
+  }
+
+  const applyResponse = async (
+    item: Prepared,
+    response: ProcessSyncRpcResult
+  ): Promise<'ok' | 'fail' | 'stop'> => {
+    processed += 1
+    if (response.ok) {
+      markSynced(db, item.id)
+      successful += 1
+      if (options.onSynced) {
+        try {
+          await options.onSynced({
+            id: String(item.id),
+            table_name: String(item.tableName),
+            record_id: String(item.recordId),
+            payload: String(item.rawPayload ?? '{}'),
+          })
+        } catch (err) {
+          console.warn(
+            `[SYNC] onSynced hook failed for ${item.id}:`,
+            err instanceof Error ? err.message : err
+          )
+        }
+      }
+      return 'ok'
+    }
+
+    if (isIdempotentDeleteNotFound(response.error)) {
+      markSynced(db, item.id)
+      successful += 1
+      return 'ok'
+    }
+
+    failed += 1
+
+    if (response.errorType === 'network') {
+      console.warn(
+        `[SYNC] Network error for operation ${item.id}: ${response.error}. Retrying later.`
+      )
+      markNetworkError(db, item.id)
+      return 'stop'
+    }
+
+    if (response.errorType === 'conflict') {
+      conflicts += 1
+      recordSyncConflict(db, {
+        schoolId,
+        tableName: item.tableName,
+        recordId: item.recordId,
+        localJson: item.rawPayload,
+        remoteJson: JSON.stringify(response),
+      })
+      markFailed(
+        db,
+        item.id,
+        `Version conflict${
+          response.cloudVersion != null
+            ? ` (cloud version ${response.cloudVersion})`
+            : ''
+        }`
+      )
+      return 'fail'
+    }
+
+    console.error(
+      `[SYNC] Validation error for operation ${item.id}: ${response.error}`
+    )
+    markFailed(
+      db,
+      item.id,
+      response.error || 'Cloud rejected this sync operation'
+    )
+    if (isPermanentSyncBarrier(response.error)) {
+      console.error(
+        `[SYNC] Push aborted after permanent barrier: ${response.error}`
+      )
+      return 'stop'
+    }
+    return 'fail'
+  }
+
+  // 5. Prefer one multi-row RPC; fall back to per-item if undeployed / failed hard.
+  let usePerItem = !client.processSyncedEntitiesBatch || toPush.length === 0
+
+  if (!usePerItem && toPush.length > 0) {
+    let batch = await client.processSyncedEntitiesBatch!({
+      schoolId,
+      deviceId,
+      items: toPush,
     })
 
-    // Device already marked registered locally, but cloud tenant was never created
-    // (e.g. USB restore on a machine that kept electron-store device state).
     if (
-      !response.ok &&
-      isMissingSchoolTenant(response.error) &&
+      !batch.ok &&
+      !batch.unsupported &&
+      batch.error &&
+      isMissingSchoolTenant(batch.error) &&
       !didTenantBootstrap
     ) {
       didTenantBootstrap = true
@@ -391,14 +495,10 @@ export async function pushPendingSync(
           })
           if (reg.ok) markDeviceRegisteredForSchool(schoolId)
         }
-        response = await client.processSyncOperation({
-          id: item.id,
+        batch = await client.processSyncedEntitiesBatch!({
           schoolId,
           deviceId,
-          tableName: item.table_name,
-          recordId: item.record_id,
-          operation: item.operation,
-          payload,
+          items: toPush,
         })
       } else {
         console.error(
@@ -411,94 +511,94 @@ export async function pushPendingSync(
           failed: failed + 1,
           conflicts,
           message: boot.error,
-          hasMore: countReadyPendingSyncItems(db) > 0,
+          hasMore: countReadyPendingSyncItems(db, { maxLane: options.maxLane }) > 0,
         }
       }
     }
 
-    if (response.ok) {
-      markSynced(db, item.id)
-      successful += 1
-      // Avoid per-item console.log — floods stdout and can throw write EIO
-      // when the pipe is closed (Electron packaged / no TTY).
-      if (options.onSynced) {
-        try {
-          await options.onSynced({
-            id: String(item.id),
-            table_name: String(item.table_name),
-            record_id: String(item.record_id),
-            payload: String(item.payload ?? '{}'),
+    if (batch.unsupported) {
+      console.warn(
+        '[SYNC] process_synced_entities_batch unavailable — falling back to per-item push'
+      )
+      usePerItem = true
+    } else if (!batch.ok && batch.results.length === 0) {
+      // Whole-call failure (network) — mark first item for backoff and stop.
+      if (toPush[0]) {
+        markNetworkError(db, toPush[0].id)
+        failed += 1
+      }
+      console.warn(`[SYNC] Batch push failed: ${batch.error}`)
+    } else {
+      const byId = new Map(batch.results.map((r) => [r.id, r.result]))
+      for (const item of toPush) {
+        const response = byId.get(item.id)
+        if (!response) {
+          // Missing from response — leave pending for retry
+          continue
+        }
+        const outcome = await applyResponse(item, response)
+        if (outcome === 'stop') break
+      }
+    }
+  }
+
+  if (usePerItem) {
+    for (const item of toPush) {
+      let response = await client.processSyncOperation({
+        id: item.id,
+        schoolId,
+        deviceId,
+        tableName: item.tableName,
+        recordId: item.recordId,
+        operation: item.operation,
+        payload: item.payload,
+      })
+
+      if (
+        !response.ok &&
+        isMissingSchoolTenant(response.error) &&
+        !didTenantBootstrap
+      ) {
+        didTenantBootstrap = true
+        const boot = await bootstrapCloudSchoolTenant(db, client, schoolId)
+        if (boot.ok) {
+          if (!isDeviceRegisteredForSchool(schoolId)) {
+            const reg = await client.registerDevice({
+              id: deviceId,
+              schoolId,
+              deviceName: getDeviceName(),
+              deviceFingerprint: getDeviceFingerprint(),
+            })
+            if (reg.ok) markDeviceRegisteredForSchool(schoolId)
+          }
+          response = await client.processSyncOperation({
+            id: item.id,
+            schoolId,
+            deviceId,
+            tableName: item.tableName,
+            recordId: item.recordId,
+            operation: item.operation,
+            payload: item.payload,
           })
-        } catch (err) {
-          console.warn(
-            `[SYNC] onSynced hook failed for ${item.id}:`,
-            err instanceof Error ? err.message : err
+        } else {
+          console.error(
+            `[SYNC] Push aborted: could not bootstrap school tenant (${boot.error})`
           )
+          return {
+            ok: false,
+            processed,
+            successful,
+            failed: failed + 1,
+            conflicts,
+            message: boot.error,
+            hasMore:
+              countReadyPendingSyncItems(db, { maxLane: options.maxLane }) > 0,
+          }
         }
       }
-    } else {
-      // Idempotent DELETE: student (etc.) never existed in cloud — local soft-delete already done
-      if (isIdempotentDeleteNotFound(response.error)) {
-        markSynced(db, item.id)
-        successful += 1
-        console.log(
-          `[SYNC] Operation ${item.id}: cloud already absent — marked synced (${response.error})`
-        )
-        continue
-      }
 
-      failed += 1
-
-      if (response.errorType === 'network') {
-        console.warn(
-          `[SYNC] Network error for operation ${item.id}: ${response.error}. Retrying later.`
-        )
-        markNetworkError(db, item.id)
-        // Stop current push batch if network connection dropped
-        break
-      }
-
-      if (response.errorType === 'conflict') {
-        conflicts += 1
-        console.warn(
-          `[SYNC] Conflict detected for operation ${item.id}: cloud version is ${response.cloudVersion}`
-        )
-        recordSyncConflict(db, {
-          schoolId,
-          tableName: item.table_name,
-          recordId: item.record_id,
-          localJson: item.payload,
-          remoteJson: JSON.stringify(response),
-        })
-        markFailed(
-          db,
-          item.id,
-          `Version conflict${
-            response.cloudVersion != null
-              ? ` (cloud version ${response.cloudVersion})`
-              : ''
-          }`
-        )
-        continue
-      }
-
-      // Validation or other non-recoverable error
-      console.error(
-        `[SYNC] Validation error for operation ${item.id}: ${response.error}`
-      )
-      markFailed(
-        db,
-        item.id,
-        response.error || 'Cloud rejected this sync operation'
-      )
-
-      // Structural / tenant barriers fail every item the same way — stop the batch
-      if (isPermanentSyncBarrier(response.error)) {
-        console.error(
-          `[SYNC] Push aborted after permanent barrier: ${response.error}`
-        )
-        break
-      }
+      const outcome = await applyResponse(item, response)
+      if (outcome === 'stop') break
     }
   }
 
