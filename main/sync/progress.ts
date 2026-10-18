@@ -3,6 +3,9 @@
  * count_pending_sync_changes when available.
  */
 
+import type { SyncLane, SyncLaneCounts } from './lanes'
+import { emptyLaneCounts } from './lanes'
+
 export type SyncProgressPhase =
   | 'starting'
   | 'push'
@@ -24,6 +27,12 @@ export interface SyncProgressEvent {
    * with counts instead of a precise percentage.
    */
   indeterminate?: boolean
+  /** Current push lane (critical → operational → bulk). */
+  lane?: SyncLane
+  /** Critical outbox empty — mobile-critical data has been pushed. */
+  criticalReady?: boolean
+  /** Remaining ready outbox by lane (snapshot at last report). */
+  laneCounts?: SyncLaneCounts
 }
 
 export type SyncProgressListener = (event: SyncProgressEvent) => void
@@ -55,6 +64,7 @@ export class SyncProgressTracker {
   pushDone = 0
   pullDone = 0
   pullCountKnown: boolean
+  laneCounts: SyncLaneCounts = emptyLaneCounts()
   private readonly onProgress?: SyncProgressListener
 
   constructor(options: {
@@ -62,11 +72,17 @@ export class SyncProgressTracker {
     pullTotal: number
     pullCountKnown?: boolean
     onProgress?: SyncProgressListener
+    laneCounts?: SyncLaneCounts
   }) {
     this.pushTotal = Math.max(0, options.pushTotal)
     this.pullTotal = Math.max(0, options.pullTotal)
     this.pullCountKnown = options.pullCountKnown !== false
     this.onProgress = options.onProgress
+    if (options.laneCounts) this.laneCounts = { ...options.laneCounts }
+  }
+
+  setLaneCounts(counts: SyncLaneCounts): void {
+    this.laneCounts = { ...counts }
   }
 
   addPush(n: number): void {
@@ -88,7 +104,11 @@ export class SyncProgressTracker {
     }
   }
 
-  report(phase: SyncProgressPhase, message?: string): SyncProgressEvent {
+  report(
+    phase: SyncProgressPhase,
+    message?: string,
+    extras?: { lane?: SyncLane; criticalReady?: boolean }
+  ): SyncProgressEvent {
     const indeterminate =
       phase === 'pull' && !this.pullCountKnown && this.pullTotal === 0
     const totalWork = this.pushTotal + this.pullTotal
@@ -101,6 +121,16 @@ export class SyncProgressTracker {
     if (phase === 'done') percent = 100
     else if (totalWork <= 0) percent = phase === 'starting' ? 0 : 5
     else if (percent >= 100) percent = 99
+
+    const criticalReady =
+      extras?.criticalReady ?? this.laneCounts.critical <= 0
+    const lane =
+      extras?.lane ??
+      (this.laneCounts.critical > 0
+        ? 'critical'
+        : this.laneCounts.operational > 0
+          ? 'operational'
+          : 'bulk')
 
     const event: SyncProgressEvent = {
       phase,
@@ -121,6 +151,9 @@ export class SyncProgressTracker {
       pullTotal: this.pullTotal,
       pullDone: this.pullDone,
       indeterminate: indeterminate || undefined,
+      lane,
+      criticalReady,
+      laneCounts: { ...this.laneCounts },
     }
     this.onProgress?.(event)
     return event

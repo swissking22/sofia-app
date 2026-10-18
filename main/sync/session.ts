@@ -5,6 +5,11 @@
  */
 import { createRequire } from 'module'
 import type Database from 'better-sqlite3'
+import {
+  DEFAULT_SYNC_BUDGET_ITEMS,
+  DEFAULT_SYNC_BUDGET_MS,
+  SYNC_BUDGET_RESUME_DELAY_MS,
+} from './budget'
 import type { SyncProgressEvent } from './progress'
 import type { SyncWorkerResult } from './types'
 import { runSyncWorkerUntilCaughtUp } from './worker'
@@ -31,6 +36,11 @@ type ActiveRun = {
 
 let active: ActiveRun | null = null
 let lastProgress: SyncProgressEvent | null = null
+/** True while a budgeted follow-up is scheduled — keeps the UI bar visible. */
+let resumePending = false
+let resumeTimer: ReturnType<typeof setTimeout> | null = null
+/** Orphan backfill once per catch-up chain (first run only). */
+let orphanDoneForSchool: string | null = null
 
 function getBrowserWindows(): Array<{
   isDestroyed: () => boolean
@@ -53,8 +63,8 @@ function getBrowserWindows(): Array<{
 
 export function getSyncSessionStatus(): SyncSessionStatus {
   return {
-    active: active != null,
-    trigger: active?.trigger ?? null,
+    active: active != null || resumePending,
+    trigger: active?.trigger ?? (resumePending ? 'periodic' : null),
     schoolId: active?.schoolId ?? null,
     progress: lastProgress,
     startedAt: active?.startedAt ?? null,
@@ -75,6 +85,13 @@ export function broadcastSyncProgress(progress: SyncProgressEvent): void {
   }
 }
 
+function clearResumeTimer(): void {
+  if (resumeTimer) {
+    clearTimeout(resumeTimer)
+    resumeTimer = null
+  }
+}
+
 /**
  * Run (or join) a catch-up sync. Concurrent callers for the same school share
  * one worker promise so Sync Now + periodic never double-push.
@@ -87,6 +104,14 @@ export async function runBackgroundSync(
     maxRounds?: number
     skipPush?: boolean
     skipPull?: boolean
+    /** Override default 60s budget; 0 = unlimited. */
+    maxDurationMs?: number
+    /** Override default 2500-item budget; 0 = unlimited. */
+    maxItems?: number
+    /** When true, do not schedule a follow-up after a budget pause. */
+    skipAutoResume?: boolean
+    /** Skip expensive orphan table scan (auto-resume sets this). */
+    skipOrphanEnqueue?: boolean
   }
 ): Promise<SyncWorkerResult> {
   const trigger = options.trigger ?? 'manual'
@@ -101,6 +126,9 @@ export async function runBackgroundSync(
       /* start a new run after the previous one settles */
     }
   }
+
+  clearResumeTimer()
+  resumePending = false
 
   const startedAt = Date.now()
   broadcastSyncProgress({
@@ -128,6 +156,19 @@ export async function runBackgroundSync(
     startedAt,
   }
 
+  const maxDurationMs =
+    options.maxDurationMs !== undefined
+      ? options.maxDurationMs
+      : DEFAULT_SYNC_BUDGET_MS
+  const maxItems =
+    options.maxItems !== undefined
+      ? options.maxItems
+      : DEFAULT_SYNC_BUDGET_ITEMS
+
+  const skipOrphan =
+    options.skipOrphanEnqueue === true ||
+    orphanDoneForSchool === options.schoolId
+
   void (async () => {
     try {
       // Return to the event loop so the renderer can paint + the cursor stays live
@@ -138,10 +179,59 @@ export async function runBackgroundSync(
         maxRounds: options.maxRounds,
         skipPush: options.skipPush,
         skipPull: options.skipPull,
+        maxDurationMs,
+        maxItems,
+        skipOrphanEnqueue: skipOrphan,
         onProgress: broadcastSyncProgress,
       })
+      if (!skipOrphan) {
+        orphanDoneForSchool = options.schoolId
+      }
       settle(result)
+
+      // Budget pause: keep the bar visible and continue without re-scanning orphans.
+      if (
+        result.hasMore &&
+        result.ok &&
+        !options.skipAutoResume &&
+        maxDurationMs > 0
+      ) {
+        const schoolId = options.schoolId
+        resumePending = true
+        const prev = lastProgress
+        broadcastSyncProgress({
+          phase: 'push',
+          percent: prev?.percent ?? 0,
+          message:
+            prev?.criticalReady
+              ? prev.message || 'Ready for mobile · continuing in background…'
+              : 'Continuing sync in background…',
+          pushTotal: prev?.pushTotal ?? 0,
+          pushDone: prev?.pushDone ?? 0,
+          pullTotal: prev?.pullTotal ?? 0,
+          pullDone: prev?.pullDone ?? 0,
+          lane: prev?.lane,
+          criticalReady: prev?.criticalReady,
+          laneCounts: prev?.laneCounts,
+        })
+        resumeTimer = setTimeout(() => {
+          resumeTimer = null
+          resumePending = false
+          void runBackgroundSync(db, {
+            schoolId,
+            trigger: 'periodic',
+            skipAutoResume: false,
+            skipOrphanEnqueue: true,
+          }).catch(() => {
+            resumePending = false
+          })
+        }, SYNC_BUDGET_RESUME_DELAY_MS)
+      } else if (!result.hasMore) {
+        orphanDoneForSchool = null
+        resumePending = false
+      }
     } catch (err) {
+      resumePending = false
       reject(err)
     } finally {
       if (active?.promise === promise) {
@@ -155,6 +245,9 @@ export async function runBackgroundSync(
 
 /** Test helper — clear session state between cases. */
 export function resetSyncSessionForTests(): void {
+  clearResumeTimer()
   active = null
   lastProgress = null
+  resumePending = false
+  orphanDoneForSchool = null
 }

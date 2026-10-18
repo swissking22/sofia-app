@@ -13,6 +13,7 @@ import {
   tryProvisionStaffAuth,
   type CloudAuthRole,
 } from '../services/cloud-auth'
+import { ensureMobileAccessCatalog } from '../services/ensure-mobile-access'
 import { prepareTeacherForMobile } from '../services/prepare-teacher-mobile'
 import { scheduleTeacherReadySync } from '../sync/auto-sync'
 
@@ -122,6 +123,7 @@ async function provisionForStaff(
       resetPassword: userCreated,
     })
   }
+  ensureMobileAccessCatalog(repos, schoolId)
   const warning = await tryProvisionStaffAuth({
     email: staff.email,
     password: STAFF_TEMP_PASSWORD,

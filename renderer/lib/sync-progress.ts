@@ -9,6 +9,15 @@ export type SyncProgressPhase =
   | 'assets'
   | 'done'
 
+export type SyncLane = 'critical' | 'operational' | 'bulk'
+
+export type SyncLaneCounts = {
+  critical: number
+  operational: number
+  bulk: number
+  total: number
+}
+
 export interface SyncProgressEvent {
   phase: SyncProgressPhase
   percent: number
@@ -18,6 +27,10 @@ export interface SyncProgressEvent {
   pullTotal: number
   pullDone: number
   indeterminate?: boolean
+  lane?: SyncLane
+  /** Critical outbox empty — mobile-critical data has been pushed. */
+  criticalReady?: boolean
+  laneCounts?: SyncLaneCounts
 }
 
 export type SyncTrigger = 'manual' | 'periodic' | 'teacher'
@@ -96,8 +109,12 @@ export function useBackgroundSyncProgress(): {
       setTrigger(status.trigger)
       if (status.progress) {
         setProgress(status.progress)
+        // Keep showing in-progress / continuing phases even if the session
+        // briefly reports inactive between budgeted auto-resume chunks.
         if (!status.active && status.progress.phase === 'done') {
           clearDoneSoon()
+        } else if (status.active || status.progress.phase !== 'done') {
+          setActive(true)
         }
       }
     })

@@ -3,12 +3,14 @@ import { randomUUID } from 'crypto'
 import {
   getPendingSyncItems,
   countReadyPendingSyncItems,
+  discardDuplicatePendingAlreadySynced,
   discardForeignTenantSyncItems,
   discardUnsupportedSyncItems,
   markFailed,
   markNetworkError,
   markSynced,
   recordSyncConflict,
+  repairDomainSyncStatusFromOutbox,
   requeueFailedSupportedTables,
 } from './queue'
 import { normalizeShortCode } from '../helpers/school-short-code'
@@ -19,6 +21,7 @@ import {
   isDeviceRegisteredForSchool,
   markDeviceRegisteredForSchool,
 } from './device'
+import { leanSyncPayload } from './lean-payload'
 import { getSupabaseSyncClient } from './supabase-client'
 import type {
   PushSyncOptions,
@@ -216,6 +219,21 @@ export async function pushPendingSync(
     )
   }
 
+  // Historical bug: domain sync_status stayed 'pending' after push → Sync Now
+  // re-enqueued the same attendance/CA rows every night. Repair once per push.
+  const dupes = discardDuplicatePendingAlreadySynced(db)
+  if (dupes > 0) {
+    console.log(
+      `[SYNC] Abandoned ${dupes} duplicate pending item(s) already synced earlier`
+    )
+  }
+  const repaired = repairDomainSyncStatusFromOutbox(db)
+  if (repaired > 0) {
+    console.log(
+      `[SYNC] Marked ${repaired} domain row(s) synced (were pending after prior push)`
+    )
+  }
+
   // 2. Check and ensure device registration for this school
   const deviceId = getOrCreateDeviceId()
   const isRegistered = isDeviceRegisteredForSchool(schoolId)
@@ -277,7 +295,9 @@ export async function pushPendingSync(
   }
 
   // 3. Select supported pending items only (created_at ASC + backoff)
-  const pendingRows = getPendingSyncItems(db, batchSize) as Array<{
+  const pendingRows = getPendingSyncItems(db, batchSize, {
+    maxLane: options.maxLane,
+  }) as Array<{
     id: string
     table_name: string
     record_id: string
@@ -335,9 +355,10 @@ export async function pushPendingSync(
       payload.school_id = schoolId
     }
 
-    // Never push credentials — even for historical outbox rows.
-    if (item.table_name === 'users' && 'password_hash' in payload) {
-      delete payload.password_hash
+    // Lean again for historical outbox rows enqueued before strip rules.
+    payload = leanSyncPayload(item.table_name, payload)
+    if (!payload.school_id) {
+      payload.school_id = schoolId
     }
 
     // 5. Send operation to Supabase RPC
@@ -485,7 +506,8 @@ export async function pushPendingSync(
     `[SYNC] Push completed: ${successful} succeeded, ${failed} failed (${conflicts} conflicts)`
   )
 
-  const hasMore = countReadyPendingSyncItems(db) > 0
+  const hasMore =
+    countReadyPendingSyncItems(db, { maxLane: options.maxLane }) > 0
 
   return {
     ok: failed === 0,

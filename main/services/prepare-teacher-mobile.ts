@@ -12,6 +12,7 @@ import type { Repositories } from '../db/repositories'
 import { STAFF_TEMP_PASSWORD } from '../db/repositories/staff.repository'
 import { scheduleTeacherReadySync } from '../sync/auto-sync'
 import { tryProvisionStaffAuth } from './cloud-auth'
+import { ensureMobileAccessCatalog } from './ensure-mobile-access'
 
 export type PrepareTeacherMobileInput = {
   repos: Repositories
@@ -99,6 +100,10 @@ export async function prepareTeacherForMobile(
   if (!email) {
     return 'Add an email to enable Sofia Teacher mobile login.'
   }
+
+  // Permissions catalog + Teacher role grants must exist in cloud synced_entities
+  // or get_mobile_access returns an empty permission list.
+  ensureMobileAccessCatalog(input.repos, input.schoolId)
 
   const membershipWarning = await ensureTeacherDesktopUser({
     ...input,

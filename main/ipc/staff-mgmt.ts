@@ -4,6 +4,7 @@ import type { Repositories } from '../db/repositories'
 import type { StaffDto } from '../db/repositories/staff.repository'
 import { LEAVE_TYPES } from '../db/repositories/leave.repository'
 import { countLeaveDays } from '../domain/staff'
+import { ensureMobileAccessCatalog } from '../services/ensure-mobile-access'
 import { prepareTeacherForMobile } from '../services/prepare-teacher-mobile'
 import { scheduleTeacherReadySync } from '../sync/auto-sync'
 import type {
@@ -435,6 +436,7 @@ export function registerStaffMgmtIpc(repos: Repositories): void {
             resetPassword: true,
           })
         } else {
+          ensureMobileAccessCatalog(repos, schoolId)
           scheduleTeacherReadySync(schoolId)
         }
 

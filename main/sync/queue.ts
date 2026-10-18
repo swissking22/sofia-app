@@ -1,19 +1,36 @@
 import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
 import type { SyncOperation } from '../db/types'
+import {
+  SYNC_LANE_CASE,
+  SYNC_LANE_RANK,
+  emptyLaneCounts,
+  syncLaneForTable,
+  type SyncLane,
+  type SyncLaneCounts,
+} from './lanes'
+import { leanSyncPayload } from './lean-payload'
 import { SUPPORTED_SYNC_TABLES } from './tables'
 import { yieldToMain } from './yield'
 
 /** @deprecated Use SUPPORTED_SYNC_TABLES — kept for older imports/tests. */
 export const PHASE1_SYNC_TABLES = SUPPORTED_SYNC_TABLES
 
+export type { SyncLane, SyncLaneCounts }
+export {
+  syncLaneForTable,
+  activePushLane,
+  isCriticalLaneReady,
+  pushLaneMessage,
+  doneLaneMessage,
+} from './lanes'
+
 const SUPPORTED_IN_LIST = SUPPORTED_SYNC_TABLES.map((t) => `'${t}'`).join(', ')
 
 /**
  * Outbox drain order for Sync Now (`getPendingSyncItems`).
- * Lower number = earlier push. RBAC (roles / users) is first after the school
- * tenant so mobile membership and desk logins are not stuck behind academics
- * or finance backlogs.
+ * Lower number = earlier push. Fine-grained within lanes:
+ * critical (0–5) → operational (6–9) → bulk (10+). See `main/sync/lanes.ts`.
  */
 const SYNC_PRIORITY_CASE = `
   CASE table_name
@@ -140,15 +157,8 @@ export function enqueueSync(
   operation: SyncOperation,
   payload: Record<string, unknown>
 ): void {
-  // Never put credentials in the outbox / cloud mirror.
-  const safePayload =
-    tableName === 'users'
-      ? (() => {
-          const copy = { ...payload }
-          delete copy.password_hash
-          return copy
-        })()
-      : payload
+  // Never put credentials / blobs / null noise in the outbox / cloud mirror.
+  const safePayload = leanSyncPayload(tableName, payload)
 
   // Payload must include id + updated_at (full record snapshot)
   const stmt = db.prepare(`
@@ -277,14 +287,109 @@ function tableColumns(db: Database.Database, table: string): Set<string> {
   }
 }
 
+/** Flip domain `sync_status` after a successful cloud ack (or repair). */
+export function markDomainRowSynced(
+  db: Database.Database,
+  tableName: string,
+  recordId: string
+): void {
+  const cols = tableColumns(db, tableName)
+  if (!cols.has('sync_status') || !cols.has('id')) return
+  try {
+    db.prepare(
+      `UPDATE ${tableName} SET sync_status = 'synced' WHERE id = ?`
+    ).run(recordId)
+  } catch {
+    /* table absent in minimal test DBs */
+  }
+}
+
 /**
- * Enqueue domain rows that are still `sync_status='pending'` but never made it
- * into `sync_queue` (seed data, pre-allowlist tables, missed repository writes).
- * Caps per call so Sync Now stays responsive; remaining rows enqueue next click.
+ * Stop the re-enqueue loop for bulk history only (attendance/CA/finance…).
+ * Critical RBAC (permissions/roles/users/staff) may be force-requeued for
+ * mobile access and must not be discarded here.
+ * Uses a temp key table so large outboxes stay fast.
  */
+export function discardDuplicatePendingAlreadySynced(
+  db: Database.Database
+): number {
+  const now = new Date().toISOString()
+  db.exec(`
+    CREATE TEMP TABLE IF NOT EXISTS _sofia_synced_keys (
+      table_name TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      PRIMARY KEY (table_name, record_id)
+    );
+    DELETE FROM _sofia_synced_keys;
+  `)
+  db.exec(
+    `INSERT OR IGNORE INTO _sofia_synced_keys (table_name, record_id)
+     SELECT DISTINCT table_name, record_id
+     FROM sync_queue
+     WHERE status = 'synced'
+       AND table_name IN (${SUPPORTED_IN_LIST})
+       AND (${SYNC_LANE_CASE}) = ${SYNC_LANE_RANK.bulk}`
+  )
+  const result = db
+    .prepare(
+      `UPDATE sync_queue
+       SET status = 'synced',
+           last_attempt_at = ?,
+           last_error = 'Abandoned: duplicate of already-synced push'
+       WHERE status = 'pending'
+         AND table_name IN (${SUPPORTED_IN_LIST})
+         AND (${SYNC_LANE_CASE}) = ${SYNC_LANE_RANK.bulk}
+         AND EXISTS (
+           SELECT 1 FROM _sofia_synced_keys k
+           WHERE k.table_name = sync_queue.table_name
+             AND k.record_id = sync_queue.record_id
+         )`
+    )
+    .run(now)
+  try {
+    db.exec(`DROP TABLE IF EXISTS _sofia_synced_keys`)
+  } catch {
+    /* ignore */
+  }
+  return result.changes
+}
+
+/**
+ * Repair domain rows left at sync_status='pending' after a successful push
+ * (historical bug: markSynced only updated sync_queue).
+ */
+export function repairDomainSyncStatusFromOutbox(
+  db: Database.Database
+): number {
+  let repaired = 0
+  for (const table of SUPPORTED_SYNC_TABLES) {
+    const cols = tableColumns(db, table)
+    if (!cols.has('id') || !cols.has('sync_status')) continue
+    try {
+      const result = db
+        .prepare(
+          `UPDATE ${table}
+           SET sync_status = 'synced'
+           WHERE sync_status = 'pending'
+             AND id IN (
+               SELECT record_id FROM sync_queue
+               WHERE table_name = ?
+                 AND status = 'synced'
+             )`
+        )
+        .run(table)
+      repaired += Number(result.changes) || 0
+    } catch {
+      /* ignore */
+    }
+  }
+  return repaired
+}
+
 /**
  * Scan pending entity rows missing from the outbox and enqueue them.
  * Async + per-table yield so Sync Now does not freeze the Electron cursor.
+ * Skips rows that already have a synced outbox entry (marks domain synced).
  */
 export async function enqueueOrphanedPendingRows(
   db: Database.Database,
@@ -296,6 +401,11 @@ export async function enqueueOrphanedPendingRows(
   const pendingExists = db.prepare(
     `SELECT 1 AS ok FROM sync_queue
      WHERE table_name = ? AND record_id = ? AND status = 'pending'
+     LIMIT 1`
+  )
+  const alreadySynced = db.prepare(
+    `SELECT 1 AS ok FROM sync_queue
+     WHERE table_name = ? AND record_id = ? AND status = 'synced'
      LIMIT 1`
   )
 
@@ -324,17 +434,18 @@ export async function enqueueOrphanedPendingRows(
       continue
     }
 
-    // Permissions are a global catalog seeded on every desk — do not re-push locals.
-    if (table === 'permissions') {
-      if (yieldEveryTable) await yieldToMain()
-      continue
-    }
-
     for (const row of rows) {
       if (enqueued >= limit) break
       const recordId = String(row.id || '')
       if (!recordId) continue
       if (pendingExists.get(table, recordId)) continue
+      // Already pushed successfully — fix domain flag instead of re-queueing.
+      if (alreadySynced.get(table, recordId)) {
+        markDomainRowSynced(db, table, recordId)
+        continue
+      }
+      // Permissions have no school_id column locally; cloud mobile RBAC stores
+      // them per tenant — push attaches school_id in pushPendingSync.
       enqueueSync(db, table, recordId, 'INSERT', row)
       enqueued += 1
     }
@@ -345,41 +456,96 @@ export async function enqueueOrphanedPendingRows(
   return enqueued
 }
 
+export type GetPendingSyncItemsOptions = {
+  /** Cap to this lane and earlier (e.g. `critical` skips operational+bulk). */
+  maxLane?: SyncLane
+}
+
 /**
  * Fetch pending Phase 1 sync items (used by the sync worker / push).
  * Applies exponential backoff on last_attempt_at so network failures
  * do not create a tight retry loop.
- * Teacher/structure tables are ordered ahead of large finance backlogs.
+ * Ordered by lane then table priority; optional maxLane for budgeted drains.
  */
 export function getPendingSyncItems(
   db: Database.Database,
-  limit = 50
+  limit = 50,
+  options?: GetPendingSyncItemsOptions
 ): Array<Record<string, unknown>> {
+  const maxLane = options?.maxLane
+  const laneFilter =
+    maxLane != null
+      ? `AND (${SYNC_LANE_CASE}) <= ${SYNC_LANE_RANK[maxLane]}`
+      : ''
   return db
     .prepare(
       `SELECT * FROM sync_queue
        WHERE ${READY_PENDING_WHERE}
-       ORDER BY ${SYNC_PRIORITY_CASE} ASC, created_at ASC
+       ${laneFilter}
+       ORDER BY ${SYNC_LANE_CASE} ASC, ${SYNC_PRIORITY_CASE} ASC, created_at ASC
        LIMIT ?`
     )
     .all(limit) as Array<Record<string, unknown>>
 }
 
 /** Count supported pending rows that are eligible to push right now (backoff elapsed). */
-export function countReadyPendingSyncItems(db: Database.Database): number {
+export function countReadyPendingSyncItems(
+  db: Database.Database,
+  options?: GetPendingSyncItemsOptions
+): number {
+  const maxLane = options?.maxLane
+  const laneFilter =
+    maxLane != null
+      ? `AND (${SYNC_LANE_CASE}) <= ${SYNC_LANE_RANK[maxLane]}`
+      : ''
   const row = db
     .prepare(
-      `SELECT COUNT(*) AS n FROM sync_queue WHERE ${READY_PENDING_WHERE}`
+      `SELECT COUNT(*) AS n FROM sync_queue
+       WHERE ${READY_PENDING_WHERE}
+       ${laneFilter}`
     )
     .get() as { n: number }
   return Number(row.n) || 0
 }
 
-/** Mark a sync_queue row as synced (simulated — no real API). */
+/** Ready pending counts split by sync lane (for progress + readiness). */
+export function countReadyPendingByLane(db: Database.Database): SyncLaneCounts {
+  const rows = db
+    .prepare(
+      `SELECT (${SYNC_LANE_CASE}) AS lane, COUNT(*) AS n
+       FROM sync_queue
+       WHERE ${READY_PENDING_WHERE}
+       GROUP BY lane`
+    )
+    .all() as Array<{ lane: number; n: number }>
+
+  const counts = emptyLaneCounts()
+  for (const row of rows) {
+    const n = Number(row.n) || 0
+    counts.total += n
+    if (row.lane === 0) counts.critical += n
+    else if (row.lane === 1) counts.operational += n
+    else counts.bulk += n
+  }
+  return counts
+}
+
+/**
+ * Mark a sync_queue row as synced and flip the domain row's sync_status
+ * so orphan backfill does not re-enqueue the same record forever.
+ */
 export function markSynced(db: Database.Database, id: string): void {
+  const meta = db
+    .prepare(
+      `SELECT table_name, record_id FROM sync_queue WHERE id = ?`
+    )
+    .get(id) as { table_name: string; record_id: string } | undefined
   db.prepare(
     `UPDATE sync_queue SET status = 'synced', last_attempt_at = ? WHERE id = ?`
   ).run(new Date().toISOString(), id)
+  if (meta?.table_name && meta?.record_id) {
+    markDomainRowSynced(db, meta.table_name, meta.record_id)
+  }
 }
 
 /** Mark a sync_queue row as failed and bump retry_count. */

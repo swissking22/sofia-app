@@ -49,8 +49,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const router = useRouter();
-  const { progress: syncProgress, active: syncActive } =
-    useBackgroundSyncProgress();
+  const { progress: syncProgress } = useBackgroundSyncProgress();
   const [session, setSession] = React.useState<SessionData | null>(null);
   const [navSections, setNavSections] =
     React.useState<NavSection[]>(NAV_SECTIONS);
@@ -112,7 +111,7 @@ export function AppShell({
         />
         <div className="flex min-w-0 flex-1 flex-col print:block">
           <AppHeader breadcrumb={breadcrumb} sections={navSections} />
-          {syncProgress && (syncActive || syncProgress.phase === "done") ? (
+          {syncProgress ? (
             <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-2 print:hidden">
               <SyncProgressBar progress={syncProgress} />
             </div>

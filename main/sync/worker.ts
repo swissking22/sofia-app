@@ -10,12 +10,24 @@ import { DEFAULT_PULL_BATCH_SIZE, pullRemoteChanges } from './pull'
 import { downloadMissingSyncedAssets, uploadRowAssets } from './assets'
 import { getSupabaseSyncClient } from './supabase-client'
 import {
+  countReadyPendingByLane,
   countReadyPendingSyncItems,
   enqueueOrphanedPendingRows,
 } from './queue'
+import {
+  activePushLane,
+  doneLaneMessage,
+  isCriticalLaneReady,
+  pushLaneMessage,
+} from './lanes'
 import { getLocalSyncCursor } from './cursor'
 import { getOrCreateDeviceId } from './device'
-import { SyncProgressTracker } from './progress'
+import {
+  ADAPTIVE_BATCH_DEFAULT,
+  nextAdaptiveBatchSize,
+} from './adaptive-batch'
+import { SyncBudget } from './budget'
+import { computeSyncPercent, SyncProgressTracker } from './progress'
 import { yieldToMain } from './yield'
 import type {
   AssetStorageClient,
@@ -25,8 +37,19 @@ import type {
   SyncWorkerResult,
 } from './types'
 
+export {
+  DEFAULT_SYNC_BUDGET_MS,
+  DEFAULT_SYNC_BUDGET_ITEMS,
+  SYNC_BUDGET_RESUME_DELAY_MS,
+} from './budget'
+export {
+  ADAPTIVE_BATCH_DEFAULT,
+  ADAPTIVE_BATCH_MAX,
+  ADAPTIVE_BATCH_MIN,
+} from './adaptive-batch'
+
 /** Default push batch size (RPC items per round-trip). */
-export const DEFAULT_SYNC_BATCH_SIZE = 50
+export const DEFAULT_SYNC_BATCH_SIZE = ADAPTIVE_BATCH_DEFAULT
 /** Re-export pull page size (500 = cloud max) for Sync Now callers. */
 export { DEFAULT_PULL_BATCH_SIZE }
 /** Safety cap: 200 × 50 = 10 000 items per Sync Now. */
@@ -110,13 +133,20 @@ export async function runSyncWorker(
   const schoolId = options.schoolId
   const client = options.client || getSupabaseSyncClient()
   const storage = asAssetStorage(client)
-  const batchSize = options.batchSize ?? DEFAULT_SYNC_BATCH_SIZE
+  let batchSize = options.batchSize ?? DEFAULT_SYNC_BATCH_SIZE
   const pullBatchSize = options.pullBatchSize ?? DEFAULT_PULL_BATCH_SIZE
+  const adaptBatch = options.batchSize == null
   const drainPush = options.drainPush !== false
   const drainPull = options.drainPull !== false
   const maxPushBatches = options.maxPushBatches ?? DEFAULT_MAX_PUSH_BATCHES
   const maxPullBatches = options.maxPullBatches ?? DEFAULT_MAX_PULL_BATCHES
   const pullMaxIterations = options.pullMaxIterations
+  const maxLane = options.maxLane
+  const laneOpts = maxLane ? { maxLane } : undefined
+  const budget = new SyncBudget({
+    maxDurationMs: options.maxDurationMs,
+    maxItems: options.maxItems,
+  })
 
   let tracker = options.progressTracker
   if (!tracker && options.onProgress) {
@@ -129,10 +159,14 @@ export async function runSyncWorker(
     })
     tracker.report('starting')
     await yieldToMain()
-    if (!options.skipPush) {
+    if (!options.skipPush && !options.skipOrphanEnqueue) {
+      tracker.report('starting', 'Preparing local changes…')
       await enqueueOrphanedPendingRows(db, { limit: 5000 })
     }
-    const pushTotal = options.skipPush ? 0 : countReadyPendingSyncItems(db)
+    const pushTotal = options.skipPush
+      ? 0
+      : countReadyPendingSyncItems(db, laneOpts)
+    tracker.setLaneCounts(countReadyPendingByLane(db))
     const pullRemaining = options.skipPull
       ? { count: 0, known: true }
       : await resolvePullRemaining(client, schoolId, db)
@@ -162,24 +196,50 @@ export async function runSyncWorker(
     hasMore: false,
   }
 
-  // 0. Backfill seed / missed writes (sync_status=pending, never queued)
-  // so primary Sync Now pushes fee structures, admissions, roles, etc. for other desks.
-  if (!options.skipPush) {
+  // 0. Backfill seed / missed writes (sync_status=pending, never queued).
+  // Skip when parent already scanned (progressTracker) or auto-resume asked us to.
+  if (
+    !options.skipPush &&
+    !options.skipOrphanEnqueue &&
+    !options.progressTracker
+  ) {
+    tracker?.report('starting', 'Preparing local changes…')
     const orphaned = await enqueueOrphanedPendingRows(db, { limit: 5000 })
     if (orphaned > 0) {
       console.log(
         `[SYNC] Enqueued ${orphaned} local pending row(s) that were missing from the outbox`
       )
-      if (tracker && !options.progressTracker) {
-        tracker.pushTotal = countReadyPendingSyncItems(db)
+      if (tracker) {
+        tracker.pushTotal = countReadyPendingSyncItems(db, laneOpts)
+        tracker.setLaneCounts(countReadyPendingByLane(db))
       }
     }
     await yieldToMain()
   }
 
+  const reportPushProgress = () => {
+    if (!tracker) return
+    const lanes = countReadyPendingByLane(db)
+    tracker.setLaneCounts(lanes)
+    const percent = computeSyncPercent(
+      tracker.pushDone,
+      tracker.pushTotal,
+      tracker.pullDone,
+      tracker.pullTotal
+    )
+    tracker.report(
+      'push',
+      pushLaneMessage(lanes, tracker.pushDone, tracker.pushTotal, percent),
+      {
+        lane: activePushLane(lanes),
+        criticalReady: isCriticalLaneReady(lanes),
+      }
+    )
+  }
+
   // 1. Push Phase (unless skipped) — drain outbox in batches
   if (!options.skipPush) {
-    tracker?.report('push')
+    reportPushProgress()
     await yieldToMain()
     const onSynced = storage
       ? async (item: {
@@ -214,13 +274,18 @@ export async function runSyncWorker(
         schoolId,
         client,
         batchSize,
+        maxLane,
         onSynced,
       })
       pushResult = mergePush(pushResult, batch)
       batches += 1
+      if (adaptBatch) {
+        batchSize = nextAdaptiveBatchSize(batchSize, batch)
+      }
       if (batch.successful > 0) {
         tracker?.addPush(batch.successful)
-        tracker?.report('push')
+        budget.add(batch.successful)
+        reportPushProgress()
       }
       // Yield so mouse / window chrome stay responsive on the main process.
       await yieldToMain()
@@ -228,18 +293,31 @@ export async function runSyncWorker(
       if (batch.skipped || batch.processed === 0) break
       // Entire batch failed (network drop / permanent barrier) — stop draining
       if (batch.successful === 0 && batch.failed > 0) {
+        const lanes = countReadyPendingByLane(db)
         pushResult = {
           ...pushResult,
-          hasMore: countReadyPendingSyncItems(db) > 0,
+          hasMore: countReadyPendingSyncItems(db, laneOpts) > 0,
           message:
             batch.message ||
             'Sync paused after errors. Fix connectivity or retry failed items, then Sync Now again.',
         }
+        tracker?.setLaneCounts(lanes)
         break
       }
       if (!drainPush) break
       if (!batch.hasMore) break
+      if (budget.exhausted()) {
+        const lanes = countReadyPendingByLane(db)
+        pushResult = {
+          ...pushResult,
+          hasMore: true,
+          message: doneLaneMessage(lanes),
+        }
+        tracker?.setLaneCounts(lanes)
+        break
+      }
       if (batches >= maxPushBatches) {
+        const lanes = countReadyPendingByLane(db)
         console.warn(
           `[SYNC] Push drain stopped at safety cap (${maxPushBatches} batches, ~${
             maxPushBatches * batchSize
@@ -248,11 +326,12 @@ export async function runSyncWorker(
         pushResult = {
           ...pushResult,
           hasMore: true,
-          message: `Synced ${pushResult.successful} item(s); more remain — click Sync Now again.`,
+          message: doneLaneMessage(lanes),
         }
+        tracker?.setLaneCounts(lanes)
         break
       }
-    } while (countReadyPendingSyncItems(db) > 0)
+    } while (countReadyPendingSyncItems(db, laneOpts) > 0)
 
     console.log(
       `[SYNC] Push drain finished after ${batches} batch(es): ` +
@@ -262,8 +341,10 @@ export async function runSyncWorker(
     )
   }
 
-  // 2. Pull Phase (unless skipped) — drain hasMore pages
-  if (!options.skipPull) {
+  // 2. Pull Phase (unless skipped) — drain hasMore pages.
+  // When the push budget already paused with backlog, skip pull this round so
+  // the next auto-resume spends time uploading instead of empty pull pages.
+  if (!options.skipPull && !(budget.enabled && pushResult.hasMore)) {
     tracker?.report('pull')
     await yieldToMain()
     let pages = 0
@@ -282,11 +363,21 @@ export async function runSyncWorker(
       })
       pullResult = mergePull(pullResult, page)
       pages += 1
+      if (page.applied > 0) budget.add(page.applied)
       await yieldToMain()
       // Hard error (network / apply): keep hasMore for the UI but do not spin.
       if (!page.ok) break
       if (!drainPull) break
       if (!page.hasMore) break
+      if (budget.exhausted()) {
+        const lanes = countReadyPendingByLane(db)
+        pullResult = {
+          ...pullResult,
+          hasMore: true,
+          message: doneLaneMessage(lanes),
+        }
+        break
+      }
       if (pages >= maxPullBatches) {
         console.warn(
           `[SYNC] Pull drain stopped at safety cap (${maxPullBatches} pages). ` +
@@ -330,20 +421,28 @@ export async function runSyncWorker(
   const conflicts = pushResult.conflicts + pullResult.conflicts
   const ok = pushResult.ok && pullResult.ok
   const hasMore = Boolean(pushResult.hasMore || pullResult.hasMore)
+  const finalLanes = countReadyPendingByLane(db)
+  tracker?.setLaneCounts(finalLanes)
   const message =
     pushResult.message ||
     pullResult.message ||
     (failed > 0
       ? `Sync finished with ${failed} failure(s). Open Failed items below for the exact error.`
       : hasMore
-        ? `Synced ${successful} item(s); more remain — Sync Now will continue.`
+        ? doneLaneMessage(finalLanes)
         : undefined)
 
   const progress =
     tracker && !hasMore
-      ? tracker.report('done')
+      ? tracker.report('done', 'Sync finished.', {
+          lane: 'bulk',
+          criticalReady: true,
+        })
       : tracker
-        ? tracker.report(pullResult.processed > 0 ? 'pull' : 'push', message)
+        ? tracker.report(pullResult.processed > 0 ? 'pull' : 'push', message, {
+            lane: activePushLane(finalLanes),
+            criticalReady: isCriticalLaneReady(finalLanes),
+          })
         : undefined
 
   return {
@@ -370,6 +469,10 @@ export async function runSyncWorkerUntilCaughtUp(
 ): Promise<SyncWorkerResult> {
   const maxRounds = options.maxRounds ?? DEFAULT_MAX_SYNC_ROUNDS
   const client = options.client || getSupabaseSyncClient()
+  const outerBudget = new SyncBudget({
+    maxDurationMs: options.maxDurationMs,
+    maxItems: options.maxItems,
+  })
 
   // Emit starting first so the renderer paints before the orphan scan.
   const tracker = new SyncProgressTracker({
@@ -381,10 +484,14 @@ export async function runSyncWorkerUntilCaughtUp(
   tracker.report('starting')
   await yieldToMain()
 
-  if (!options.skipPush) {
+  if (!options.skipPush && !options.skipOrphanEnqueue) {
+    tracker.report('starting', 'Preparing local changes…')
     await enqueueOrphanedPendingRows(db, { limit: 5000 })
   }
-  const pushTotal = options.skipPush ? 0 : countReadyPendingSyncItems(db)
+  const laneOpts = options.maxLane ? { maxLane: options.maxLane } : undefined
+  const pushTotal = options.skipPush
+    ? 0
+    : countReadyPendingSyncItems(db, laneOpts)
   const pullRemaining = options.skipPull
     ? { count: 0, known: true as const }
     : await resolvePullRemaining(client, options.schoolId, db)
@@ -392,6 +499,7 @@ export async function runSyncWorkerUntilCaughtUp(
   tracker.pushTotal = pushTotal
   tracker.pullTotal = pullRemaining.count
   tracker.pullCountKnown = pullRemaining.known
+  tracker.setLaneCounts(countReadyPendingByLane(db))
   tracker.report('starting')
   await yieldToMain()
 
@@ -423,12 +531,28 @@ export async function runSyncWorkerUntilCaughtUp(
   }
 
   for (let round = 1; round <= maxRounds; round += 1) {
+    // Share remaining budget with each inner drain (same wall clock / item pool).
+    const remainingMs =
+      outerBudget.maxDurationMs > 0
+        ? Math.max(
+            1,
+            outerBudget.maxDurationMs - (Date.now() - outerBudget.startedAt)
+          )
+        : 0
+    const remainingItems =
+      outerBudget.maxItems > 0
+        ? Math.max(1, outerBudget.maxItems - outerBudget.items)
+        : 0
     const page = await runSyncWorker(db, {
       ...options,
       client,
       progressTracker: tracker,
       // Avoid double-counting orphans / re-measuring totals
       onProgress: undefined,
+      // Parent already orphan-scanned once for this catch-up.
+      skipOrphanEnqueue: true,
+      maxDurationMs: outerBudget.maxDurationMs > 0 ? remainingMs : undefined,
+      maxItems: outerBudget.maxItems > 0 ? remainingItems : undefined,
     })
     merged = {
       ok: merged.ok && page.ok,
@@ -443,18 +567,33 @@ export async function runSyncWorkerUntilCaughtUp(
       pull: mergePull(merged.pull, page.pull),
       rounds: round,
     }
+    outerBudget.add(page.successful)
     if (!page.hasMore) break
     if (!page.ok) break
+    if (outerBudget.exhausted()) {
+      const lanes = countReadyPendingByLane(db)
+      merged.hasMore = true
+      merged.message = merged.message || doneLaneMessage(lanes)
+      break
+    }
     await yieldToMain()
   }
 
+  const endLanes = countReadyPendingByLane(db)
+  tracker.setLaneCounts(endLanes)
   if (!merged.hasMore) {
-    merged.progress = tracker.report('done')
+    merged.progress = tracker.report('done', 'Sync finished.', {
+      lane: 'bulk',
+      criticalReady: true,
+    })
   } else {
     merged.progress = tracker.report(
       'pull',
-      merged.message ||
-        `Synced ${merged.successful} item(s); more remain — Sync Now again.`
+      merged.message || doneLaneMessage(endLanes),
+      {
+        lane: activePushLane(endLanes),
+        criticalReady: isCriticalLaneReady(endLanes),
+      }
     )
   }
 

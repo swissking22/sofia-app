@@ -6,6 +6,7 @@ import { getDatabasePath, queueDatabaseRestore } from '../db'
 import type { Repositories } from '../db/repositories'
 import { SystemAdminService } from '../services/system-admin'
 import { tryProvisionStaffAuth, type CloudAuthRole } from '../services/cloud-auth'
+import { ensureMobileAccessCatalog } from '../services/ensure-mobile-access'
 import {
   prepareTeacherForMobile,
   repairTeacherDesktopUsers,
@@ -221,6 +222,7 @@ export function registerSystemAdminIpc(repos: Repositories): void {
             password: input.password,
           })
         } else {
+          ensureMobileAccessCatalog(repos, schoolId)
           const cloudRole: CloudAuthRole =
             shaped.role === 'secretary' ? 'secretary' : 'admin'
           warning = await tryProvisionStaffAuth({
@@ -400,6 +402,7 @@ export function registerSystemAdminIpc(repos: Repositories): void {
             password: input.password,
           })
         } else {
+          ensureMobileAccessCatalog(repos, schoolId)
           warning = await tryProvisionStaffAuth({
             email: user.user.email,
             password: input.password,

@@ -1,6 +1,7 @@
 /**
- * After teacher/staff mutations that affect the mobile app, push the outbox
- * when the network is reachable. Failures leave rows pending for Sync Now.
+ * After teacher/staff mutations that affect the mobile app, push the critical
+ * outbox (RBAC + staff/users/assignments) when the network is reachable.
+ * Failures leave rows pending for Sync Now / periodic sync.
  */
 import type Database from 'better-sqlite3'
 import { getDatabase } from '../db'
@@ -18,8 +19,17 @@ async function runQueued(): Promise<void> {
   if (!schoolId) return
 
   try {
+    // Critical lane only, no time budget, push-only — get mobile access online
+    // quickly without waiting on attendance/CA history.
     const result = await runSyncWorker(getDatabase() as Database.Database, {
       schoolId,
+      maxLane: 'critical',
+      skipPull: true,
+      skipOrphanEnqueue: true,
+      maxDurationMs: 0,
+      maxItems: 0,
+      drainPush: true,
+      maxPushBatches: 400,
     })
     if (!result.push.ok || result.push.failed > 0) {
       console.warn(

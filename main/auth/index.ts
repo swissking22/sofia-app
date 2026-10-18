@@ -13,6 +13,7 @@ import {
   type ProvisionStaffAuthInput,
   type ProvisionStaffAuthResult,
 } from '../services/cloud-auth'
+import { ensureMobileAccessCatalog } from '../services/ensure-mobile-access'
 import { SystemAdminService } from '../services/system-admin'
 import { pullRemoteChanges } from '../sync/pull'
 
@@ -282,6 +283,10 @@ export async function registerAdmin(
     password_hash,
     role: 'admin',
   })
+
+  // Seed Teacher/system roles + enqueue permission catalog for mobile RBAC
+  // before the founding admin ever creates staff.
+  ensureMobileAccessCatalog(repos, school.id)
 
   const provision = input.provisionAuth ?? provisionStaffAuth
   try {

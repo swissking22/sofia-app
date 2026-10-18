@@ -62,6 +62,11 @@ export interface PushSyncOptions {
   schoolId?: string
   batchSize?: number
   client?: SupabaseSyncClientInterface
+  /**
+   * Only push this lane and earlier (critical ⊂ operational ⊂ bulk).
+   * Omit to drain all lanes in priority order.
+   */
+  maxLane?: import('./lanes').SyncLane
   /** Optional hook after a queue item is successfully acknowledged by cloud. */
   onSynced?: (item: {
     id: string
@@ -184,6 +189,11 @@ export interface SyncWorkerOptions {
   /** Items per push RPC batch (default 50). */
   batchSize?: number
   /**
+   * Only push this lane and earlier (critical ⊂ operational ⊂ bulk).
+   * Omit to drain all lanes in priority order.
+   */
+  maxLane?: import('./lanes').SyncLane
+  /**
    * Items per pull RPC batch (default 500 = cloud max). Prefer larger pages
    * when hydrating a second desk so Sync Now uses fewer round-trips.
    */
@@ -201,6 +211,20 @@ export interface SyncWorkerOptions {
   maxPullBatches?: number
   /** Max RPC batches inside each pullRemoteChanges call (default 50). */
   pullMaxIterations?: number
+  /**
+   * Stop this run after this many ms (wall clock). Omit / 0 = no time budget.
+   * Used so Sync Now returns while bulk history continues in a follow-up run.
+   */
+  maxDurationMs?: number
+  /**
+   * Stop this run after this many successful push+pull items. Omit / 0 = unlimited.
+   */
+  maxItems?: number
+  /**
+   * Skip scanning domain tables for pending rows missing from the outbox.
+   * Auto-resume / inner rounds should set this — orphan backfill is expensive.
+   */
+  skipOrphanEnqueue?: boolean
   /**
    * Live Sync Now progress (percent + phase). Used by IPC to push
    * `sync:progress` events to the renderer.
