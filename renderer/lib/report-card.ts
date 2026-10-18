@@ -27,9 +27,17 @@ export type ReportCardTemplateSnapshot = {
   parent_label: string
 }
 
+export type ReportCardSequenceMark = {
+  name: string
+  mark: number | null
+}
+
 export type ReportCardSubjectRow = {
   subject_id: string
   subject_name: string
+  teacher_name?: string | null
+  competences?: string | null
+  sequence_marks?: ReportCardSequenceMark[]
   ca_score: number | null
   exam_score: number | null
   subject_mark: number | null
@@ -37,6 +45,7 @@ export type ReportCardSubjectRow = {
   weighted_mark: number | null
   grade: string | null
   gce_grade: string | null
+  subject_position?: number | null
   remark: string
 }
 
@@ -96,6 +105,8 @@ export type ReportCardPayload = {
     remark: string | null
   }
   grading_scale: ReportCardGradeLegendItem[]
+  qr_data_url?: string | null
+  verification_text?: string | null
 }
 
 const DEFAULT_HEADER: ReportCardBilingualHeader = {
@@ -114,7 +125,7 @@ const DEFAULT_HEADER: ReportCardBilingualHeader = {
 function defaultTemplate(): ReportCardTemplateSnapshot {
   return {
     version: 1,
-    title_en: 'STUDENT REPORT CARD',
+    title_en: 'TERM REPORT CARD',
     title_fr: 'BULLETIN DE NOTES',
     bilingual_header: { ...DEFAULT_HEADER },
     show_ca: true,
@@ -146,7 +157,18 @@ export function normalizeReportCardPayload(
   if (!raw) return null
 
   if (raw.schema_version && raw.template && raw.school && raw.student) {
-    return raw as unknown as ReportCardPayload
+    const payload = raw as unknown as ReportCardPayload
+    // Soft-fill fields added after older generations
+    payload.qr_data_url = payload.qr_data_url ?? null
+    payload.verification_text = payload.verification_text ?? null
+    payload.subjects = (payload.subjects ?? []).map((s) => ({
+      ...s,
+      teacher_name: s.teacher_name ?? null,
+      competences: s.competences ?? null,
+      sequence_marks: s.sequence_marks ?? [],
+      subject_position: s.subject_position ?? null,
+    }))
+    return payload
   }
 
   // Legacy flat payload
@@ -154,9 +176,19 @@ export function normalizeReportCardPayload(
   const subjects: ReportCardSubjectRow[] = subjectsRaw.map((row, i) => {
     const r = row as Record<string, unknown>
     const mark = asNumber(r.subject_mark) ?? asNumber(r.total)
+    const seqRaw = Array.isArray(r.sequence_marks) ? r.sequence_marks : []
     return {
       subject_id: asString(r.subject_id) || `subj-${i}`,
       subject_name: asString(r.subject_name) || '—',
+      teacher_name: asString(r.teacher_name),
+      competences: asString(r.competences),
+      sequence_marks: seqRaw.map((item, si) => {
+        const s = item as Record<string, unknown>
+        return {
+          name: asString(s.name) || `Sequence ${si + 1}`,
+          mark: asNumber(s.mark),
+        }
+      }),
       ca_score: asNumber(r.ca_score),
       exam_score: asNumber(r.exam_score),
       subject_mark: mark,
@@ -164,6 +196,7 @@ export function normalizeReportCardPayload(
       weighted_mark: asNumber(r.weighted_mark),
       grade: asString(r.grade),
       gce_grade: asString(r.gce_grade),
+      subject_position: asNumber(r.subject_position),
       remark: asString(r.remark) || '',
     }
   })
@@ -221,6 +254,8 @@ export function normalizeReportCardPayload(
       remark: asString(raw.remark),
     },
     grading_scale: [],
+    qr_data_url: asString(raw.qr_data_url),
+    verification_text: asString(raw.verification_text),
   }
 }
 
@@ -275,7 +310,7 @@ const SAMPLE_GRADING_SCALE: ReportCardGradeLegendItem[] = [
 export function buildReportCardSetupPreviewPayload(
   input: ReportCardSetupPreviewInput
 ): ReportCardPayload {
-  const header = input.headerText.trim() || 'STUDENT REPORT CARD'
+  const header = input.headerText.trim() || 'TERM REPORT CARD'
   const template = defaultTemplate()
   template.title_en = header
   template.principal_label = input.signatureLabel.trim() || template.principal_label
@@ -285,37 +320,58 @@ export function buildReportCardSetupPreviewPayload(
     {
       subject_id: 'preview-math',
       subject_name: 'Mathematics',
-      ca_score: 15,
-      exam_score: 14,
-      subject_mark: 14.4,
+      teacher_name: 'Mr. Nkeng',
+      competences: '—',
+      sequence_marks: [
+        { name: 'Sequence 1', mark: 14 },
+        { name: 'Sequence 2', mark: 15 },
+      ],
+      ca_score: 14.5,
+      exam_score: null,
+      subject_mark: 14.5,
       coefficient: 4,
-      weighted_mark: 57.6,
+      weighted_mark: 58,
       grade: 'B',
       gce_grade: 'B3',
+      subject_position: 4,
       remark: 'Very Good',
     },
     {
       subject_id: 'preview-eng',
       subject_name: 'English Language',
-      ca_score: 16,
-      exam_score: 15,
-      subject_mark: 15.4,
+      teacher_name: 'Mrs. Tabe',
+      competences: '—',
+      sequence_marks: [
+        { name: 'Sequence 1', mark: 16 },
+        { name: 'Sequence 2', mark: 15 },
+      ],
+      ca_score: 15.5,
+      exam_score: null,
+      subject_mark: 15.5,
       coefficient: 4,
-      weighted_mark: 61.6,
+      weighted_mark: 62,
       grade: 'A',
       gce_grade: 'A2',
+      subject_position: 2,
       remark: 'Excellent',
     },
     {
       subject_id: 'preview-bio',
       subject_name: 'Biology',
-      ca_score: 13,
-      exam_score: 12,
-      subject_mark: 12.4,
+      teacher_name: 'Mr. Fon',
+      competences: '—',
+      sequence_marks: [
+        { name: 'Sequence 1', mark: 12 },
+        { name: 'Sequence 2', mark: 13 },
+      ],
+      ca_score: 12.5,
+      exam_score: null,
+      subject_mark: 12.5,
       coefficient: 3,
-      weighted_mark: 37.2,
+      weighted_mark: 37.5,
       grade: 'C',
       gce_grade: 'C4',
+      subject_position: 8,
       remark: 'Good',
     },
   ]
@@ -354,9 +410,9 @@ export function buildReportCardSetupPreviewPayload(
     },
     subjects,
     summary: {
-      total_weighted_marks: 156.4,
+      total_weighted_marks: 157.5,
       total_coefficients: 11,
-      average: 14.22,
+      average: 14.32,
       grade: 'B',
       gce_grade: 'B3',
       position: 3,
@@ -364,9 +420,11 @@ export function buildReportCardSetupPreviewPayload(
       class_average: 13.8,
       highest_average: 16.1,
       lowest_average: 9.4,
-      status: 'Promoted',
+      status: 'PASSED',
       remark: 'A diligent student with consistent effort.',
     },
     grading_scale: SAMPLE_GRADING_SCALE,
+    qr_data_url: null,
+    verification_text: null,
   }
 }

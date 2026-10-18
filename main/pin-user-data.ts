@@ -3,8 +3,12 @@
  * Pins Electron userData before any module constructs electron-store
  * or reads app.getPath('userData').
  */
+import { installSafeConsole } from './helpers/safe-console'
 import { app } from 'electron'
 import { resolveUserDataPath } from './app-paths'
+
+// Before any console.log — broken stdout (EIO/EPIPE) must not crash the app.
+installSafeConsole()
 
 const isProd = process.env.NODE_ENV === 'production'
 

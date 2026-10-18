@@ -8,6 +8,7 @@ import type Database from 'better-sqlite3'
 import type { SyncProgressEvent } from './progress'
 import type { SyncWorkerResult } from './types'
 import { runSyncWorkerUntilCaughtUp } from './worker'
+import { yieldToMain } from './yield'
 
 const nodeRequire = createRequire(import.meta.url)
 
@@ -129,6 +130,9 @@ export async function runBackgroundSync(
 
   void (async () => {
     try {
+      // Return to the event loop so the renderer can paint + the cursor stays live
+      // before better-sqlite3 work blocks the main process.
+      await yieldToMain()
       const result = await runSyncWorkerUntilCaughtUp(db, {
         schoolId: options.schoolId,
         maxRounds: options.maxRounds,

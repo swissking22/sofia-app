@@ -36,9 +36,19 @@ export type ReportCardTemplateSnapshot = {
   parent_label: string
 }
 
+export type ReportCardSequenceMark = {
+  name: string
+  mark: number | null
+}
+
 export type ReportCardSubjectRow = {
   subject_id: string
   subject_name: string
+  teacher_name: string | null
+  /** Optional competence / evaluation note (blank when not configured). */
+  competences: string | null
+  /** Term sequence marks shown stacked in Mk/20 (e.g. Seq1 / Seq2). */
+  sequence_marks: ReportCardSequenceMark[]
   ca_score: number | null
   exam_score: number | null
   subject_mark: number | null
@@ -46,6 +56,8 @@ export type ReportCardSubjectRow = {
   weighted_mark: number | null
   grade: string | null
   gce_grade: string | null
+  /** Class rank for this subject (by subject mark). */
+  subject_position: number | null
   remark: string
 }
 
@@ -105,6 +117,9 @@ export type ReportCardPayload = {
     remark: string | null
   }
   grading_scale: ReportCardGradeLegendItem[]
+  /** PNG data URL for footer QR (scan shows a text result summary). */
+  qr_data_url: string | null
+  verification_text: string | null
 }
 
 export const DEFAULT_BILINGUAL_HEADER: ReportCardBilingualHeader = {
@@ -126,7 +141,7 @@ export function defaultReportCardTemplate(
   const { bilingual_header: headerOverride, ...rest } = partial ?? {}
   return {
     version: REPORT_CARD_TEMPLATE_VERSION,
-    title_en: 'STUDENT REPORT CARD',
+    title_en: 'TERM REPORT CARD',
     title_fr: 'BULLETIN DE NOTES',
     show_ca: true,
     show_exam: true,
@@ -282,6 +297,94 @@ export function ordinalPosition(n: number | null | undefined): string {
 export function formatReportScore(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return '—'
   return Number.isInteger(value) ? String(value) : value.toFixed(1)
+}
+
+/** Parse sequence_scores_json from result_subject_rows into display marks. */
+export function parseSequenceMarksFromJson(
+  json: string | null | undefined
+): ReportCardSequenceMark[] {
+  if (!json) return []
+  try {
+    const raw = JSON.parse(json) as unknown
+    if (!Array.isArray(raw)) return []
+    return raw.map((item, i) => {
+      const row = item as Record<string, unknown>
+      const mark =
+        typeof row.normalized === 'number'
+          ? row.normalized
+          : typeof row.raw === 'number'
+            ? row.raw
+            : null
+      return {
+        name: typeof row.name === 'string' ? row.name : `Sequence ${i + 1}`,
+        mark,
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Rank each student within each subject by mark (competition ranking).
+ * Returns map key `${student_id}:${subject_id}` → position.
+ */
+export function rankSubjectPositions(
+  rows: Array<{
+    student_id: string
+    subject_id: string
+    mark: number | null
+  }>
+): Map<string, number> {
+  const bySubject = new Map<string, Array<{ student_id: string; mark: number }>>()
+  for (const row of rows) {
+    if (row.mark == null || Number.isNaN(row.mark)) continue
+    const list = bySubject.get(row.subject_id) ?? []
+    list.push({ student_id: row.student_id, mark: row.mark })
+    bySubject.set(row.subject_id, list)
+  }
+  const out = new Map<string, number>()
+  for (const [subjectId, list] of bySubject) {
+    const sorted = [...list].sort((a, b) => b.mark - a.mark)
+    let lastMark: number | null = null
+    let lastRank = 0
+    sorted.forEach((item, index) => {
+      if (lastMark == null || item.mark !== lastMark) {
+        lastRank = index + 1
+        lastMark = item.mark
+      }
+      out.set(`${item.student_id}:${subjectId}`, lastRank)
+    })
+  }
+  return out
+}
+
+/** Human-readable payload encoded in the report-card QR. */
+export function buildReportCardVerificationText(input: {
+  schoolName: string
+  studentName: string
+  studentCode: string | null
+  className: string
+  yearName: string | null
+  termName: string | null
+  average: number | null
+  position: number | null
+  classSize: number | null
+  status: string | null
+}): string {
+  const lines = [
+    'SOFIA Term Report Card',
+    `School: ${input.schoolName}`,
+    `Student: ${input.studentName}${input.studentCode ? ` (${input.studentCode})` : ''}`,
+    `Class: ${input.className}`,
+    [input.yearName, input.termName].filter(Boolean).join(' · ') || '—',
+    `Average: ${formatReportScore(input.average)}/20`,
+    `Position: ${ordinalPosition(input.position)}${
+      input.classSize ? ` / ${input.classSize}` : ''
+    }`,
+    `Status: ${input.status || '—'}`,
+  ]
+  return lines.join('\n')
 }
 
 export { formatDisplayDate } from './date-format'

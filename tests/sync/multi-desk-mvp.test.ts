@@ -842,7 +842,7 @@ describe('Generic pull apply', () => {
     ).toEqual({ full_name: 'New Applicant' })
   })
 
-  it('backfills orphaned pending domain rows into the outbox', () => {
+  it('backfills orphaned pending domain rows into the outbox', async () => {
     const now = new Date().toISOString()
     db.prepare(
       `INSERT INTO academic_years (
@@ -857,7 +857,7 @@ describe('Generic pull apply', () => {
        ) VALUES ('fs-orphan-q', ?, 'Orphan Structure', 'year-q', 1, 'all', ?, ?, 'pending', 1)`
     ).run(schoolId, now, now)
 
-    const n = enqueueOrphanedPendingRows(db, { limit: 100 })
+    const n = await enqueueOrphanedPendingRows(db, { limit: 100 })
     expect(n).toBeGreaterThanOrEqual(1)
     const queued = db
       .prepare(

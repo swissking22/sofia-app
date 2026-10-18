@@ -16,6 +16,7 @@ import {
 import { getLocalSyncCursor } from './cursor'
 import { getOrCreateDeviceId } from './device'
 import { SyncProgressTracker } from './progress'
+import { yieldToMain } from './yield'
 import type {
   AssetStorageClient,
   PushSyncResult,
@@ -119,20 +120,27 @@ export async function runSyncWorker(
 
   let tracker = options.progressTracker
   if (!tracker && options.onProgress) {
+    // Paint "Starting…" before the orphan scan so the UI/cursor stay alive.
+    tracker = new SyncProgressTracker({
+      pushTotal: 0,
+      pullTotal: 0,
+      pullCountKnown: false,
+      onProgress: options.onProgress,
+    })
+    tracker.report('starting')
+    await yieldToMain()
     if (!options.skipPush) {
-      enqueueOrphanedPendingRows(db, { limit: 5000 })
+      await enqueueOrphanedPendingRows(db, { limit: 5000 })
     }
     const pushTotal = options.skipPush ? 0 : countReadyPendingSyncItems(db)
     const pullRemaining = options.skipPull
       ? { count: 0, known: true }
       : await resolvePullRemaining(client, schoolId, db)
-    tracker = new SyncProgressTracker({
-      pushTotal,
-      pullTotal: pullRemaining.count,
-      pullCountKnown: pullRemaining.known,
-      onProgress: options.onProgress,
-    })
+    tracker.pushTotal = pushTotal
+    tracker.pullTotal = pullRemaining.count
+    tracker.pullCountKnown = pullRemaining.known
     tracker.report('starting')
+    await yieldToMain()
   }
 
   let pushResult: PushSyncResult = {
@@ -157,7 +165,7 @@ export async function runSyncWorker(
   // 0. Backfill seed / missed writes (sync_status=pending, never queued)
   // so primary Sync Now pushes fee structures, admissions, roles, etc. for other desks.
   if (!options.skipPush) {
-    const orphaned = enqueueOrphanedPendingRows(db, { limit: 5000 })
+    const orphaned = await enqueueOrphanedPendingRows(db, { limit: 5000 })
     if (orphaned > 0) {
       console.log(
         `[SYNC] Enqueued ${orphaned} local pending row(s) that were missing from the outbox`
@@ -166,11 +174,13 @@ export async function runSyncWorker(
         tracker.pushTotal = countReadyPendingSyncItems(db)
       }
     }
+    await yieldToMain()
   }
 
   // 1. Push Phase (unless skipped) — drain outbox in batches
   if (!options.skipPush) {
     tracker?.report('push')
+    await yieldToMain()
     const onSynced = storage
       ? async (item: {
           id: string
@@ -212,6 +222,8 @@ export async function runSyncWorker(
         tracker?.addPush(batch.successful)
         tracker?.report('push')
       }
+      // Yield so mouse / window chrome stay responsive on the main process.
+      await yieldToMain()
 
       if (batch.skipped || batch.processed === 0) break
       // Entire batch failed (network drop / permanent barrier) — stop draining
@@ -253,6 +265,7 @@ export async function runSyncWorker(
   // 2. Pull Phase (unless skipped) — drain hasMore pages
   if (!options.skipPull) {
     tracker?.report('pull')
+    await yieldToMain()
     let pages = 0
     do {
       const page = await pullRemoteChanges({
@@ -269,6 +282,7 @@ export async function runSyncWorker(
       })
       pullResult = mergePull(pullResult, page)
       pages += 1
+      await yieldToMain()
       // Hard error (network / apply): keep hasMore for the UI but do not spin.
       if (!page.ok) break
       if (!drainPull) break
@@ -357,21 +371,29 @@ export async function runSyncWorkerUntilCaughtUp(
   const maxRounds = options.maxRounds ?? DEFAULT_MAX_SYNC_ROUNDS
   const client = options.client || getSupabaseSyncClient()
 
+  // Emit starting first so the renderer paints before the orphan scan.
+  const tracker = new SyncProgressTracker({
+    pushTotal: 0,
+    pullTotal: 0,
+    pullCountKnown: false,
+    onProgress: options.onProgress,
+  })
+  tracker.report('starting')
+  await yieldToMain()
+
   if (!options.skipPush) {
-    enqueueOrphanedPendingRows(db, { limit: 5000 })
+    await enqueueOrphanedPendingRows(db, { limit: 5000 })
   }
   const pushTotal = options.skipPush ? 0 : countReadyPendingSyncItems(db)
   const pullRemaining = options.skipPull
     ? { count: 0, known: true as const }
     : await resolvePullRemaining(client, options.schoolId, db)
 
-  const tracker = new SyncProgressTracker({
-    pushTotal,
-    pullTotal: pullRemaining.count,
-    pullCountKnown: pullRemaining.known,
-    onProgress: options.onProgress,
-  })
+  tracker.pushTotal = pushTotal
+  tracker.pullTotal = pullRemaining.count
+  tracker.pullCountKnown = pullRemaining.known
   tracker.report('starting')
+  await yieldToMain()
 
   let merged: SyncWorkerResult = {
     ok: true,
@@ -423,6 +445,7 @@ export async function runSyncWorkerUntilCaughtUp(
     }
     if (!page.hasMore) break
     if (!page.ok) break
+    await yieldToMain()
   }
 
   if (!merged.hasMore) {

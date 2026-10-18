@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import type Database from 'better-sqlite3'
 import type { SyncOperation } from '../db/types'
 import { SUPPORTED_SYNC_TABLES } from './tables'
+import { yieldToMain } from './yield'
 
 /** @deprecated Use SUPPORTED_SYNC_TABLES — kept for older imports/tests. */
 export const PHASE1_SYNC_TABLES = SUPPORTED_SYNC_TABLES
@@ -9,99 +10,102 @@ export const PHASE1_SYNC_TABLES = SUPPORTED_SYNC_TABLES
 const SUPPORTED_IN_LIST = SUPPORTED_SYNC_TABLES.map((t) => `'${t}'`).join(', ')
 
 /**
- * Teacher / structure tables sync before large finance backlogs so mobile
- * readiness is not stuck behind thousands of invoice_lines.
+ * Outbox drain order for Sync Now (`getPendingSyncItems`).
+ * Lower number = earlier push. RBAC (roles / users) is first after the school
+ * tenant so mobile membership and desk logins are not stuck behind academics
+ * or finance backlogs.
  */
 const SYNC_PRIORITY_CASE = `
   CASE table_name
     WHEN 'schools' THEN 0
-    WHEN 'academic_years' THEN 1
-    WHEN 'academic_terms' THEN 1
-    WHEN 'academic_levels' THEN 1
-    WHEN 'sections' THEN 1
-    WHEN 'specializations' THEN 1
-    WHEN 'departments' THEN 1
-    WHEN 'student_settings' THEN 1
-    WHEN 'calendar_events' THEN 1
-    WHEN 'report_settings' THEN 1
-    WHEN 'classes' THEN 2
-    WHEN 'subjects' THEN 2
-    WHEN 'subject_classes' THEN 2
-    WHEN 'permissions' THEN 2
+    WHEN 'permissions' THEN 1
     WHEN 'roles' THEN 2
-    WHEN 'role_permissions' THEN 2
-    WHEN 'users' THEN 3
-    WHEN 'staff' THEN 3
-    WHEN 'staff_subjects' THEN 3
-    WHEN 'staff_classes' THEN 3
-    WHEN 'school_day_breaks' THEN 3
-    WHEN 'timetable_slots' THEN 4
-    WHEN 'grading_systems' THEN 4
-    WHEN 'assessment_types' THEN 4
-    WHEN 'grade_bands' THEN 4
-    WHEN 'students' THEN 5
-    WHEN 'student_id_settings' THEN 5
-    WHEN 'admissions' THEN 5
-    WHEN 'student_transfers' THEN 5
-    WHEN 'student_documents' THEN 5
-    WHEN 'promotion_runs' THEN 5
-    WHEN 'promotion_mappings' THEN 5
-    WHEN 'attendance_sessions' THEN 6
-    WHEN 'attendance_records' THEN 6
-    WHEN 'gate_attendance' THEN 6
-    WHEN 'staff_attendance' THEN 6
-    WHEN 'ca_assessments' THEN 6
-    WHEN 'ca_scores' THEN 6
-    WHEN 'exam_sessions' THEN 6
-    WHEN 'exam_papers' THEN 6
-    WHEN 'exam_scores' THEN 6
-    WHEN 'result_calculation_profiles' THEN 7
-    WHEN 'result_calculation_profile_versions' THEN 7
-    WHEN 'result_calculation_class_assignments' THEN 7
-    WHEN 'result_subject_coefficients' THEN 7
-    WHEN 'result_runs' THEN 7
-    WHEN 'result_subject_rows' THEN 7
-    WHEN 'result_student_summaries' THEN 7
-    WHEN 'report_cards' THEN 7
-    WHEN 'teaching_syllabi' THEN 7
-    WHEN 'syllabus_topics' THEN 7
-    WHEN 'teaching_logs' THEN 7
-    WHEN 'announcements' THEN 8
-    WHEN 'internal_notices' THEN 8
-    WHEN 'communication_settings' THEN 8
-    WHEN 'notification_templates' THEN 8
-    WHEN 'communication_deliveries' THEN 8
-    WHEN 'parent_message_threads' THEN 8
-    WHEN 'parent_messages' THEN 8
-    WHEN 'staff_notifications' THEN 8
-    WHEN 'leave_balances' THEN 8
-    WHEN 'leave_requests' THEN 8
-    WHEN 'finance_settings' THEN 9
-    WHEN 'fee_categories' THEN 9
-    WHEN 'fee_amounts' THEN 9
-    WHEN 'fee_structures' THEN 9
-    WHEN 'fee_structure_lines' THEN 9
-    WHEN 'fee_discounts' THEN 9
-    WHEN 'student_fee_discounts' THEN 10
-    WHEN 'invoices' THEN 10
-    WHEN 'invoice_lines' THEN 10
-    WHEN 'payments' THEN 11
-    WHEN 'receipts' THEN 11
-    WHEN 'student_credits' THEN 11
-    WHEN 'document_templates' THEN 12
-    WHEN 'document_number_sequences' THEN 12
-    WHEN 'document_signatories' THEN 12
-    WHEN 'issued_documents' THEN 12
-    WHEN 'issued_document_versions' THEN 12
-    WHEN 'document_audit_log' THEN 12
-    WHEN 'student_id_card_templates' THEN 12
-    WHEN 'id_card_template_versions' THEN 12
-    WHEN 'id_card_settings' THEN 12
-    WHEN 'id_card_sequences' THEN 12
-    WHEN 'student_id_cards' THEN 12
-    WHEN 'id_card_generation_jobs' THEN 12
-    WHEN 'id_card_generation_items' THEN 12
-    WHEN 'id_card_print_history' THEN 12
+    WHEN 'role_permissions' THEN 3
+    WHEN 'users' THEN 4
+    WHEN 'staff' THEN 5
+    WHEN 'staff_subjects' THEN 5
+    WHEN 'staff_classes' THEN 5
+    WHEN 'school_day_breaks' THEN 5
+    WHEN 'timetable_slots' THEN 5
+    WHEN 'academic_years' THEN 6
+    WHEN 'academic_terms' THEN 6
+    WHEN 'academic_levels' THEN 6
+    WHEN 'sections' THEN 6
+    WHEN 'specializations' THEN 6
+    WHEN 'departments' THEN 6
+    WHEN 'student_settings' THEN 6
+    WHEN 'calendar_events' THEN 6
+    WHEN 'report_settings' THEN 6
+    WHEN 'classes' THEN 7
+    WHEN 'subjects' THEN 7
+    WHEN 'subject_classes' THEN 7
+    WHEN 'grading_systems' THEN 8
+    WHEN 'assessment_types' THEN 8
+    WHEN 'grade_bands' THEN 8
+    WHEN 'students' THEN 9
+    WHEN 'student_id_settings' THEN 9
+    WHEN 'admissions' THEN 9
+    WHEN 'student_transfers' THEN 9
+    WHEN 'student_documents' THEN 9
+    WHEN 'promotion_runs' THEN 9
+    WHEN 'promotion_mappings' THEN 9
+    WHEN 'attendance_sessions' THEN 10
+    WHEN 'attendance_records' THEN 10
+    WHEN 'gate_attendance' THEN 10
+    WHEN 'staff_attendance' THEN 10
+    WHEN 'ca_assessments' THEN 10
+    WHEN 'ca_scores' THEN 10
+    WHEN 'exam_sessions' THEN 10
+    WHEN 'exam_papers' THEN 10
+    WHEN 'exam_scores' THEN 10
+    WHEN 'result_calculation_profiles' THEN 11
+    WHEN 'result_calculation_profile_versions' THEN 11
+    WHEN 'result_calculation_class_assignments' THEN 11
+    WHEN 'result_subject_coefficients' THEN 11
+    WHEN 'result_runs' THEN 11
+    WHEN 'result_subject_rows' THEN 11
+    WHEN 'result_student_summaries' THEN 11
+    WHEN 'report_cards' THEN 11
+    WHEN 'teaching_syllabi' THEN 11
+    WHEN 'syllabus_topics' THEN 11
+    WHEN 'teaching_logs' THEN 11
+    WHEN 'announcements' THEN 12
+    WHEN 'internal_notices' THEN 12
+    WHEN 'communication_settings' THEN 12
+    WHEN 'notification_templates' THEN 12
+    WHEN 'communication_deliveries' THEN 12
+    WHEN 'parent_message_threads' THEN 12
+    WHEN 'parent_messages' THEN 12
+    WHEN 'staff_notifications' THEN 12
+    WHEN 'leave_balances' THEN 12
+    WHEN 'leave_requests' THEN 12
+    WHEN 'finance_settings' THEN 13
+    WHEN 'fee_categories' THEN 13
+    WHEN 'fee_amounts' THEN 13
+    WHEN 'fee_structures' THEN 13
+    WHEN 'fee_structure_lines' THEN 13
+    WHEN 'fee_discounts' THEN 13
+    WHEN 'student_fee_discounts' THEN 14
+    WHEN 'invoices' THEN 14
+    WHEN 'invoice_lines' THEN 14
+    WHEN 'payments' THEN 15
+    WHEN 'payment_allocations' THEN 15
+    WHEN 'receipts' THEN 15
+    WHEN 'student_credits' THEN 15
+    WHEN 'document_templates' THEN 16
+    WHEN 'document_number_sequences' THEN 16
+    WHEN 'document_signatories' THEN 16
+    WHEN 'issued_documents' THEN 16
+    WHEN 'issued_document_versions' THEN 16
+    WHEN 'document_audit_log' THEN 16
+    WHEN 'student_id_card_templates' THEN 16
+    WHEN 'id_card_template_versions' THEN 16
+    WHEN 'id_card_settings' THEN 16
+    WHEN 'id_card_sequences' THEN 16
+    WHEN 'student_id_cards' THEN 16
+    WHEN 'id_card_generation_jobs' THEN 16
+    WHEN 'id_card_generation_items' THEN 16
+    WHEN 'id_card_print_history' THEN 16
     ELSE 40
   END
 `
@@ -278,11 +282,16 @@ function tableColumns(db: Database.Database, table: string): Set<string> {
  * into `sync_queue` (seed data, pre-allowlist tables, missed repository writes).
  * Caps per call so Sync Now stays responsive; remaining rows enqueue next click.
  */
-export function enqueueOrphanedPendingRows(
+/**
+ * Scan pending entity rows missing from the outbox and enqueue them.
+ * Async + per-table yield so Sync Now does not freeze the Electron cursor.
+ */
+export async function enqueueOrphanedPendingRows(
   db: Database.Database,
-  options?: { limit?: number }
-): number {
+  options?: { limit?: number; yieldEveryTable?: boolean }
+): Promise<number> {
   const limit = options?.limit ?? 5000
+  const yieldEveryTable = options?.yieldEveryTable !== false
   let enqueued = 0
   const pendingExists = db.prepare(
     `SELECT 1 AS ok FROM sync_queue
@@ -293,7 +302,10 @@ export function enqueueOrphanedPendingRows(
   for (const table of SUPPORTED_SYNC_TABLES) {
     if (enqueued >= limit) break
     const cols = tableColumns(db, table)
-    if (!cols.has('id') || !cols.has('sync_status')) continue
+    if (!cols.has('id') || !cols.has('sync_status')) {
+      if (yieldEveryTable) await yieldToMain()
+      continue
+    }
 
     const whereDeleted = cols.has('deleted_at')
       ? `AND deleted_at IS NULL`
@@ -308,11 +320,15 @@ export function enqueueOrphanedPendingRows(
         )
         .all(limit - enqueued) as Array<Record<string, unknown>>
     } catch {
+      if (yieldEveryTable) await yieldToMain()
       continue
     }
 
     // Permissions are a global catalog seeded on every desk — do not re-push locals.
-    if (table === 'permissions') continue
+    if (table === 'permissions') {
+      if (yieldEveryTable) await yieldToMain()
+      continue
+    }
 
     for (const row of rows) {
       if (enqueued >= limit) break
@@ -322,6 +338,8 @@ export function enqueueOrphanedPendingRows(
       enqueueSync(db, table, recordId, 'INSERT', row)
       enqueued += 1
     }
+
+    if (yieldEveryTable) await yieldToMain()
   }
 
   return enqueued

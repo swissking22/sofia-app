@@ -1,9 +1,9 @@
 {
   "private": true,
-  "name": "sofia",
+  "name": "Sofia",
   "description": "Offline-first school management desktop application",
   "version": "1.0.7",
-  "author": "SOFIA",
+  "author": "Sofia",
   "type": "module",
   "main": "app/main.js",
   "scripts": {
@@ -30,6 +30,7 @@
     "electron-serve": "^3.0.0",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.8.9",
+    "qrcode": "^1.5.4",
     "react-easy-crop": "^6.2.3",
     "recharts": "^3.10.1"
   },
@@ -41,6 +42,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/jest": "^29.5.14",
     "@types/node": "^20.11.16",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.21",

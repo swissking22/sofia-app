@@ -11,6 +11,7 @@ import {
   hasPermission,
 } from '../domain/results-calculation'
 import {
+  buildReportCardVerificationText,
   CAMEROON_20_BANDS,
   computeClassStats,
   defaultReportCardTemplate,
@@ -19,6 +20,8 @@ import {
   gradingScaleLegend,
   isOfferedSubjectRow,
   parseReportCardTemplateOverrides,
+  parseSequenceMarksFromJson,
+  rankSubjectPositions,
   type ReportCardPayload,
 } from '../domain/report-card'
 import {
@@ -2253,10 +2256,10 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
 
   ipcMain.handle(
     'report-cards:generate',
-    (
+    async (
       _e,
       input: { class_id: string; term_id?: string | null }
-    ): Result<{ generated: number }> => {
+    ): Promise<Result<{ generated: number }>> => {
       const schoolId = resolveSchoolId(repos)
       if (!schoolId) return { ok: false, error: 'No school found.' }
       if (!input?.class_id) return { ok: false, error: 'Class is required.' }
@@ -2265,12 +2268,21 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         input.class_id,
         input.term_id ?? null
       )
-      if (!run || (run.status !== 'computed' && run.status !== 'published' && run.status !== 'locked')) {
+      if (
+        !run ||
+        (run.status !== 'computed' &&
+          run.status !== 'published' &&
+          run.status !== 'locked' &&
+          run.status !== 'approved')
+      ) {
         return {
           ok: false,
-          error: 'Process results for this class/term before generating report cards.',
+          error:
+            'Process results for this class/term before generating report cards.',
         }
       }
+
+      const QRCode = (await import('qrcode')).default
 
       const school = repos.schools.findById(schoolId)
       const year = repos.academicYears.getSetupDto(schoolId)
@@ -2295,6 +2307,29 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         extractGradingFromSnapshot(run.snapshot_json) ?? CAMEROON_20_BANDS
       const classStats = computeClassStats(summaries.map((s) => s.average))
       const grading_scale = gradingScaleLegend(gradingBands)
+
+      const subjectPositionMap = rankSubjectPositions(
+        subjectRows.map((r) => ({
+          student_id: r.student_id,
+          subject_id: r.subject_id,
+          mark: r.subject_mark ?? r.total ?? null,
+        }))
+      )
+
+      const teacherCache = new Map<string, string | null>()
+      function teacherFor(subjectId: string): string | null {
+        const key = `${input.class_id}:${subjectId}`
+        if (teacherCache.has(key)) return teacherCache.get(key) ?? null
+        const staffId = repos.staff.findStaffIdForClassSubject(
+          input.class_id,
+          subjectId
+        )
+        const name = staffId
+          ? repos.staff.findById(staffId)?.full_name ?? null
+          : null
+        teacherCache.set(key, name)
+        return name
+      }
 
       let motto: string | null = null
       try {
@@ -2335,6 +2370,9 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
       for (const summary of summaries) {
         const student = repos.students.findById(summary.student_id)
         if (!student) continue
+        const status =
+          summary.status ??
+          (summary.average >= 10 ? 'PASSED' : 'FAILED')
         const subjects = subjectRows
           .filter((r) => r.student_id === summary.student_id)
           .filter((r) =>
@@ -2347,9 +2385,15 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
           )
           .map((r) => {
             const mark = r.subject_mark ?? r.total
+            const sequence_marks = parseSequenceMarksFromJson(
+              r.sequence_scores_json
+            )
             return {
               subject_id: r.subject_id,
               subject_name: repos.subjects.findById(r.subject_id)?.name ?? '—',
+              teacher_name: teacherFor(r.subject_id),
+              competences: null as string | null,
+              sequence_marks,
               ca_score: r.ca_average ?? r.ca_score,
               exam_score: r.exam_score,
               subject_mark: mark,
@@ -2359,9 +2403,37 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
                 (mark != null ? mark * (r.coefficient ?? 1) : null),
               grade: r.grade,
               gce_grade: gceGradeForMark20(mark),
+              subject_position:
+                subjectPositionMap.get(
+                  `${summary.student_id}:${r.subject_id}`
+                ) ?? null,
               remark: r.remark ?? '',
             }
           })
+
+        const verification_text = buildReportCardVerificationText({
+          schoolName: schoolBlock.name,
+          studentName: student.name,
+          studentCode: student.student_code,
+          className,
+          yearName: year?.name ?? null,
+          termName,
+          average: summary.average,
+          position: summary.position,
+          classSize: classStats.class_size,
+          status,
+        })
+
+        let qr_data_url: string | null = null
+        try {
+          qr_data_url = await QRCode.toDataURL(verification_text, {
+            width: 120,
+            margin: 1,
+            errorCorrectionLevel: 'M',
+          })
+        } catch {
+          qr_data_url = null
+        }
 
         const payloadObj: ReportCardPayload = {
           schema_version: 1,
@@ -2397,12 +2469,12 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
             class_average: classStats.class_average,
             highest_average: classStats.highest_average,
             lowest_average: classStats.lowest_average,
-            status:
-              summary.status ??
-              (summary.average >= 10 ? 'PASSED' : 'FAILED'),
+            status,
             remark: summary.remark,
           },
           grading_scale,
+          qr_data_url,
+          verification_text,
         }
 
         // Backward-compatible flat keys for older views / consumers

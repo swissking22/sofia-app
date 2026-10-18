@@ -19,6 +19,7 @@ import { applyGenericPulledChange } from './apply-generic'
 import { recordSyncConflict } from './queue'
 import { isGenericSyncTable } from './tables'
 import { getSupabaseSyncClient } from './supabase-client'
+import { yieldToMain } from './yield'
 import type {
   PullSyncOptions,
   PullSyncResult,
@@ -100,8 +101,6 @@ export function applyPulledChangesTransaction(
     let skipped = 0
 
     for (const change of items) {
-      console.log(`[SYNC] Applying pulled change ${change.id} for table ${change.table_name} (${change.operation})`)
-
       // Tenant isolation check
       if (change.school_id && change.school_id !== schoolId) {
         console.warn(`[SYNC] Skipping change ${change.id}: tenant mismatch (change belongs to ${change.school_id})`)
@@ -627,6 +626,8 @@ export async function pullRemoteChanges(
         txRes.applied,
         Boolean(pullRes.hasMore)
       )
+      // SQLite apply is sync — yield so the UI/cursor stay responsive.
+      await yieldToMain()
     } catch (err: any) {
       console.error(`[SYNC] Error applying pulled changes transaction:`, err)
       totalFailed += 1

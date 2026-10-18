@@ -59,6 +59,22 @@ npx tsx scripts/seed/seedSunriseCaTerm1.ts --dev
 
 Then sign in as `admin@sunrise.demo` / `Sofia@Demo1` → **Academic → Results → Process results** (Term 1, each class) → **Report cards → Generate**. Active profile should be **Cameroon MINESEC (3 terms × 2 sequences)** (CA 100%, exam weight 0).
 
+**Sunrise Academy — timetable + teacher mobile login** (does not reset the DB; day schedule, weekly `timetable_slots` from `staff_subjects`, Teacher-role desktop `users`, Supabase Auth):
+
+```bash
+npx tsx scripts/seed/seedSunriseTimetableTeachers.ts --dev
+# Auth only skipped: add --skip-auth
+```
+
+Mobile (Sofia Teacher) after cloud push: any Sunrise teacher email (`*@sofia.demo`) / `Sofia@Staff1`. View grid under **Academic → Timetable**.
+
+To push staff/RBAC/timetable ahead of a large attendance backlog, then drain the rest:
+
+```bash
+node --import ./scripts/mock-electron-register.mjs --import tsx scripts/pushSunriseStaffMobile.ts --dev
+node --import ./scripts/mock-electron-register.mjs --import tsx scripts/pushSunriseRemaining.ts --dev
+```
+
 ### Desktop packaging (Windows)
 
 Build installers with Nextron + electron-builder:
@@ -424,15 +440,15 @@ Sofia implements a school-configurable calculation pipeline. **Default for new s
 |--------|------|------------|
 | List | `/academic/report-cards` | Filter by class + term |
 | Generate | `/academic/report-cards/generate` | Build official payloads for the class/term (embeds template snapshot for historical reproducibility) |
-| View / Print | `/academic/report-cards/view/:id` | Official A4 bilingual bulletin: ministry FR/EN header + centred logo, school identity, student details, academic grid (CA / Exam / Mark / Coeff / Weighted / Grade / GCE / Remark), performance summary, grading scale from the result-run profile, teacher/principal remarks, principal stamp & parent endorsement. **Print → Save as PDF**. |
+| View / Print | `/academic/report-cards/view/:id` | Official A4 **term report card**: 3-col header (Ministry + school + contact \| logo \| Republic motto), title / year / term, student + class details, academic grid (**Subject/Teacher**, Competences, **Mk/20** with Seq1∥Seq2 divider, **Av/20**, **Coeff**, **Weighted Mk**, Grade, Pos., Remarks), totals row (Σ coeff, Σ weighted, average, PASSED/FAILED), compact class/student average + position + remarks, centred principal signature, footer with name / ID / **QR** (scan shows result summary). **Print → Save as PDF**. Re-generate cards after results process to refresh sequence marks + QR. |
 
-**Data flow:** Results run (`snapshot_json.config.grading`) → `report-cards:generate` → `report_cards.payload` (schema v1) → `OfficialReportCard` → browser print.
+**Data flow:** Results run (`sequence_scores_json` + summaries) → `report-cards:generate` (async; embeds `qrcode` PNG) → `report_cards.payload` (schema v1) → `OfficialReportCard` → browser print.
 
-**Template customization:** Setup document template key `report_card` supplies header/footer. Optional JSON in `body_text`: `{ "sofia_report_card": { "title_en": "...", "bilingual_header": { "fr_lines": [...], "en_lines": [...] }, "show_gce": true } }`. Presentation options are **snapshotted** into each card so later template edits do not rewrite history.
+**Template customization:** Setup document template key `report_card` supplies header/footer. Optional JSON in `body_text`: `{ "sofia_report_card": { "title_en": "TERM REPORT CARD", ... } }`. Presentation options are **snapshotted** into each card so later template edits do not rewrite history.
 
 **Setup preview:** `/setup/documents` renders `OfficialReportCard` with sample student data via `buildReportCardSetupPreviewPayload` (`renderer/lib/report-card.ts`) and `ReportCardSetupPreview` (scaled to the aside width). Logo, stamp, signature, header, and footer changes update the preview immediately.
 
-**Architecture:** Domain `main/domain/report-card.ts`; view `renderer/components/report-cards/OfficialReportCard.tsx`; helpers `renderer/lib/report-card.ts`; shared print styles `renderer/components/report-cards/ReportCardStyles.tsx`.
+**Architecture:** Domain `main/domain/report-card.ts` (`parseSequenceMarksFromJson`, `rankSubjectPositions`, `buildReportCardVerificationText`); view `renderer/components/report-cards/OfficialReportCard.tsx`; helpers `renderer/lib/report-card.ts`; styles `ReportCardStyles.tsx`; dep `qrcode`.
 
 ### Academic reports — `/academic/reports`
 
@@ -629,7 +645,9 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 
 **Finance notes:** Invoice/receipt/payment/expense **numbers** travel with their rows (immutable after issue). Sequence counters on `finance_settings` never move backward when desks sync.
 
-**Multi-desk pull safety:** Generic apply stubs missing FK parents from payload keys (years, classes, students, staff, subjects, roles, fee structures, invoices, attendance sessions, result runs, …) at version **0** so out-of-order `sync_changes` never aborts a batch. Real rows overwrite stubs. Sync Now also **backfills** local `sync_status='pending'` rows that never entered `sync_queue` (seed / missed enqueues) so primary desks push complete catalogs. Push priority: foundation → RBAC/users → students/admissions → attendance/exams/results → communication → finance → documents/ID cards. Cloud allow-list: migration `20261008150000_full_ops_synced_entities.sql`.
+**Multi-desk pull safety:** Generic apply stubs missing FK parents from payload keys (years, classes, students, staff, subjects, roles, fee structures, invoices, attendance sessions, result runs, …) at version **0** so out-of-order `sync_changes` never aborts a batch. Real rows overwrite stubs. Sync Now also **backfills** local `sync_status='pending'` rows that never entered `sync_queue` (seed / missed enqueues) so primary desks push complete catalogs. Push priority: school → **RBAC → staff / timetable** → academics → students/admissions → attendance/exams/results → communication → finance → documents/ID cards. Cloud allow-list: migration `20261008150000_full_ops_synced_entities.sql`.
+
+**Tenant RLS (cloud):** Migration `20261018120000_tenant_rls_isolation.sql`. Authenticated clients only `SELECT` rows where `school_id = jwt_school_id()` (`app_metadata.school_id`). Anon has **no** direct table grants — sync goes through SECURITY DEFINER RPCs gated by `tenant_access_denied` (JWT school match, or anon desk with a **device registered to that school**; payload `school_id` cannot disagree). `register_device` refuses moving a device to another school.
 
 **Academics notes:** Result-run status never regresses (`draft` → `computed` → `published` → `locked`). Locked runs ignore remote DELETE. Child score/attendance rows without a local `school_id` column still sync (push attaches tenant id in the cloud payload).
 
@@ -753,7 +771,7 @@ where school_id = '<school_uuid>' and table_name = 'staff_subjects'
 Push synchronization mirrors local SQLite state to Supabase. **Students / student_id_settings** use `process_sync_operation`. **Multi-desk MVP tables** use `process_synced_entity` → `synced_entities` + `sync_changes`.
 
 1. **Local Outbox & Push Service (`main/sync/push.ts` - `pushPendingSync()`)**:
-   - Queries `sync_queue` in deterministic batch order: `SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT 50`.
+   - Queries `sync_queue` in priority order (`SYNC_PRIORITY_CASE` in `main/sync/queue.ts`): school → **permissions → roles → role_permissions → users → staff / assignments / timetable** → academics → students → attendance/results → communication → finance → documents, then `created_at ASC` within a band (`LIMIT 50`).
    - Resolves authorized school identity from the local database; rejects payload cross-tenant tampering.
    - Dispatches operations via `SupabaseSyncClient` to `process_sync_operation` RPC with PostgREST `/rest/v1/rpc/process_sync_operation`.
    - Upon successful acknowledgement, marks local `sync_queue` record as `status = 'synced'` and updates `last_attempt_at`. **Successful records are retained for auditability and debugging, never deleted.**
@@ -803,6 +821,7 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
    - Join school (`main/services/join-school.ts`) drains the same way (up to 200 pages).
    - **Sync progress %:** main broadcasts live `sync:progress` to **all** windows (phase, percent, upload/download counts). Push % = outbox drained; pull % uses cloud RPC `count_pending_sync_changes` (migration `20261009140000_count_pending_sync_changes.sql`). Without that migration, pull shows an indeterminate bar with applied counts. IPC: `backup-sync:sync-now`, `system-admin:sync-now`, `sync:get-status`.
    - **Shared session (`main/sync/session.ts`)**: one inflight catch-up run per school; Sync Now and periodic join the same promise. Renderer `useBackgroundSyncProgress` hydrates via `sync:get-status` on mount so the % bar survives navigation. AppShell shows the bar on every authenticated screen (Home, Backup & Sync, elsewhere).
+   - **Main-thread yields (`main/sync/yield.ts`)**: better-sqlite3 work is synchronous on Electron’s main process; the worker yields between orphan-table scans, push batches, and pull pages so the mouse cursor and window stay responsive while Sync Now runs.
 4. **Periodic background sync (`main/sync/periodic-sync.ts`)**:
    - Started from `main/main.ts` after IPC registration. When `system_settings.auto_sync = 1` and Electron reports online, runs shared `runBackgroundSync` (with live progress) on the interval in `sync_interval_minutes` (default 30, clamped 5–1440). First pass ~15s after startup.
    - Settings UI: Administration → Settings → Backup & Sync. Saving calls `restartPeriodicSync()`. Existing installs get a one-time enable via `sofia_local_migrations` id `periodic_auto_sync_on`.
@@ -826,6 +845,8 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
 **Patterns:** Soft deletes (`deleted_at`), sync fields on every table, repositories enqueue sync, renderer talks to main via `window.ipc.invoke` only (no REST).
 
 **Main window:** `main/helpers/create-window.ts` always calls `maximize()` on create so Sofia launches full-screen on the display (window chrome kept; not exclusive kiosk fullscreen). Restored bounds still apply when the user un-maximizes.
+
+**Safe console:** `main/helpers/safe-console.ts` is installed from `pin-user-data.ts` so `console.*` write failures (`EIO` / `EPIPE` on a closed stdout pipe) cannot become an uncaughtException during Sync Now.
 
 **Nested Back:** `AppShell` shows a heading **Back** control on deep routes (detail, create/action, and module sub-pages). Parent href comes from `resolveNestedBackHref` (`renderer/lib/nested-back.ts`), or an explicit `backHref` / `backLabel` prop; pass `backHref={false}` to hide. Prefer this over ad-hoc page-level Back buttons.
 
@@ -871,11 +892,20 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-18 | **Cloud tenant RLS:** migration `20261018120000_tenant_rls_isolation.sql` — RLS policies for authenticated (`jwt_school_id()`), revoke direct anon table access, harden sync RPCs with `tenant_access_denied` (JWT school match + registered device binding; no device school hijack on `register_device`). |
+| 2026-10-18 | **Ops — purge GFS/SRA cloud + local non-SRA:** removed cloud tenants for short codes GFS/SRA (both UUID mappings — identities were swapped in `public.schools`), including `synced_entities` / sync tables / devices / Auth users. Local DB kept only Sunrise Academy (`scripts/purgeLocalKeepSunrise.ts --dev`). LIWMAIC untouched. Re-provision Auth + Sync Now before mobile testing again. |
+| 2026-10-18 | **Sunrise staff cloud repair:** local Sync Now had marked staff/users synced but they were missing from `synced_entities` (empty `get_teacher_me`). `scripts/repushSunriseStaffUsers.ts --dev` force-upserts them via `process_synced_entity`. |
+| 2026-10-18 | **Sunrise full outbox drain:** `scripts/pushSunriseRemaining.ts --dev` (with `mock-electron-register`) pushes remaining attendance/CA/results/finance after the mobile-critical push. |
+| 2026-10-18 | **Sync queue priority:** after school tenant — `permissions` → `roles` → `role_permissions` → `users` → **staff / assignments / timetable** — then academics, students, finance. Ops: `pushSunriseStaffMobile.ts --dev` for mobile-first push. |
+| 2026-10-18 | **Sync `write EIO` crash:** install safe console wrappers at startup (`main/helpers/safe-console.ts`) and drop per-item push/pull `console.log` so a broken stdout pipe cannot kill Sync Now. |
+| 2026-10-17 | **Sync Now no longer freezes the cursor:** yield to the Electron event loop between orphan-table scans, push batches, and pull pages (`main/sync/yield.ts`) so UI input stays responsive during sync. |
+| 2026-10-17 | **Sunrise timetable + teacher Auth seed:** `scripts/seed/seedSunriseTimetableTeachers.ts --dev` fills Mon–Fri periods from teaching assignments, ensures Teacher-role `users`, and provisions Supabase Auth (`Sofia@Staff1`) for mobile login after Sync Now. |
 | 2026-10-16 | **Sync tenant cleanup:** abandon foreign-school outbox rows (stop tenant-mismatch loops); bootstrap retries with a unique non-null short_code when cloud enforces NOT NULL/UNIQUE (`20261016150000_bootstrap_school_tenant_short_code.sql`). |
 | 2026-10-16 | **Teacher users list:** Administration → Users shows teacher memberships; opening the list backfills missing Teacher-role `users` rows for Staff → Teachers with email (`repairTeacherDesktopUsers`). |
 | 2026-10-16 | **Teacher mobile membership:** creating/updating a teacher with email now ensures a synced desktop `users` row (Teacher role + `staff_id`) so mobile `get_mobile_access` no longer returns `not_member`; Auth + sync unchanged (`prepareTeacherForMobile`). |
 | 2026-10-16 | **CA mark input:** scores are clamped to 0–max while typing (cannot enter below 0 or above max). |
 | 2026-10-16 | **CA Record marks:** show **Teacher: …** beside the subject filter (from `staff_subjects` class–subject assignment via `ca:get-scores`). |
+| 2026-10-17 | **Term report card layout:** 3-col ministry/logo/republic header; Mk/20 sequence stack; Av/20, Coeff, Weighted Mk, subject position; totals + PASSED/FAILED; compact summary; centred principal sign; footer QR via `qrcode`. Re-generate cards after process. |
 | 2026-10-16 | **Sequence + term results sheets:** Sequence correction/final printable sheets (`/academic/results/sequences`); term formula documented; **Process all classes** via `results:bulk-process`. |
 | 2026-10-16 | **Sunrise CA Term 1 seed:** `scripts/seed/seedSunriseCaTerm1.ts --dev` creates Sequence 1+2 sheets and fills /20 scores for all Sunrise students×subjects so you can run Results Processing and report cards. |
 | 2026-10-16 | **True background sync:** shared main session broadcasts `sync:progress` to all windows; periodic sync uses the same session; AppShell + Home/Backup & Sync keep % via `sync:get-status` across navigation. |

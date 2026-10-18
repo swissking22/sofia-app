@@ -307,8 +307,6 @@ export async function pushPendingSync(
   // 4. Process each operation deterministically
   for (const item of pendingRows) {
     processed += 1
-    console.log(`[SYNC] Processing operation ${item.id}`)
-
     let payload: Record<string, unknown>
     try {
       payload = JSON.parse(item.payload)
@@ -400,10 +398,8 @@ export async function pushPendingSync(
     if (response.ok) {
       markSynced(db, item.id)
       successful += 1
-      if (item.table_name === 'students') {
-        console.log(`[SYNC] Student ${item.record_id} uploaded`)
-      }
-      console.log(`[SYNC] Operation ${item.id} acknowledged`)
+      // Avoid per-item console.log — floods stdout and can throw write EIO
+      // when the pipe is closed (Electron packaged / no TTY).
       if (options.onSynced) {
         try {
           await options.onSynced({

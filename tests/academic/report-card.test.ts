@@ -1,4 +1,5 @@
 import {
+  buildReportCardVerificationText,
   CAMEROON_20_BANDS,
   computeClassStats,
   defaultReportCardTemplate,
@@ -9,6 +10,8 @@ import {
   isOfferedSubjectRow,
   ordinalPosition,
   parseReportCardTemplateOverrides,
+  parseSequenceMarksFromJson,
+  rankSubjectPositions,
 } from '../../main/domain/report-card'
 import { gradeForScore } from '../../main/domain/results-calculation'
 
@@ -17,9 +20,50 @@ describe('Official report card domain', () => {
     const t = defaultReportCardTemplate()
     expect(t.bilingual_header.fr_lines[0]).toMatch(/CAMEROUN/i)
     expect(t.bilingual_header.en_lines[0]).toMatch(/CAMEROON/i)
-    expect(t.title_en).toBe('STUDENT REPORT CARD')
+    expect(t.title_en).toBe('TERM REPORT CARD')
     expect(t.title_fr).toBe('BULLETIN DE NOTES')
     expect(t.version).toBe(1)
+  })
+
+  it('parses sequence marks and ranks subject positions', () => {
+    const marks = parseSequenceMarksFromJson(
+      JSON.stringify([
+        { name: 'Sequence 1', raw: 14, normalized: 14 },
+        { name: 'Sequence 2', raw: 12, normalized: 12 },
+      ])
+    )
+    expect(marks).toEqual([
+      { name: 'Sequence 1', mark: 14 },
+      { name: 'Sequence 2', mark: 12 },
+    ])
+    const ranks = rankSubjectPositions([
+      { student_id: 'a', subject_id: 'math', mark: 18 },
+      { student_id: 'b', subject_id: 'math', mark: 12 },
+      { student_id: 'c', subject_id: 'math', mark: 18 },
+    ])
+    expect(ranks.get('a:math')).toBe(1)
+    expect(ranks.get('c:math')).toBe(1)
+    expect(ranks.get('b:math')).toBe(3)
+  })
+
+  it('builds QR verification text with key result fields', () => {
+    const text = buildReportCardVerificationText({
+      schoolName: 'Sunrise Academy',
+      studentName: 'Ada Lovelace',
+      studentCode: 'SRA-001',
+      className: 'Form 1 A',
+      yearName: '2025/2026',
+      termName: 'Term 1',
+      average: 13.5,
+      position: 4,
+      classSize: 30,
+      status: 'PASSED',
+    })
+    expect(text).toContain('Sunrise Academy')
+    expect(text).toContain('Ada Lovelace (SRA-001)')
+    expect(text).toContain('13.5/20')
+    expect(text).toContain('4th / 30')
+    expect(text).toContain('PASSED')
   })
 
   it('parses school template overrides from document body JSON', () => {

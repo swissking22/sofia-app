@@ -4,26 +4,26 @@ export function ReportCardStyles() {
     <style jsx global>{`
       .rc-doc {
         font-family: "Times New Roman", Times, "Liberation Serif", serif;
-        font-size: 11pt;
+        font-size: 10.5pt;
         color: #111;
-        line-height: 1.35;
+        line-height: 1.3;
       }
       .rc-gov-header {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
-        gap: 12px;
+        gap: 10px;
         align-items: start;
         border-bottom: 1.5px solid #111;
-        padding-bottom: 10px;
+        padding-bottom: 8px;
       }
       .rc-gov-col {
         font-size: 8.5pt;
         line-height: 1.25;
       }
-      .rc-gov-fr {
+      .rc-gov-left {
         text-align: left;
       }
-      .rc-gov-en {
+      .rc-gov-right {
         text-align: right;
       }
       .rc-gov-strong {
@@ -31,57 +31,49 @@ export function ReportCardStyles() {
         text-transform: uppercase;
         letter-spacing: 0.02em;
         margin: 0 0 2px;
+        font-size: 8.5pt;
       }
-      .rc-gov-line {
-        margin: 0 0 2px;
+      .rc-gov-school {
+        margin: 4px 0 2px;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 10pt;
+      }
+      .rc-gov-contact {
+        margin: 0;
+        font-size: 8pt;
+        color: #333;
+      }
+      .rc-gov-motto {
+        margin: 4px 0 0;
         font-style: italic;
+        font-size: 8.5pt;
       }
       .rc-gov-logo {
-        width: 64px;
-        height: 64px;
+        width: 72px;
+        height: 72px;
         display: flex;
         align-items: center;
         justify-content: center;
       }
       .rc-gov-logo img {
-        max-width: 64px;
-        max-height: 64px;
+        max-width: 72px;
+        max-height: 72px;
         object-fit: contain;
       }
       .rc-logo-fallback {
-        width: 56px;
-        height: 56px;
+        width: 64px;
+        height: 64px;
         border: 1.5px solid #111;
         display: flex;
         align-items: center;
         justify-content: center;
         font-weight: 700;
-        font-size: 20pt;
-      }
-      .rc-school-identity {
-        text-align: center;
-        margin-top: 10px;
-      }
-      .rc-school-name {
-        margin: 0;
-        font-size: 16pt;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-      }
-      .rc-motto {
-        margin: 4px 0 0;
-        font-size: 9pt;
-        font-style: italic;
-      }
-      .rc-contact {
-        margin: 4px 0 0;
-        font-size: 8.5pt;
-        color: #333;
+        font-size: 22pt;
       }
       .rc-title-block {
         text-align: center;
-        margin: 12px 0 10px;
+        margin: 10px 0 8px;
       }
       .rc-title-en {
         margin: 0;
@@ -92,57 +84,67 @@ export function ReportCardStyles() {
       }
       .rc-title-fr {
         margin: 2px 0 0;
-        font-size: 10pt;
+        font-size: 9.5pt;
         font-style: italic;
       }
       .rc-period {
-        margin: 4px 0 0;
+        margin: 2px 0 0;
         font-size: 10pt;
       }
-      .rc-student table,
-      .rc-results table,
-      .rc-summary table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      .rc-student th,
-      .rc-student td,
-      .rc-results th,
-      .rc-results td,
-      .rc-summary th,
-      .rc-summary td {
-        border: 1px solid #222;
-        padding: 4px 6px;
-        vertical-align: top;
-      }
-      .rc-student th,
-      .rc-summary th {
-        width: 18%;
-        text-align: left;
-        font-size: 8.5pt;
-        font-weight: 700;
-        background: #f3f3f3;
-      }
-      .rc-student td {
+      .rc-student-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin: 8px 0 10px;
         font-size: 10pt;
+      }
+      .rc-student-col p {
+        margin: 0 0 3px;
+      }
+      .rc-student-col-right {
+        text-align: right;
+      }
+      .rc-label {
+        font-weight: 600;
+      }
+      .rc-sex {
+        margin-left: 10px;
       }
       .rc-mono {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 9pt;
       }
       .rc-results {
-        margin-top: 10px;
+        margin-top: 4px;
+      }
+      .rc-results table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      .rc-results th,
+      .rc-results td {
+        border: 1px solid #222;
+        padding: 3px 4px;
+        vertical-align: middle;
       }
       .rc-results thead th {
-        font-size: 8pt;
+        font-size: 7.5pt;
         text-transform: uppercase;
-        letter-spacing: 0.03em;
+        letter-spacing: 0.02em;
         background: #f3f3f3;
         text-align: center;
+        font-weight: 700;
       }
       .rc-col-subject {
         text-align: left !important;
-        width: 28%;
+        width: 22%;
+      }
+      .rc-col-comp {
+        width: 12%;
+      }
+      .rc-col-mk {
+        width: 8%;
       }
       .rc-col-num {
         width: 8%;
@@ -150,16 +152,51 @@ export function ReportCardStyles() {
       .rc-col-grade {
         width: 7%;
       }
+      .rc-col-pos {
+        width: 6%;
+      }
       .rc-col-remark {
         width: 14%;
         text-align: left !important;
       }
+      .rc-subject-cell {
+        text-align: left;
+      }
       .rc-subject-name {
+        display: block;
+        font-weight: 700;
+        font-size: 9pt;
         overflow-wrap: anywhere;
-        word-break: break-word;
+      }
+      .rc-teacher-name {
+        display: block;
+        font-size: 7.5pt;
+        font-style: italic;
+        color: #333;
+      }
+      .rc-comp {
+        font-size: 8pt;
+        text-align: center;
+      }
+      .rc-mk-cell {
+        padding: 0 !important;
+      }
+      .rc-mk-stack {
+        display: flex;
+        flex-direction: column;
+      }
+      .rc-mk-row {
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        font-size: 9pt;
+        padding: 2px 3px;
+        line-height: 1.2;
+      }
+      .rc-mk-row + .rc-mk-row {
+        border-top: 1px solid #222;
       }
       .rc-num {
-        text-align: right;
+        text-align: center;
         font-variant-numeric: tabular-nums;
       }
       .rc-center {
@@ -170,70 +207,36 @@ export function ReportCardStyles() {
         font-weight: 700;
       }
       .rc-remark {
-        font-size: 8.5pt;
+        font-size: 8pt;
+        text-align: left;
       }
       .rc-empty {
         text-align: center;
         padding: 12px !important;
         color: #555;
       }
-      .rc-summary {
-        margin-top: 10px;
+      .rc-totals-row td {
+        background: #f7f7f7;
+        font-size: 9pt;
       }
-      .rc-muted {
-        font-weight: 400;
-        color: #555;
-        font-size: 8.5pt;
-      }
-      .rc-remarks {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-top: 10px;
-      }
-      .rc-remark-box {
-        border: 1px solid #222;
-        min-height: 52px;
-        padding: 6px 8px;
-      }
-      .rc-remark-label {
-        margin: 0;
-        font-size: 8pt;
+      .rc-totals-label {
+        text-align: right;
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
-      }
-      .rc-remark-body {
-        margin: 6px 0 0;
-        font-size: 10pt;
-        min-height: 28px;
-      }
-      .rc-handwrite {
-        min-height: 36px;
-      }
-      .rc-scale {
-        margin-top: 10px;
-        border: 1px solid #222;
-        padding: 6px 8px;
-      }
-      .rc-scale-title {
-        margin: 0 0 4px;
         font-size: 8pt;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
       }
-      .rc-scale-grid {
+      .rc-compact-summary {
         display: flex;
         flex-wrap: wrap;
-        gap: 6px 14px;
-        font-size: 8pt;
+        gap: 6px 18px;
+        margin-top: 10px;
+        padding: 6px 8px;
+        border: 1px solid #222;
+        font-size: 9pt;
       }
-      .rc-signatures {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 24px;
-        margin-top: 16px;
+      .rc-principal-sign {
+        margin-top: 18px;
+        text-align: center;
       }
       .rc-sign-label {
         margin: 0;
@@ -246,17 +249,18 @@ export function ReportCardStyles() {
         font-size: 9pt;
       }
       .rc-sign-area {
-        margin-top: 8px;
+        margin: 8px auto 0;
         min-height: 64px;
+        max-width: 280px;
         border: 1px dashed #666;
         display: flex;
         align-items: center;
-        justify-content: space-around;
-        gap: 8px;
+        justify-content: center;
+        gap: 12px;
         padding: 6px;
       }
-      .rc-sign-area-empty {
-        min-height: 72px;
+      .rc-sign-area-center {
+        justify-content: center;
       }
       .rc-sign-img {
         max-height: 48px;
@@ -278,22 +282,66 @@ export function ReportCardStyles() {
         margin: 8px 0 0;
         font-size: 9pt;
       }
-      .rc-footer {
-        margin-top: 14px;
+      .rc-footer-bar {
+        margin-top: 16px;
         border-top: 1px solid #222;
         padding-top: 8px;
-        text-align: center;
-        font-size: 8pt;
-        color: #444;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .rc-footer-meta {
+        text-align: left;
+        font-size: 8.5pt;
+        color: #333;
+      }
+      .rc-footer-name {
+        margin: 0;
+        font-weight: 700;
+        font-size: 10pt;
+        color: #111;
+      }
+      .rc-footer-id {
+        margin: 2px 0 0;
+      }
+      .rc-footer-note {
+        margin: 4px 0 0;
+        color: #555;
       }
       .rc-generated {
         margin: 4px 0 0;
         color: #777;
+        font-size: 7.5pt;
+      }
+      .rc-footer-qr {
+        text-align: center;
+        flex-shrink: 0;
+      }
+      .rc-footer-qr img {
+        width: 72px;
+        height: 72px;
+        display: block;
+      }
+      .rc-qr-placeholder {
+        width: 72px;
+        height: 72px;
+        border: 1px dashed #888;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 8pt;
+        color: #888;
+      }
+      .rc-qr-caption {
+        margin: 2px 0 0;
+        font-size: 7pt;
+        color: #555;
       }
 
       @page {
         size: A4 portrait;
-        margin: 12mm;
+        margin: 10mm;
       }
       @media print {
         html,
@@ -312,7 +360,8 @@ export function ReportCardStyles() {
           display: table-header-group;
         }
         .rc-gov-header,
-        .rc-signatures {
+        .rc-principal-sign,
+        .rc-footer-bar {
           break-inside: avoid;
         }
       }

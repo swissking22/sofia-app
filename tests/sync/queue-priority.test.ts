@@ -48,4 +48,48 @@ describe('sync queue drain helpers', () => {
     expect(batch[0].table_name).toBe('staff_subjects')
     expect(countReadyPendingSyncItems(db)).toBe(2)
   })
+
+  it('drains RBAC then staff before academics and finance', () => {
+    const db = memoryDb()
+    const rows: Array<[string, string]> = [
+      ['invoice_lines', 'inv_1'],
+      ['academic_years', 'ay_1'],
+      ['staff_subjects', 'ss_1'],
+      ['staff', 'st_1'],
+      ['users', 'u_1'],
+      ['role_permissions', 'rp_1'],
+      ['roles', 'r_1'],
+      ['permissions', 'p_1'],
+      ['schools', 'sch_1'],
+    ]
+    for (const [table, id] of rows) {
+      enqueueSync(db, table, id, 'INSERT', {
+        id,
+        updated_at: '2026-01-01T00:00:00.000Z',
+      })
+    }
+    // Oldest created_at on finance — priority must still win
+    db.prepare(
+      `UPDATE sync_queue SET created_at = '2025-01-01T00:00:00.000Z' WHERE table_name = 'invoice_lines'`
+    ).run()
+
+    const ordered = getPendingSyncItems(db, 20).map((r) => r.table_name)
+    expect(ordered.slice(0, 5)).toEqual([
+      'schools',
+      'permissions',
+      'roles',
+      'role_permissions',
+      'users',
+    ])
+    expect(ordered.indexOf('staff')).toBeGreaterThan(-1)
+    expect(ordered.indexOf('staff_subjects')).toBeGreaterThan(-1)
+    expect(ordered.indexOf('users')).toBeLessThan(ordered.indexOf('staff'))
+    expect(ordered.indexOf('staff')).toBeLessThan(ordered.indexOf('academic_years'))
+    expect(ordered.indexOf('staff_subjects')).toBeLessThan(
+      ordered.indexOf('academic_years')
+    )
+    expect(ordered.indexOf('staff_subjects')).toBeLessThan(
+      ordered.indexOf('invoice_lines')
+    )
+  })
 })
