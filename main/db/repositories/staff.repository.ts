@@ -26,6 +26,7 @@ export const ADMIN_ROLE_LABELS: Record<StaffAdminRole, string> = {
   vice_principal: 'Vice Principal',
   bursar: 'Bursar',
   secretary: 'Secretary',
+  board: 'Board'
 }
 
 export const ADMIN_ROLES: StaffAdminRole[] = [
@@ -33,10 +34,13 @@ export const ADMIN_ROLES: StaffAdminRole[] = [
   'vice_principal',
   'bursar',
   'secretary',
+  'board',
 ]
 
 function adminRoleToUserRole(role: StaffAdminRole): UserRole {
   if (role === 'principal' || role === 'vice_principal') return 'admin'
+  if (role === 'bursar') return 'bursar'
+  if (role === 'board') return 'board'
   return 'secretary'
 }
 

@@ -8,7 +8,7 @@ export type SyncOperation = 'INSERT' | 'UPDATE' | 'DELETE'
 export type SyncQueueStatus = 'pending' | 'synced' | 'failed'
 
 /** User roles */
-export type UserRole = 'admin' | 'secretary' | 'teacher'
+export type UserRole = 'admin' | 'secretary' | 'teacher' | 'board' | 'bursar'
 
 /** Base fields required on every domain table */
 export interface BaseRecord {
@@ -83,6 +83,7 @@ export type StaffAdminRole =
   | 'vice_principal'
   | 'bursar'
   | 'secretary'
+  | 'board'
 export type StaffStatus = 'active' | 'inactive'
 export type StaffGender = 'male' | 'female' | 'other'
 /** Day-to-day job role shown in Staff Management (not payroll). */

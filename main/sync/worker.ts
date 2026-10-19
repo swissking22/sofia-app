@@ -5,7 +5,6 @@
  * 3. Downloads missing branding/photo files from Storage when available.
  */
 import type Database from 'better-sqlite3'
-import { pushPendingSync } from './push'
 import { DEFAULT_PULL_BATCH_SIZE, pullRemoteChanges } from './pull'
 import { downloadMissingSyncedAssets, uploadRowAssets } from './assets'
 import { getSupabaseSyncClient } from './supabase-client'
@@ -29,6 +28,11 @@ import {
 import { SyncBudget } from './budget'
 import { computeSyncPercent, SyncProgressTracker } from './progress'
 import { yieldToMain } from './yield'
+import {
+  DEFAULT_PARALLEL_PUSH_CONCURRENCY,
+  pushPendingSyncParallel,
+} from './parallel'
+import { resolveSyncOnlinePolicy } from './online-policy'
 import type {
   AssetStorageClient,
   PushSyncResult,
@@ -141,12 +145,31 @@ export async function runSyncWorker(
   const maxPushBatches = options.maxPushBatches ?? DEFAULT_MAX_PUSH_BATCHES
   const maxPullBatches = options.maxPullBatches ?? DEFAULT_MAX_PULL_BATCHES
   const pullMaxIterations = options.pullMaxIterations
-  const maxLane = options.maxLane
-  const laneOpts = maxLane ? { maxLane } : undefined
+  let maxLane = options.maxLane
+  let parallelConcurrency =
+    options.parallelPushConcurrency ?? DEFAULT_PARALLEL_PUSH_CONCURRENCY
   const budget = new SyncBudget({
     maxDurationMs: options.maxDurationMs,
     maxItems: options.maxItems,
   })
+
+  // Network probe once per Sync Now — slow/offline → critical-only + no parallel.
+  let onlineBatchCap: number | undefined
+  if (!options.skipPush && options.applyOnlinePolicy !== false) {
+    const policy = await resolveSyncOnlinePolicy()
+    if (policy.maxLane && !maxLane) {
+      maxLane = policy.maxLane
+    }
+    if (policy.batchSizeCap != null) {
+      onlineBatchCap = policy.batchSizeCap
+      if (batchSize > policy.batchSizeCap) batchSize = policy.batchSizeCap
+    }
+    if (options.parallelPushConcurrency == null) {
+      parallelConcurrency = policy.parallelPushConcurrency
+    }
+    console.log(`[SYNC] Online policy: ${policy.reason}`)
+  }
+  const laneOpts = maxLane ? { maxLane } : undefined
 
   let tracker = options.progressTracker
   if (!tracker && options.onProgress) {
@@ -269,18 +292,22 @@ export async function runSyncWorker(
 
     let batches = 0
     do {
-      const batch = await pushPendingSync({
+      const batch = await pushPendingSyncParallel({
         db,
         schoolId,
         client,
         batchSize,
         maxLane,
+        concurrency: parallelConcurrency,
         onSynced,
       })
       pushResult = mergePush(pushResult, batch)
       batches += 1
       if (adaptBatch) {
         batchSize = nextAdaptiveBatchSize(batchSize, batch)
+        if (onlineBatchCap != null && batchSize > onlineBatchCap) {
+          batchSize = onlineBatchCap
+        }
       }
       if (batch.successful > 0) {
         tracker?.addPush(batch.successful)

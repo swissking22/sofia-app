@@ -459,6 +459,20 @@ export async function enqueueOrphanedPendingRows(
 export type GetPendingSyncItemsOptions = {
   /** Cap to this lane and earlier (e.g. `critical` skips operational+bulk). */
   maxLane?: SyncLane
+  /** Restrict to these table_name values (parallel push per table). */
+  tableNames?: string[]
+}
+
+function tableNamesFilterSql(tableNames?: string[]): {
+  sql: string
+  params: string[]
+} {
+  if (!tableNames?.length) return { sql: '', params: [] }
+  const placeholders = tableNames.map(() => '?').join(', ')
+  return {
+    sql: `AND table_name IN (${placeholders})`,
+    params: tableNames,
+  }
 }
 
 /**
@@ -477,15 +491,17 @@ export function getPendingSyncItems(
     maxLane != null
       ? `AND (${SYNC_LANE_CASE}) <= ${SYNC_LANE_RANK[maxLane]}`
       : ''
+  const tables = tableNamesFilterSql(options?.tableNames)
   return db
     .prepare(
       `SELECT * FROM sync_queue
        WHERE ${READY_PENDING_WHERE}
        ${laneFilter}
+       ${tables.sql}
        ORDER BY ${SYNC_LANE_CASE} ASC, ${SYNC_PRIORITY_CASE} ASC, created_at ASC
        LIMIT ?`
     )
-    .all(limit) as Array<Record<string, unknown>>
+    .all(...tables.params, limit) as Array<Record<string, unknown>>
 }
 
 /** Count supported pending rows that are eligible to push right now (backoff elapsed). */
@@ -498,14 +514,41 @@ export function countReadyPendingSyncItems(
     maxLane != null
       ? `AND (${SYNC_LANE_CASE}) <= ${SYNC_LANE_RANK[maxLane]}`
       : ''
+  const tables = tableNamesFilterSql(options?.tableNames)
   const row = db
     .prepare(
       `SELECT COUNT(*) AS n FROM sync_queue
        WHERE ${READY_PENDING_WHERE}
-       ${laneFilter}`
+       ${laneFilter}
+       ${tables.sql}`
     )
-    .get() as { n: number }
+    .get(...tables.params) as { n: number }
   return Number(row.n) || 0
+}
+
+/** Distinct ready table_name values (lane-ordered) for parallel push. */
+export function listReadyPendingTables(
+  db: Database.Database,
+  options?: GetPendingSyncItemsOptions
+): string[] {
+  const maxLane = options?.maxLane
+  const laneFilter =
+    maxLane != null
+      ? `AND (${SYNC_LANE_CASE}) <= ${SYNC_LANE_RANK[maxLane]}`
+      : ''
+  const tables = tableNamesFilterSql(options?.tableNames)
+  const rows = db
+    .prepare(
+      `SELECT table_name, MIN(${SYNC_LANE_CASE}) AS lane, MIN(${SYNC_PRIORITY_CASE}) AS pri
+       FROM sync_queue
+       WHERE ${READY_PENDING_WHERE}
+       ${laneFilter}
+       ${tables.sql}
+       GROUP BY table_name
+       ORDER BY lane ASC, pri ASC, table_name ASC`
+    )
+    .all(...tables.params) as Array<{ table_name: string }>
+  return rows.map((r) => r.table_name)
 }
 
 /** Ready pending counts split by sync lane (for progress + readiness). */

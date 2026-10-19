@@ -85,6 +85,13 @@ export interface PushSyncOptions {
    * Omit to drain all lanes in priority order.
    */
   maxLane?: import('./lanes').SyncLane
+  /** Restrict this push to these tables (parallel workers). */
+  tableNames?: string[]
+  /**
+   * Skip outbox repair / discard (parallel siblings after the first call).
+   * Device registration still runs when the local desk is unregistered.
+   */
+  skipHousekeeping?: boolean
   /** Optional hook after a queue item is successfully acknowledged by cloud. */
   onSynced?: (item: {
     id: string
@@ -211,6 +218,16 @@ export interface SyncWorkerOptions {
    * Omit to drain all lanes in priority order.
    */
   maxLane?: import('./lanes').SyncLane
+  /**
+   * Push up to this many independent tables concurrently after foundation
+   * entities drain (default 3). Set 1 to force sequential push.
+   */
+  parallelPushConcurrency?: number
+  /**
+   * Run a cheap cloud latency probe and tighten maxLane / batch / concurrency
+   * when the link is slow or unreachable (default true).
+   */
+  applyOnlinePolicy?: boolean
   /**
    * Items per pull RPC batch (default 500 = cloud max). Prefer larger pages
    * when hydrating a second desk so Sync Now uses fewer round-trips.

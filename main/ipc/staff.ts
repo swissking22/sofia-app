@@ -97,6 +97,12 @@ function adminRoleToCloudRole(adminRole: StaffAdminRole): CloudAuthRole {
   if (adminRole === 'principal' || adminRole === 'vice_principal') {
     return 'admin'
   }
+  if (adminRole === 'bursar') {
+    return 'bursar'
+  }
+  if (adminRole === 'board') {
+    return 'board'
+  }
   return 'secretary'
 }
 

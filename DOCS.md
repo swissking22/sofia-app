@@ -651,7 +651,11 @@ Multiple office PCs share one school tenant via push/pull. **Synced today:**
 
 **Sync budget** (`main/sync/budget.ts`): each background Sync Now / periodic run defaults to **60s** or **2 500** successful items (whichever first), then pauses with `hasMore` and a lane-aware message. `runBackgroundSync` auto-schedules a follow-up ~1.5s later so the UI can return while history keeps draining. Pass `maxDurationMs: 0` / `maxItems: 0` (or omit budget via worker options) for unlimited drains (ops scripts).
 
-**Adaptive push batches** (`main/sync/adaptive-batch.ts`): when Sync Now does not fix `batchSize`, the worker starts at **50** and grows toward **100** on clean rounds, or shrinks toward **25** on timeouts / total failure (still one item per RPC — multi-row batch RPC is a later todo).
+**Adaptive push batches** (`main/sync/adaptive-batch.ts`): when Sync Now does not fix `batchSize`, the worker starts at **50** and grows toward **100** on clean rounds, or shrinks toward **25** on timeouts / total failure. Combined with `process_synced_entities_batch` for multi-row RPCs.
+
+**Parallel push** (`main/sync/parallel.ts`): after foundation tables (`schools` → `permissions` → `roles` → `role_permissions`) drain sequentially, Sync Now pushes up to **3** independent tables concurrently (network RPCs overlap; SQLite apply stays on the main connection). Set `parallelPushConcurrency: 1` to force sequential.
+
+**Online policy** (`main/sync/online-policy.ts`): each Sync Now probes Supabase latency once. Healthy RTT → full lanes + parallel. Slow (≥2.5s) or failed probe → **critical-only**, smaller batches (25–40), concurrency 1. Disable with `applyOnlinePolicy: false`.
 
 **Lean payloads** (`main/sync/lean-payload.ts`): enqueue + push strip `null`s, `password_hash`, and local blob fields (`photo_blob`, etc.); photos/branding still use Storage assets.
 
@@ -827,7 +831,7 @@ Pull synchronization fetches remote mutations from Supabase `public.sync_changes
    - `public.pull_sync_changes(p_school_id, p_device_id, p_cursor, p_limit)`: `SECURITY DEFINER` function querying `public.sync_changes` strictly for the authorized `p_school_id` with `id > p_cursor`, returning aggregated changes JSON, counts, and `new_cursor`.
    - `public.update_sync_cursor(p_school_id, p_device_id, p_cursor)`: `SECURITY DEFINER` function upserting `public.sync_cursors` with `GREATEST(last_synced_change_id, p_cursor)`.
 3. **Two-Way Sync Coordination (`main/sync/worker.ts` - `runSyncWorker()` / `runSyncWorkerUntilCaughtUp()`)**:
-   - Runs Push phase first (`pushPendingSync()`), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters plus top-level **`hasMore`** / **`message`** from either phase. Until-caught-up drains across safety-cap rounds.
+   - Runs Push phase first (`pushPendingSyncParallel()` → foundation then capped parallel tables), followed by Pull phase (`pullRemoteChanges()`), returning aggregated counters plus top-level **`hasMore`** / **`message`** from either phase. Until-caught-up drains across safety-cap rounds. Applies `resolveSyncOnlinePolicy()` once per run unless `applyOnlinePolicy: false`.
    - Pull uses a dedicated page size (default **500**) and loops while `pull.hasMore` (default up to 100 outer pages). Hard pull errors stop the drain (no tight retry loop) but leave `hasMore=true` for the next Sync Now.
    - Join school (`main/services/join-school.ts`) drains the same way (up to 200 pages).
    - **Sync progress %:** main broadcasts live `sync:progress` to **all** windows (phase, percent, upload/download counts). Push % = outbox drained; pull % uses cloud RPC `count_pending_sync_changes` (migration `20261009140000_count_pending_sync_changes.sql`). Without that migration, pull shows an indeterminate bar with applied counts. IPC: `backup-sync:sync-now`, `system-admin:sync-now`, `sync:get-status`.
@@ -903,6 +907,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-18 | **Parallel push + online policy:** after foundation RBAC tables, Sync Now pushes up to 3 independent tables concurrently (`main/sync/parallel.ts`); a latency probe (`main/sync/online-policy.ts`) restricts slow/offline links to the critical lane with smaller batches and no parallel. |
 | 2026-10-18 | **Batch push RPC + version watermark:** cloud `process_synced_entities_batch` (migration `20261018140000`) pushes many outbox rows in one round-trip; desk falls back to per-item if undeployed. Local watermark skips unchanged already-synced versions (`main/sync/watermark.ts`). |
 | 2026-10-18 | **Auto mobile RBAC provisioning:** creating/updating a teacher (or staff with Auth) calls `ensureMobileAccessCatalog` — seeds Teacher role grants, force-enqueues permissions/roles/role_permissions for the school, then `scheduleTeacherReadySync` pushes the **critical** lane (no manual SQL/scripts). Also runs at founding-admin registration. |
 | 2026-10-18 | **Mobile Teacher empty permissions:** SRA cloud lacked `permissions` in `synced_entities` (orphan scan skipped the catalog). Mobile `get_mobile_access` then returned role Teacher with `permissions: []`. One-shot repair: `scripts/repushSunrisePermissions.ts --dev`; orphan enqueue no longer skips `permissions`. |

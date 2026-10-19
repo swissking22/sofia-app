@@ -5,7 +5,7 @@ import {
   normalizeSupabaseUrl,
 } from '../sync/supabase-client'
 
-export type CloudAuthRole = 'teacher' | 'admin' | 'secretary'
+export type CloudAuthRole = 'teacher' | 'admin' | 'secretary' | 'board' | 'bursar'
 
 export interface ProvisionStaffAuthInput {
   email: string

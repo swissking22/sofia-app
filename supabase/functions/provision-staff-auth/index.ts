@@ -16,7 +16,7 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type',
 }
 
-type Role = 'teacher' | 'admin' | 'secretary'
+type Role = 'teacher' | 'admin' | 'secretary' | 'board' | 'bursar'
 
 interface ProvisionBody {
   email?: string
@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
     if (!email || !password) {
       return json({ ok: false, error: 'Email and password are required.' }, 400)
     }
-    if (!role || !['teacher', 'admin', 'secretary'].includes(role)) {
+    if (!role || !['teacher', 'admin', 'secretary', 'board', 'bursar'].includes(role)) {
       return json({ ok: false, error: 'Invalid role.' }, 400)
     }
     if (!schoolId) {

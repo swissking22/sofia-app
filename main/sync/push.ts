@@ -195,8 +195,10 @@ export async function pushPendingSync(
     }
   }
 
+  const skipHousekeeping = options.skipHousekeeping === true
+
   // Once per process: lift historical "unsupported table" failures into the expanded allowlist
-  if (!didRequeueExpandedTables) {
+  if (!skipHousekeeping && !didRequeueExpandedTables) {
     const requeued = requeueFailedSupportedTables(db)
     if (requeued > 0) {
       console.log(
@@ -206,38 +208,41 @@ export async function pushPendingSync(
     didRequeueExpandedTables = true
   }
 
-  // Discard unsupported pending/failed tables locally (settings etc. until later phases)
-  const unsupportedDrained = discardUnsupportedSyncItems(db)
-  if (unsupportedDrained > 0) {
-    console.log(
-      `[SYNC] Discarded ${unsupportedDrained} unsupported-table queue item(s) as synced`
-    )
+  if (!skipHousekeeping) {
+    // Discard unsupported pending/failed tables locally (settings etc. until later phases)
+    const unsupportedDrained = discardUnsupportedSyncItems(db)
+    if (unsupportedDrained > 0) {
+      console.log(
+        `[SYNC] Discarded ${unsupportedDrained} unsupported-table queue item(s) as synced`
+      )
+    }
+
+    // Drop leftovers from another school tenant (wrong-school outbox after switch/seed).
+    const foreignDrained = discardForeignTenantSyncItems(db, schoolId)
+    if (foreignDrained > 0) {
+      console.log(
+        `[SYNC] Abandoned ${foreignDrained} foreign-tenant queue item(s) (not school ${schoolId})`
+      )
+    }
+
+    // Historical bug: domain sync_status stayed 'pending' after push → Sync Now
+    // re-enqueued the same attendance/CA rows every night. Repair once per push.
+    const dupes = discardDuplicatePendingAlreadySynced(db)
+    if (dupes > 0) {
+      console.log(
+        `[SYNC] Abandoned ${dupes} duplicate pending item(s) already synced earlier`
+      )
+    }
+    const repaired = repairDomainSyncStatusFromOutbox(db)
+    if (repaired > 0) {
+      console.log(
+        `[SYNC] Marked ${repaired} domain row(s) synced (were pending after prior push)`
+      )
+    }
   }
 
-  // Drop leftovers from another school tenant (wrong-school outbox after switch/seed).
-  const foreignDrained = discardForeignTenantSyncItems(db, schoolId)
-  if (foreignDrained > 0) {
-    console.log(
-      `[SYNC] Abandoned ${foreignDrained} foreign-tenant queue item(s) (not school ${schoolId})`
-    )
-  }
-
-  // Historical bug: domain sync_status stayed 'pending' after push → Sync Now
-  // re-enqueued the same attendance/CA rows every night. Repair once per push.
-  const dupes = discardDuplicatePendingAlreadySynced(db)
-  if (dupes > 0) {
-    console.log(
-      `[SYNC] Abandoned ${dupes} duplicate pending item(s) already synced earlier`
-    )
-  }
-  const repaired = repairDomainSyncStatusFromOutbox(db)
-  if (repaired > 0) {
-    console.log(
-      `[SYNC] Marked ${repaired} domain row(s) synced (were pending after prior push)`
-    )
-  }
-
-  // 2. Check and ensure device registration for this school
+  // 2. Check and ensure device registration for this school.
+  // Always run when unregistered — parallel siblings may skip repair only.
   const deviceId = getOrCreateDeviceId()
   const isRegistered = isDeviceRegisteredForSchool(schoolId)
   let didTenantBootstrap = false
@@ -300,6 +305,7 @@ export async function pushPendingSync(
   // 3. Select supported pending items only (created_at ASC + backoff)
   const pendingRows = getPendingSyncItems(db, batchSize, {
     maxLane: options.maxLane,
+    tableNames: options.tableNames,
   }) as Array<{
     id: string
     table_name: string
@@ -607,7 +613,10 @@ export async function pushPendingSync(
   )
 
   const hasMore =
-    countReadyPendingSyncItems(db, { maxLane: options.maxLane }) > 0
+    countReadyPendingSyncItems(db, {
+      maxLane: options.maxLane,
+      tableNames: options.tableNames,
+    }) > 0
 
   return {
     ok: failed === 0,
