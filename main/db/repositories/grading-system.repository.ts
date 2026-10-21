@@ -1,165 +1,162 @@
-import type Database from 'better-sqlite3'
-import { enqueueSync } from '../../sync/queue'
-import type {
-  AssessmentType,
-  GradeBand,
-  GradingSystem,
-} from '../types'
-import { BaseRepository, type CreateInput, type UpdateInput } from './base'
+import type Database from "better-sqlite3";
+import { enqueueSync } from "../../sync/queue";
+import type { AssessmentType, GradeBand, GradingSystem } from "../types";
+import { BaseRepository, type CreateInput, type UpdateInput } from "./base";
 
 export interface GradingSystemSetupInput {
-  enable_ranking: boolean
-  show_class_average: boolean
-  show_teacher_remarks: boolean
+  enable_ranking: boolean;
+  show_class_average: boolean;
+  show_teacher_remarks: boolean;
   assessment_types: Array<{
-    id?: string | null
-    name: string
-    weight_percent: number
-  }>
+    id?: string | null;
+    name: string;
+    weight_percent: number;
+  }>;
   grade_bands: Array<{
-    id?: string | null
-    grade: string
-    min_score: number
-    max_score: number
-  }>
+    id?: string | null;
+    grade: string;
+    min_score: number;
+    max_score: number;
+  }>;
 }
 
 export interface GradingSystemSetupDto {
-  id: string
-  school_id: string
-  enable_ranking: boolean
-  show_class_average: boolean
-  show_teacher_remarks: boolean
+  id: string;
+  school_id: string;
+  enable_ranking: boolean;
+  show_class_average: boolean;
+  show_teacher_remarks: boolean;
   assessment_types: Array<{
-    id: string
-    name: string
-    weight_percent: number
-    sort_order: number
-  }>
+    id: string;
+    name: string;
+    weight_percent: number;
+    sort_order: number;
+  }>;
   grade_bands: Array<{
-    id: string
-    grade: string
-    min_score: number
-    max_score: number
-    sort_order: number
-  }>
+    id: string;
+    grade: string;
+    min_score: number;
+    max_score: number;
+    sort_order: number;
+  }>;
 }
 
 export const DEFAULT_ASSESSMENT_TYPES: Array<{
-  name: string
-  weight_percent: number
+  name: string;
+  weight_percent: number;
 }> = [
-  { name: 'Continuous Assessment', weight_percent: 30 },
-  { name: 'Examination', weight_percent: 70 },
-]
+  { name: "Continuous Assessment", weight_percent: 30 },
+  { name: "Examination", weight_percent: 70 },
+];
 
 export const DEFAULT_GRADE_BANDS: Array<{
-  grade: string
-  min_score: number
-  max_score: number
+  grade: string;
+  min_score: number;
+  max_score: number;
 }> = [
-  { grade: 'A', min_score: 80, max_score: 100 },
-  { grade: 'B', min_score: 70, max_score: 79 },
-  { grade: 'C', min_score: 60, max_score: 69 },
-  { grade: 'D', min_score: 50, max_score: 59 },
-  { grade: 'E', min_score: 40, max_score: 49 },
-  { grade: 'F', min_score: 0, max_score: 39 },
-]
+  { grade: "A", min_score: 80, max_score: 100 },
+  { grade: "B", min_score: 70, max_score: 79 },
+  { grade: "C", min_score: 60, max_score: 69 },
+  { grade: "D", min_score: 50, max_score: 59 },
+  { grade: "E", min_score: 40, max_score: 49 },
+  { grade: "F", min_score: 0, max_score: 39 },
+];
 
-export function defaultGradingSetup(schoolId = ''): GradingSystemSetupDto {
+export function defaultGradingSetup(schoolId = ""): GradingSystemSetupDto {
   return {
-    id: '',
+    id: "",
     school_id: schoolId,
     enable_ranking: true,
     show_class_average: true,
     show_teacher_remarks: true,
     assessment_types: DEFAULT_ASSESSMENT_TYPES.map((t, i) => ({
-      id: '',
+      id: "",
       name: t.name,
       weight_percent: t.weight_percent,
       sort_order: i + 1,
     })),
     grade_bands: DEFAULT_GRADE_BANDS.map((b, i) => ({
-      id: '',
+      id: "",
       grade: b.grade,
       min_score: b.min_score,
       max_score: b.max_score,
       sort_order: i + 1,
     })),
-  }
+  };
 }
 
 export function validateGradingSetup(
-  input: GradingSystemSetupInput
+  input: GradingSystemSetupInput,
 ): string | null {
   const types = input.assessment_types
     .map((t) => ({
-      name: t.name?.trim() ?? '',
+      name: t.name?.trim() ?? "",
       weight_percent: Number(t.weight_percent),
     }))
-    .filter((t) => t.name || t.weight_percent)
+    .filter((t) => t.name || t.weight_percent);
 
   if (types.length === 0) {
-    return 'Add at least one assessment type.'
+    return "Add at least one assessment type.";
   }
   for (const t of types) {
-    if (!t.name) return 'Every assessment type needs a name.'
+    if (!t.name) return "Every assessment type needs a name.";
     if (!Number.isFinite(t.weight_percent) || t.weight_percent < 0) {
-      return `"${t.name}": weight must be 0 or greater.`
+      return `"${t.name}": weight must be 0 or greater.`;
     }
   }
-  const weightSum = types.reduce((sum, t) => sum + t.weight_percent, 0)
+  const weightSum = types.reduce((sum, t) => sum + t.weight_percent, 0);
   if (Math.abs(weightSum - 100) > 0.01) {
-    return `Assessment weights must total 100% (currently ${weightSum}%).`
+    return `Assessment weights must total 100% (currently ${weightSum}%).`;
   }
 
   const bands = input.grade_bands.map((b) => ({
-    grade: b.grade?.trim() ?? '',
+    grade: b.grade?.trim() ?? "",
     min_score: Number(b.min_score),
     max_score: Number(b.max_score),
-  }))
+  }));
 
   if (bands.length === 0) {
-    return 'Add at least one grade band.'
+    return "Add at least one grade band.";
   }
 
   for (const b of bands) {
-    if (!b.grade) return 'Every grade band needs a grade letter.'
+    if (!b.grade) return "Every grade band needs a grade letter.";
     if (!Number.isFinite(b.min_score) || !Number.isFinite(b.max_score)) {
-      return `Grade ${b.grade || '?'}: scores must be numbers.`
+      return `Grade ${b.grade || "?"}: scores must be numbers.`;
     }
     if (b.min_score < 0 || b.max_score > 100) {
-      return `Grade ${b.grade}: scores must be between 0 and 100.`
+      return `Grade ${b.grade}: scores must be between 0 and 100.`;
     }
     if (b.min_score > b.max_score) {
-      return `Grade ${b.grade}: minimum cannot exceed maximum.`
+      return `Grade ${b.grade}: minimum cannot exceed maximum.`;
     }
   }
 
-  const sorted = [...bands].sort((a, b) => b.max_score - a.max_score)
+  const sorted = [...bands].sort((a, b) => b.max_score - a.max_score);
   for (let i = 0; i < sorted.length - 1; i++) {
-    const current = sorted[i]
-    const next = sorted[i + 1]
+    const current = sorted[i];
+    const next = sorted[i + 1];
     if (next.max_score >= current.min_score) {
-      return `Grade ranges overlap between ${current.grade} and ${next.grade}.`
+      return `Grade ranges overlap between ${current.grade} and ${next.grade}.`;
     }
-    if (next.max_score !== current.min_score - 1) {
-      return `Grade ranges must be contiguous (gap between ${current.grade} and ${next.grade}).`
+    // Allow whole-number edges (89 / 90) or decimal edges (15.99 / 16)
+    const gap = current.min_score - next.max_score;
+    if (gap > 1 + 1e-9) {
+      return `Grade ranges must be contiguous (gap between ${current.grade} and ${next.grade}).`;
     }
   }
-
-  const top = Math.max(...bands.map((b) => b.max_score))
-  const bottom = Math.min(...bands.map((b) => b.min_score))
-  if (top !== 100 || bottom !== 0) {
-    return 'Grade scale must cover the full range from 0 to 100.'
+  const top = Math.max(...bands.map((b) => b.max_score));
+  const bottom = Math.min(...bands.map((b) => b.min_score));
+  if (bottom !== 0 || (top !== 100 && top !== 20)) {
+    return "Grade scale must start at 0 and end at 20 or 100.";
   }
 
-  return null
+  return null;
 }
 
 export class GradingSystemRepository extends BaseRepository<GradingSystem> {
   constructor(db: Database.Database) {
-    super(db, 'grading_systems')
+    super(db, "grading_systems");
   }
 
   findForSchool(schoolId: string): GradingSystem | undefined {
@@ -167,30 +164,30 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
       .prepare(
         `SELECT * FROM grading_systems
          WHERE school_id = ? AND deleted_at IS NULL
-         ORDER BY created_at DESC LIMIT 1`
+         ORDER BY created_at DESC LIMIT 1`,
       )
-      .get(schoolId) as GradingSystem | undefined
+      .get(schoolId) as GradingSystem | undefined;
   }
 
   getSetupDto(schoolId: string): GradingSystemSetupDto | null {
-    const system = this.findForSchool(schoolId)
-    if (!system) return null
+    const system = this.findForSchool(schoolId);
+    if (!system) return null;
 
     const assessment_types = this.db
       .prepare(
         `SELECT * FROM assessment_types
          WHERE grading_system_id = ? AND deleted_at IS NULL
-         ORDER BY sort_order ASC, name ASC`
+         ORDER BY sort_order ASC, name ASC`,
       )
-      .all(system.id) as AssessmentType[]
+      .all(system.id) as AssessmentType[];
 
     const grade_bands = this.db
       .prepare(
         `SELECT * FROM grade_bands
          WHERE grading_system_id = ? AND deleted_at IS NULL
-         ORDER BY sort_order ASC, max_score DESC`
+         ORDER BY sort_order ASC, max_score DESC`,
       )
-      .all(system.id) as GradeBand[]
+      .all(system.id) as GradeBand[];
 
     return {
       id: system.id,
@@ -211,17 +208,17 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
         max_score: b.max_score,
         sort_order: b.sort_order,
       })),
-    }
+    };
   }
 
   saveSetup(
     schoolId: string,
-    input: GradingSystemSetupInput
+    input: GradingSystemSetupInput,
   ): GradingSystemSetupDto {
-    const validationError = validateGradingSetup(input)
-    if (validationError) throw new Error(validationError)
+    const validationError = validateGradingSetup(input);
+    if (validationError) throw new Error(validationError);
 
-    const existing = this.findForSchool(schoolId)
+    const existing = this.findForSchool(schoolId);
 
     const tx = this.db.transaction(() => {
       const system = existing
@@ -235,16 +232,16 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
             enable_ranking: input.enable_ranking ? 1 : 0,
             show_class_average: input.show_class_average ? 1 : 0,
             show_teacher_remarks: input.show_teacher_remarks ? 1 : 0,
-          })
+          });
 
-      this.replaceAssessmentTypes(system.id, input.assessment_types)
-      this.replaceGradeBands(system.id, input.grade_bands)
-    })
-    tx()
+      this.replaceAssessmentTypes(system.id, input.assessment_types);
+      this.replaceGradeBands(system.id, input.grade_bands);
+    });
+    tx();
 
-    const dto = this.getSetupDto(schoolId)
-    if (!dto) throw new Error('Could not load grading system after save.')
-    return dto
+    const dto = this.getSetupDto(schoolId);
+    if (!dto) throw new Error("Could not load grading system after save.");
+    return dto;
   }
 
   create(input: CreateInput<GradingSystem>): GradingSystem {
@@ -254,7 +251,7 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
       enable_ranking: input.enable_ranking ?? 1,
       show_class_average: input.show_class_average ?? 1,
       show_teacher_remarks: input.show_teacher_remarks ?? 1,
-    }
+    };
 
     const tx = this.db.transaction(() => {
       this.db
@@ -265,34 +262,34 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
            ) VALUES (
              @id, @school_id, @enable_ranking, @show_class_average, @show_teacher_remarks,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
-           )`
+           )`,
         )
-        .run(record)
+        .run(record);
 
       enqueueSync(
         this.db,
         this.tableName,
         record.id,
-        'INSERT',
-        record as unknown as Record<string, unknown>
-      )
-    })
-    tx()
-    return record
+        "INSERT",
+        record as unknown as Record<string, unknown>,
+      );
+    });
+    tx();
+    return record;
   }
 
   update(
     id: string,
-    input: UpdateInput<GradingSystem>
+    input: UpdateInput<GradingSystem>,
   ): GradingSystem | undefined {
-    const existing = this.findById(id)
-    if (!existing) return undefined
+    const existing = this.findById(id);
+    if (!existing) return undefined;
 
     const record: GradingSystem = {
       ...existing,
       ...input,
       ...this.applyUpdateMeta(existing),
-    }
+    };
 
     const tx = this.db.transaction(() => {
       this.db
@@ -305,58 +302,58 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
                updated_at = @updated_at,
                version = @version,
                sync_status = @sync_status
-           WHERE id = @id`
+           WHERE id = @id`,
         )
-        .run(record)
+        .run(record);
 
       enqueueSync(
         this.db,
         this.tableName,
         record.id,
-        'UPDATE',
-        record as unknown as Record<string, unknown>
-      )
-    })
-    tx()
-    return record
+        "UPDATE",
+        record as unknown as Record<string, unknown>,
+      );
+    });
+    tx();
+    return record;
   }
 
   private replaceAssessmentTypes(
     gradingSystemId: string,
-    types: GradingSystemSetupInput['assessment_types']
+    types: GradingSystemSetupInput["assessment_types"],
   ): void {
     const existing = this.db
       .prepare(
         `SELECT * FROM assessment_types
-         WHERE grading_system_id = ? AND deleted_at IS NULL`
+         WHERE grading_system_id = ? AND deleted_at IS NULL`,
       )
-      .all(gradingSystemId) as AssessmentType[]
+      .all(gradingSystemId) as AssessmentType[];
 
     const keptIds = new Set(
-      types.map((t) => t.id).filter((id): id is string => Boolean(id))
-    )
+      types.map((t) => t.id).filter((id): id is string => Boolean(id)),
+    );
 
     for (const row of existing) {
       if (!keptIds.has(row.id)) {
-        this.softDeleteChild('assessment_types', row)
+        this.softDeleteChild("assessment_types", row);
       }
     }
 
     types.forEach((t, index) => {
-      const name = t.name.trim()
-      const weight_percent = Number(t.weight_percent)
-      const sort_order = index + 1
+      const name = t.name.trim();
+      const weight_percent = Number(t.weight_percent);
+      const sort_order = index + 1;
 
       if (t.id) {
-        const current = existing.find((e) => e.id === t.id)
-        if (!current) return
+        const current = existing.find((e) => e.id === t.id);
+        if (!current) return;
         const updated: AssessmentType = {
           ...current,
           name,
           weight_percent,
           sort_order,
           ...this.applyUpdateMeta(current),
-        }
+        };
         this.db
           .prepare(
             `UPDATE assessment_types
@@ -366,17 +363,17 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
                  updated_at = @updated_at,
                  version = @version,
                  sync_status = @sync_status
-             WHERE id = @id`
+             WHERE id = @id`,
           )
-          .run(updated)
+          .run(updated);
         enqueueSync(
           this.db,
-          'assessment_types',
+          "assessment_types",
           updated.id,
-          'UPDATE',
-          updated as unknown as Record<string, unknown>
-        )
-        return
+          "UPDATE",
+          updated as unknown as Record<string, unknown>,
+        );
+        return;
       }
 
       const record: AssessmentType = {
@@ -385,7 +382,7 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
         name,
         weight_percent,
         sort_order,
-      }
+      };
       this.db
         .prepare(
           `INSERT INTO assessment_types (
@@ -394,49 +391,49 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
            ) VALUES (
              @id, @grading_system_id, @name, @weight_percent, @sort_order,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
-           )`
+           )`,
         )
-        .run(record)
+        .run(record);
       enqueueSync(
         this.db,
-        'assessment_types',
+        "assessment_types",
         record.id,
-        'INSERT',
-        record as unknown as Record<string, unknown>
-      )
-    })
+        "INSERT",
+        record as unknown as Record<string, unknown>,
+      );
+    });
   }
 
   private replaceGradeBands(
     gradingSystemId: string,
-    bands: GradingSystemSetupInput['grade_bands']
+    bands: GradingSystemSetupInput["grade_bands"],
   ): void {
     const existing = this.db
       .prepare(
         `SELECT * FROM grade_bands
-         WHERE grading_system_id = ? AND deleted_at IS NULL`
+         WHERE grading_system_id = ? AND deleted_at IS NULL`,
       )
-      .all(gradingSystemId) as GradeBand[]
+      .all(gradingSystemId) as GradeBand[];
 
     const keptIds = new Set(
-      bands.map((b) => b.id).filter((id): id is string => Boolean(id))
-    )
+      bands.map((b) => b.id).filter((id): id is string => Boolean(id)),
+    );
 
     for (const row of existing) {
       if (!keptIds.has(row.id)) {
-        this.softDeleteChild('grade_bands', row)
+        this.softDeleteChild("grade_bands", row);
       }
     }
 
     bands.forEach((b, index) => {
-      const grade = b.grade.trim().toUpperCase()
-      const min_score = Number(b.min_score)
-      const max_score = Number(b.max_score)
-      const sort_order = index + 1
+      const grade = b.grade.trim().toUpperCase();
+      const min_score = Number(b.min_score);
+      const max_score = Number(b.max_score);
+      const sort_order = index + 1;
 
       if (b.id) {
-        const current = existing.find((e) => e.id === b.id)
-        if (!current) return
+        const current = existing.find((e) => e.id === b.id);
+        if (!current) return;
         const updated: GradeBand = {
           ...current,
           grade,
@@ -444,7 +441,7 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
           max_score,
           sort_order,
           ...this.applyUpdateMeta(current),
-        }
+        };
         this.db
           .prepare(
             `UPDATE grade_bands
@@ -455,17 +452,17 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
                  updated_at = @updated_at,
                  version = @version,
                  sync_status = @sync_status
-             WHERE id = @id`
+             WHERE id = @id`,
           )
-          .run(updated)
+          .run(updated);
         enqueueSync(
           this.db,
-          'grade_bands',
+          "grade_bands",
           updated.id,
-          'UPDATE',
-          updated as unknown as Record<string, unknown>
-        )
-        return
+          "UPDATE",
+          updated as unknown as Record<string, unknown>,
+        );
+        return;
       }
 
       const record: GradeBand = {
@@ -475,7 +472,7 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
         min_score,
         max_score,
         sort_order,
-      }
+      };
       this.db
         .prepare(
           `INSERT INTO grade_bands (
@@ -484,31 +481,31 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
            ) VALUES (
              @id, @grading_system_id, @grade, @min_score, @max_score, @sort_order,
              @created_at, @updated_at, @deleted_at, @sync_status, @version
-           )`
+           )`,
         )
-        .run(record)
+        .run(record);
       enqueueSync(
         this.db,
-        'grade_bands',
+        "grade_bands",
         record.id,
-        'INSERT',
-        record as unknown as Record<string, unknown>
-      )
-    })
+        "INSERT",
+        record as unknown as Record<string, unknown>,
+      );
+    });
   }
 
   private softDeleteChild(
-    tableName: 'assessment_types' | 'grade_bands',
-    row: AssessmentType | GradeBand
+    tableName: "assessment_types" | "grade_bands",
+    row: AssessmentType | GradeBand,
   ): void {
-    const now = new Date().toISOString()
+    const now = new Date().toISOString();
     const updated = {
       ...row,
       deleted_at: now,
       updated_at: now,
       version: row.version + 1,
-      sync_status: 'pending' as const,
-    }
+      sync_status: "pending" as const,
+    };
     this.db
       .prepare(
         `UPDATE ${tableName}
@@ -516,15 +513,15 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
              updated_at = @updated_at,
              version = @version,
              sync_status = @sync_status
-         WHERE id = @id`
+         WHERE id = @id`,
       )
-      .run(updated)
+      .run(updated);
     enqueueSync(
       this.db,
       tableName,
       row.id,
-      'DELETE',
-      updated as unknown as Record<string, unknown>
-    )
+      "DELETE",
+      updated as unknown as Record<string, unknown>,
+    );
   }
 }
