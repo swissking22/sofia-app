@@ -139,7 +139,7 @@ Initial configuration. Steps can be completed, skipped, or saved as draft.
 | Academic Year | `/setup/academic-year` | Current year dates + calendar events |
 | Academic Structure | `/setup/academic-structure` | Levels → sections → specializations → classes; **school day schedule** (start/close times, period duration, breaks) for the timetable |
 | Student ID Format | `/setup/student-id` | Pattern builder (default `{SCHOOL}-{SEQ}` e.g. `ABC-0001`), sequence scope (`school` continuous vs `year` / `year_level`), next sequence number counter. Student IDs are permanent school-wide identities and never change across academic years or class promotions. |
-| Grading System | `/setup/grading-system` | Assessment types + grade bands. **Apply MINESEC** preset: Sequence 1 & 2, /20 bands (pass 10), and activates the Cameroon **3 terms × 2 sequences** calculation profile. |
+| Grading System | `/setup/grading-system` | Assessment types + grade bands (labels up to **5** letters/digits, no spaces — e.g. `A`, `A1`, `DIST`). **Apply MINESEC** preset: Sequence 1 & 2, /20 bands (pass 10), and activates the Cameroon **3 terms × 2 sequences** calculation profile. |
 | Staff | `/setup/staff` | Admin staff + teachers (class × subject teaching assignments). **Teachers (with email):** creates a synced `users` membership (Teacher role) for mobile RBAC, provisions Supabase Auth with `app_metadata.staff_id`, and auto-syncs when online (`Sofia@Staff1` temp password). Admins with email still get a full desktop login. |
 | Permissions | `/setup/permissions` | Roles & permissions |
 | Student ID | `/setup/student-id` | ID pattern (school code, year, sequence, …) |
@@ -907,6 +907,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-23 | **Grade labels up to 5 characters:** Setup → Grading System (and calculation profile grades) accept labels of 1–5 letters/digits with no spaces (was capped at 3 in the UI). Spaces/punctuation are stripped on input; save validates via `normalizeGradeLabel`. |
 | 2026-10-18 | **Parallel push + online policy:** after foundation RBAC tables, Sync Now pushes up to 3 independent tables concurrently (`main/sync/parallel.ts`); a latency probe (`main/sync/online-policy.ts`) restricts slow/offline links to the critical lane with smaller batches and no parallel. |
 | 2026-10-18 | **Batch push RPC + version watermark:** cloud `process_synced_entities_batch` (migration `20261018140000`) pushes many outbox rows in one round-trip; desk falls back to per-item if undeployed. Local watermark skips unchanged already-synced versions (`main/sync/watermark.ts`). |
 | 2026-10-18 | **Auto mobile RBAC provisioning:** creating/updating a teacher (or staff with Auth) calls `ensureMobileAccessCatalog` — seeds Teacher role grants, force-enqueues permissions/roles/role_permissions for the school, then `scheduleTeacherReadySync` pushes the **critical** lane (no manual SQL/scripts). Also runs at founding-admin registration. |

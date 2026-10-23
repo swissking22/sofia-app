@@ -62,6 +62,20 @@ export const DEFAULT_GRADE_BANDS: Array<{
   { grade: "F", min_score: 0, max_score: 39 },
 ];
 
+/** Grade labels: up to 5 letters/digits, no spaces (e.g. A, A1, DIST). */
+export const GRADE_LABEL_MAX_LENGTH = 5;
+
+export function normalizeGradeLabel(raw: string): string {
+  return String(raw || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, GRADE_LABEL_MAX_LENGTH);
+}
+
+export function isValidGradeLabel(raw: string): boolean {
+  return /^[A-Z0-9]{1,5}$/.test(normalizeGradeLabel(raw));
+}
+
 export function defaultGradingSetup(schoolId = ""): GradingSystemSetupDto {
   return {
     id: "",
@@ -110,7 +124,7 @@ export function validateGradingSetup(
   }
 
   const bands = input.grade_bands.map((b) => ({
-    grade: b.grade?.trim() ?? "",
+    grade: normalizeGradeLabel(b.grade ?? ""),
     min_score: Number(b.min_score),
     max_score: Number(b.max_score),
   }));
@@ -120,7 +134,12 @@ export function validateGradingSetup(
   }
 
   for (const b of bands) {
-    if (!b.grade) return "Every grade band needs a grade letter.";
+    if (!b.grade) {
+      return "Every grade band needs a grade label (letters/digits, no spaces).";
+    }
+    if (!isValidGradeLabel(b.grade)) {
+      return `Grade "${b.grade}" must be 1–${GRADE_LABEL_MAX_LENGTH} letters or digits with no spaces.`;
+    }
     if (!Number.isFinite(b.min_score) || !Number.isFinite(b.max_score)) {
       return `Grade ${b.grade || "?"}: scores must be numbers.`;
     }
@@ -426,7 +445,7 @@ export class GradingSystemRepository extends BaseRepository<GradingSystem> {
     }
 
     bands.forEach((b, index) => {
-      const grade = b.grade.trim().toUpperCase();
+      const grade = normalizeGradeLabel(b.grade);
       const min_score = Number(b.min_score);
       const max_score = Number(b.max_score);
       const sort_order = index + 1;

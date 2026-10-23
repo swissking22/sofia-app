@@ -11,6 +11,8 @@ import { TableIconButton } from "../../components/ui/TableActions";
 import {
   DEFAULT_ASSESSMENT_TYPES,
   DEFAULT_GRADE_BANDS,
+  GRADE_LABEL_MAX_LENGTH,
+  normalizeGradeLabel,
   applyMinesecGradingPreset,
   fetchGradingSystemSetup,
   saveGradingSystemSetup,
@@ -433,7 +435,7 @@ function GradingSystemForm() {
 
       <FormSection
         title="3. Grade Scale"
-        description="Map score ranges to letter grades. Ranges must cover 0–100 without gaps or overlaps."
+        description="Map score ranges to grade labels (up to 5 letters/digits, no spaces). Ranges must cover 0–100 without gaps or overlaps."
         layout="stack"
       >
         <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -458,14 +460,17 @@ function GradingSystemForm() {
                             b.localId === band.localId
                               ? {
                                   ...b,
-                                  grade: e.target.value.toUpperCase(),
+                                  grade: normalizeGradeLabel(e.target.value),
                                 }
                               : b,
                           ),
                         )
                       }
-                      className={`${inputClass} max-w-20 text-center font-semibold`}
-                      maxLength={3}
+                      className={`${inputClass} max-w-24 text-center font-semibold`}
+                      maxLength={GRADE_LABEL_MAX_LENGTH}
+                      title="Up to 5 letters or digits, no spaces"
+                      placeholder="A"
+                      spellCheck={false}
                     />
                   </td>
                   <td className="px-4 py-2">
