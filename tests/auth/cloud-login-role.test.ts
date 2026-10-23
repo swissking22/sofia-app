@@ -1,4 +1,8 @@
-import { mapCloudAuthRole } from '../../main/services/cloud-login'
+import {
+  isTeacherDesktopBlocked,
+  mapCloudAuthRole,
+  TEACHER_DESKTOP_LOGIN_ERROR,
+} from '../../main/services/cloud-login'
 
 describe('mapCloudAuthRole', () => {
   it('accepts desktop Auth roles including bursar and board', () => {
@@ -15,5 +19,15 @@ describe('mapCloudAuthRole', () => {
     expect(mapCloudAuthRole('')).toBeNull()
     expect(mapCloudAuthRole('principal')).toBeNull()
     expect(mapCloudAuthRole('unknown')).toBeNull()
+  })
+
+  it('flags teacher for desktop login block while keeping admin roles open', () => {
+    expect(isTeacherDesktopBlocked('teacher')).toBe(true)
+    expect(isTeacherDesktopBlocked('Teacher')).toBe(true)
+    expect(isTeacherDesktopBlocked('admin')).toBe(false)
+    expect(isTeacherDesktopBlocked('secretary')).toBe(false)
+    expect(isTeacherDesktopBlocked('bursar')).toBe(false)
+    expect(isTeacherDesktopBlocked('board')).toBe(false)
+    expect(TEACHER_DESKTOP_LOGIN_ERROR).toMatch(/mobile app/i)
   })
 })

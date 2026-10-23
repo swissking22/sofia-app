@@ -32,9 +32,21 @@ export type CloudAuthSignInFn = (input: {
 /** Sentinel local hash: row exists from sync profile, offline login not primed yet. */
 export const CLOUD_AUTH_PENDING_HASH = '!sofia-cloud-auth-pending'
 
+/** Teachers authenticate on Sofia Teacher (mobile); desktop is administrative only. */
+export const TEACHER_DESKTOP_LOGIN_CODE = 'teacher_desktop'
+export const TEACHER_DESKTOP_LOGIN_ERROR =
+  'Teachers use the Sofia Teacher mobile app. Desktop login is for administrative accounts only.'
+
 export function isCloudAuthPendingHash(hash: string | null | undefined): boolean {
   if (!hash) return true
   return hash === CLOUD_AUTH_PENDING_HASH || hash.startsWith('!sofia-cloud-auth')
+}
+
+/** True when the coarse / Auth role must not open a desktop session. */
+export function isTeacherDesktopBlocked(
+  role: string | null | undefined
+): boolean {
+  return String(role || '').toLowerCase() === 'teacher'
 }
 
 /** Map Auth `app_metadata.role` to a local desktop UserRole. */
@@ -208,6 +220,13 @@ export async function signInWithSupabasePassword(input: {
       error:
         'Your account has no Sofia permissions. Contact your school administrator.',
       code: 'no_role',
+    }
+  }
+  if (isTeacherDesktopBlocked(membership.role)) {
+    return {
+      ok: false,
+      error: TEACHER_DESKTOP_LOGIN_ERROR,
+      code: TEACHER_DESKTOP_LOGIN_CODE,
     }
   }
 
