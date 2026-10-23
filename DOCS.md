@@ -907,6 +907,7 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
+| 2026-10-23 | **Bursar cloud login:** Auth role `bursar` (and `board`) is accepted by `mapCloudAuthRole` during second-desk / Join bootstrap — was rejected as “no Sofia permissions”. Dashboard finance widgets also show for bursar. |
 | 2026-10-18 | **Parallel push + online policy:** after foundation RBAC tables, Sync Now pushes up to 3 independent tables concurrently (`main/sync/parallel.ts`); a latency probe (`main/sync/online-policy.ts`) restricts slow/offline links to the critical lane with smaller batches and no parallel. |
 | 2026-10-18 | **Batch push RPC + version watermark:** cloud `process_synced_entities_batch` (migration `20261018140000`) pushes many outbox rows in one round-trip; desk falls back to per-item if undeployed. Local watermark skips unchanged already-synced versions (`main/sync/watermark.ts`). |
 | 2026-10-18 | **Auto mobile RBAC provisioning:** creating/updating a teacher (or staff with Auth) calls `ensureMobileAccessCatalog` — seeds Teacher role grants, force-enqueues permissions/roles/role_permissions for the school, then `scheduleTeacherReadySync` pushes the **critical** lane (no manual SQL/scripts). Also runs at founding-admin registration. |
