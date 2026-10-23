@@ -88,14 +88,14 @@ export const HELP_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         type: "p",
-        text: "Sofia uses named permissions (for example students.read or finance.record_payment). The sidebar only shows modules you can access; IPC handlers also enforce permissions.",
+        text: "Sofia uses named permissions (for example students.read or finance.record_payment). The sidebar only shows modules your assigned role grants; IPC handlers also enforce those permissions — including for custom roles.",
       },
       {
         type: "bullets",
         items: [
-          "School owner (admin session) has full access.",
+          "School owner (founding admin with no assigned role) has full access.",
           "System roles such as Principal, Vice Principal, Secretary, and Bursar are seeded with sensible defaults.",
-          "Custom roles are managed under Administration → Roles and Permissions.",
+          "Custom roles are managed under Administration → Roles and Permissions; users only see modules those permissions allow.",
         ],
       },
       {

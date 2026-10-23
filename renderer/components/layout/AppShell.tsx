@@ -72,13 +72,15 @@ export function AppShell({
       }
       setSession(current);
 
-      if (current.role === "admin") {
-        setNavSections(NAV_SECTIONS);
-      } else {
-        const perms = await fetchMyPermissions();
-        const names = perms.ok ? perms.data.permissions : [];
-        setNavSections(filterNavSections(NAV_SECTIONS, names));
-      }
+      // Always resolve nav from RBAC permissions. Founding school owners
+      // (admin with no role_id) receive the full catalog from the main
+      // process; custom/system roles only see modules they are granted.
+      const perms = await fetchMyPermissions();
+      const names = perms.ok ? perms.data.permissions : [];
+      const unrestricted = Boolean(perms.ok && perms.data.unrestricted);
+      setNavSections(
+        filterNavSections(NAV_SECTIONS, names, { unrestricted }),
+      );
       setLoading(false);
     })();
   }, [router]);
