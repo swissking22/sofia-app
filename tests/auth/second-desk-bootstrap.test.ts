@@ -233,6 +233,81 @@ describe('second desk join + Auth bootstrap', () => {
     expect(result.session.role).toBe('bursar')
   })
 
+  it('rejects teacher Auth role on desktop (mobile-only)', async () => {
+    await joinSchoolByCode(repos, 'LWM', client)
+    const result = await login(repos, {
+      email: 'teacher@lwm.test',
+      password: 'Sofia@Demo1',
+      cloudSignIn: async () => ({
+        ok: true,
+        authUserId: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+        email: 'teacher@lwm.test',
+        schoolId: SCHOOL_ID,
+        role: 'teacher',
+        staffId: 'staff-teacher-1',
+        displayName: 'Tia Teacher',
+      }),
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toMatch(/mobile app/i)
+      expect(result.error.toLowerCase()).toMatch(/teacher/)
+    }
+    // Must not bootstrap a primed desktop session for teachers.
+    expect(repos.users.findByEmail('teacher@lwm.test')).toBeFalsy()
+  })
+
+  it('rejects primed local teacher accounts on desktop login', async () => {
+    const school = registerSchool(repos, {
+      schoolName: 'Teacher Block School',
+      phone: '670000001',
+      address: 'Yaounde',
+    })
+    expect(school.ok).toBe(true)
+    if (!school.ok) return
+
+    const hash = await hashPassword('Sofia@Teacher1')
+    repos.users.create({
+      school_id: school.school.id,
+      email: 'local.teacher@test.com',
+      password_hash: hash,
+      role: 'teacher',
+      first_name: 'Local',
+      last_name: 'Teacher',
+      status: 'active',
+    })
+
+    const result = await login(repos, {
+      email: 'local.teacher@test.com',
+      password: 'Sofia@Teacher1',
+      cloudSignIn: async () => {
+        throw new Error('cloud should not be called for primed local login')
+      },
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/mobile app/i)
+  })
+
+  it('allows board Auth role on desktop (permission-gated modules)', async () => {
+    await joinSchoolByCode(repos, 'LWM', client)
+    const result = await login(repos, {
+      email: 'board@lwm.test',
+      password: 'Sofia@Demo1',
+      cloudSignIn: async () => ({
+        ok: true,
+        authUserId: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+        email: 'board@lwm.test',
+        schoolId: SCHOOL_ID,
+        role: 'board',
+        staffId: null,
+        displayName: 'Board Member',
+      }),
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.user.role).toBe('board')
+  })
+
   it('rejects invalid password from Auth', async () => {
     await joinSchoolByCode(repos, 'LWM', client)
     const result = await login(repos, {
