@@ -410,12 +410,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
     id: "users",
     title: "Desktop users",
     category: "System",
-    summary: "Admin and secretary accounts for the desktop app.",
-    keywords: ["users", "password", "secretary", "admin"],
+    summary: "Administrative desktop logins (admin, secretary, bursar, board).",
+    keywords: ["users", "password", "secretary", "admin", "bursar", "board", "teacher"],
     blocks: [
       {
         type: "p",
-        text: "Administration → Users manages desktop logins (admin/secretary). Teachers belong under Staff → Teachers and use the mobile app with Supabase Auth.",
+        text: "Administration → Users manages desktop logins for administrative roles (admin, secretary, bursar, board). Modules appear based on each account’s permissions. Teachers belong under Staff → Teachers and sign in only on the Sofia Teacher mobile app — desktop login is blocked for the teacher role.",
       },
       {
         type: "link",
