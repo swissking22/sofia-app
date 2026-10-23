@@ -434,6 +434,7 @@ export async function enqueueOrphanedPendingRows(
       continue
     }
 
+    let rowsSinceYield = 0
     for (const row of rows) {
       if (enqueued >= limit) break
       const recordId = String(row.id || '')
@@ -448,6 +449,12 @@ export async function enqueueOrphanedPendingRows(
       // them per tenant — push attaches school_id in pushPendingSync.
       enqueueSync(db, table, recordId, 'INSERT', row)
       enqueued += 1
+      rowsSinceYield += 1
+      // Large single-table pending scans can freeze the UI without mid-loop yields.
+      if (yieldEveryTable && rowsSinceYield >= 50) {
+        rowsSinceYield = 0
+        await yieldToMain()
+      }
     }
 
     if (yieldEveryTable) await yieldToMain()
