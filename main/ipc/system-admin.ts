@@ -25,6 +25,10 @@ import { restartPeriodicSync } from "../sync/periodic-sync";
 import { runBackgroundSync } from "../sync/session";
 import type { RoleWriteInput } from "../db/repositories/role.repository";
 import type { UserRole } from "../db/types";
+import {
+  getSessionPermissionNames,
+  sessionCanAny,
+} from "../rbac/session-access";
 
 type Result<T> =
   | { ok: true; data: T; warning?: string }
@@ -40,16 +44,14 @@ function sid(repos: Repositories, s: SessionData): string {
 
 function perms(repos: Repositories, s: SessionData): string[] {
   try {
-    return repos.roles.getPermissionNamesForUser(s.userId);
+    return getSessionPermissionNames(repos, s);
   } catch {
     return [];
   }
 }
 
 function allow(repos: Repositories, s: SessionData, names: string[]): boolean {
-  if (s.role === "admin") return true;
-  const p = perms(repos, s);
-  return names.some((n) => p.includes(n));
+  return sessionCanAny(repos, s, names);
 }
 
 function wrap<T>(fn: () => T, fallback: string): Result<T> {

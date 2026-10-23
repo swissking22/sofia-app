@@ -16,6 +16,10 @@ import type {
   AssessmentQuestionPaperStatus,
   AssessmentQuestionType,
 } from '../db/types'
+import {
+  getSessionPermissionNames,
+  isUnrestrictedAdminSession,
+} from '../rbac/session-access'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -29,7 +33,7 @@ function sid(repos: Repositories, s: SessionData): string {
 
 function perms(repos: Repositories, s: SessionData): string[] {
   try {
-    return repos.roles.getPermissionNamesForUser(s.userId)
+    return getSessionPermissionNames(repos, s)
   } catch {
     return []
   }
@@ -43,7 +47,7 @@ function allow(
   return hasAssessmentQuestionPermission(
     perms(repos, s),
     names,
-    s.role === 'admin'
+    isUnrestrictedAdminSession(repos, s)
   )
 }
 
@@ -93,7 +97,7 @@ export function registerAssessmentQuestionsIpc(repos: Repositories): void {
     const schoolId = sid(repos, s)
     if (!schoolId) return { ok: false, error: 'No school context.' }
     const p = perms(repos, s)
-    const isAdmin = s.role === 'admin'
+    const isAdmin = isUnrestrictedAdminSession(repos, s)
 
     return wrap(() => {
       const years = repos.academicYears
@@ -518,11 +522,11 @@ export function registerAssessmentQuestionsIpc(repos: Repositories): void {
       }
     ): Result<unknown> => {
       const s = session()
-      // Admin can ingest for testing; synced teacher submissions arrive via pull.
+      // Unrestricted owner can ingest for testing; synced teacher submissions arrive via pull.
       if (
         !s ||
         !(
-          s.role === 'admin' ||
+          isUnrestrictedAdminSession(repos, s) ||
           allow(repos, s, ['assessment_questions.review'])
         )
       ) {

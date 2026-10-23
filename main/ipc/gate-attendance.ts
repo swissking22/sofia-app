@@ -4,6 +4,10 @@ import type { Repositories } from '../db/repositories'
 import { localSchoolDayIso } from '../domain/gate-attendance'
 import { processGateScan } from '../services/gate-attendance'
 import { hasIdCardPermission } from '../domain/id-card'
+import {
+  getSessionPermissionNames,
+  isUnrestrictedAdminSession,
+} from '../rbac/session-access'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -17,14 +21,18 @@ function sid(repos: Repositories, s: SessionData): string {
 
 function perms(repos: Repositories, s: SessionData): string[] {
   try {
-    return repos.roles.getPermissionNamesForUser(s.userId)
+    return getSessionPermissionNames(repos, s)
   } catch {
     return []
   }
 }
 
 function allow(repos: Repositories, s: SessionData, names: string[]): boolean {
-  return hasIdCardPermission(perms(repos, s), names, s.role === 'admin')
+  return hasIdCardPermission(
+    perms(repos, s),
+    names,
+    isUnrestrictedAdminSession(repos, s)
+  )
 }
 
 function wrap<T>(fn: () => T, fallback: string): Result<T> {
