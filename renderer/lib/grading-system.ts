@@ -58,6 +58,16 @@ export const DEFAULT_GRADE_BANDS = [
   { grade: 'F', min_score: 0, max_score: 39 },
 ] as const
 
+/** Grade labels: up to 5 letters/digits, no spaces (e.g. A, A1, DIST). */
+export const GRADE_LABEL_MAX_LENGTH = 5
+
+export function normalizeGradeLabel(raw: string): string {
+  return String(raw || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, GRADE_LABEL_MAX_LENGTH)
+}
+
 export async function fetchGradingSystemSetup(): Promise<
   Result<GradingSystemSetup>
 > {

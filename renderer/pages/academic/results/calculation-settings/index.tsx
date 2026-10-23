@@ -15,6 +15,10 @@ import {
   type ProfileDto,
 } from "../../../../lib/results-calc";
 import { TableIconButton } from "../../../../components/ui/TableActions";
+import {
+  GRADE_LABEL_MAX_LENGTH,
+  normalizeGradeLabel,
+} from "../../../../lib/grading-system";
 
 const STEPS = [
   "Profile",
@@ -1296,9 +1300,15 @@ export default function CalculationSettingsPage() {
                         <input
                           className={inputClass}
                           value={g.grade}
+                          maxLength={GRADE_LABEL_MAX_LENGTH}
+                          title="Up to 5 letters or digits, no spaces"
+                          spellCheck={false}
                           onChange={(e) => {
                             const next = [...config.grading];
-                            next[idx] = { ...g, grade: e.target.value };
+                            next[idx] = {
+                              ...g,
+                              grade: normalizeGradeLabel(e.target.value),
+                            };
                             setConfig({ ...config, grading: next });
                           }}
                         />
