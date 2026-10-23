@@ -37,12 +37,23 @@ export function isCloudAuthPendingHash(hash: string | null | undefined): boolean
   return hash === CLOUD_AUTH_PENDING_HASH || hash.startsWith('!sofia-cloud-auth')
 }
 
-function mapRole(raw: unknown): UserRole | null {
+/** Map Auth `app_metadata.role` to a local desktop UserRole. */
+export function mapCloudAuthRole(raw: unknown): UserRole | null {
   const role = String(raw || '').toLowerCase()
-  if (role === 'admin' || role === 'secretary' || role === 'teacher') {
+  if (
+    role === 'admin' ||
+    role === 'secretary' ||
+    role === 'teacher' ||
+    role === 'bursar' ||
+    role === 'board'
+  ) {
     return role
   }
   return null
+}
+
+function mapRole(raw: unknown): UserRole | null {
+  return mapCloudAuthRole(raw)
 }
 
 function readMembership(user: User): {

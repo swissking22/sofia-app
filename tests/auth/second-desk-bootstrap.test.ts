@@ -212,6 +212,27 @@ describe('second desk join + Auth bootstrap', () => {
     expect(cloudCalls).toBe(0)
   })
 
+  it('bootstraps a bursar Auth user on a second desk (cloud role bursar)', async () => {
+    await joinSchoolByCode(repos, 'LWM', client)
+    const result = await login(repos, {
+      email: 'bursar@lwm.test',
+      password: 'Sofia@Demo1',
+      cloudSignIn: async () => ({
+        ok: true,
+        authUserId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        email: 'bursar@lwm.test',
+        schoolId: SCHOOL_ID,
+        role: 'bursar',
+        staffId: null,
+        displayName: 'Bella Bursar',
+      }),
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.user.role).toBe('bursar')
+    expect(result.session.role).toBe('bursar')
+  })
+
   it('rejects invalid password from Auth', async () => {
     await joinSchoolByCode(repos, 'LWM', client)
     const result = await login(repos, {
