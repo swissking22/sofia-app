@@ -4,6 +4,10 @@ import type { DocumentFamily } from '../domain/documents'
 import { DOCUMENT_PRINT_CSS, variablesForFamily } from '../domain/documents'
 import type { Repositories } from '../db/repositories'
 import type { GenerateInput } from '../db/repositories/documents.repository'
+import {
+  getSessionPermissionNames,
+  isUnrestrictedAdminSession,
+} from '../rbac/session-access'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -31,14 +35,15 @@ function familyPerm(family: DocumentFamily | undefined, action: 'view' | 'genera
 
 function userPerms(repos: Repositories, s: SessionData): string[] {
   try {
-    return repos.roles.getPermissionNamesForUser(s.userId)
+    return getSessionPermissionNames(repos, s)
   } catch {
     return []
   }
 }
 
 function canView(repos: Repositories, s: SessionData, family?: DocumentFamily): boolean {
-  if (s.role === 'admin' || s.role === 'secretary') return true
+  // Unrestricted owner only — custom roles with coarse "admin" must use grants.
+  if (isUnrestrictedAdminSession(repos, s) || s.role === 'secretary') return true
   const perms = userPerms(repos, s)
   if (family) {
     if (perms.includes(familyPerm(family, 'view'))) return true
@@ -52,14 +57,14 @@ function canView(repos: Repositories, s: SessionData, family?: DocumentFamily): 
 }
 
 function canGenerate(repos: Repositories, s: SessionData, family?: DocumentFamily): boolean {
-  if (s.role === 'admin' || s.role === 'secretary') return true
+  if (isUnrestrictedAdminSession(repos, s) || s.role === 'secretary') return true
   if (!family) return false
   if (family === 'receipt') return false
   return userPerms(repos, s).includes(familyPerm(family, 'generate'))
 }
 
 function canManage(repos: Repositories, s: SessionData, family?: DocumentFamily): boolean {
-  if (s.role === 'admin' || s.role === 'secretary') return true
+  if (isUnrestrictedAdminSession(repos, s) || s.role === 'secretary') return true
   const perms = userPerms(repos, s)
   if (family) {
     if (family === 'receipt') return perms.includes('documents.receipts.manage')
@@ -93,9 +98,12 @@ export function registerDocumentsMgmtIpc(repos: Repositories): void {
         can_view: true,
         can_generate: canGenerate(repos, s),
         can_manage: canManage(repos, s),
-        can_receipts: canManage(repos, s, 'receipt') || s.role === 'admin' || s.role === 'secretary',
+        can_receipts:
+          canManage(repos, s, 'receipt') ||
+          isUnrestrictedAdminSession(repos, s) ||
+          s.role === 'secretary',
         can_export:
-          s.role === 'admin' ||
+          isUnrestrictedAdminSession(repos, s) ||
           s.role === 'secretary' ||
           userPerms(repos, s).includes('documents.documents.export'),
         print_css: DOCUMENT_PRINT_CSS,

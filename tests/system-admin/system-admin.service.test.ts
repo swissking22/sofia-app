@@ -26,7 +26,7 @@ describe('System admin users', () => {
     })
     expect(user.email).toBe('bursar@greenfield.demo')
     expect(user.display_name).toBe('Amina Tabe')
-    expect(user.role).toBe('secretary')
+    expect(user.role).toBe('bursar')
     expect(user.status).toBe('active')
   })
 
@@ -98,8 +98,24 @@ describe('System admin users', () => {
   })
 
   it('isolates coarse role from permissions (school A vs B is a data concern)', () => {
-    expect(inferCoarseRole(['students.read'])).toBe('teacher')
-    expect(inferCoarseRole(['system.users.view'])).toBe('admin')
+    // Read-only → board (not teacher), so desktop login stays open for observers.
+    expect(inferCoarseRole(['students.read'])).toBe('board')
+    expect(inferCoarseRole(['system.users.view'])).toBe('board')
+    expect(inferCoarseRole(['system.users.create'])).toBe('admin')
+    expect(inferCoarseRole(['finance.record_payment'])).toBe('bursar')
+    // Classroom write without admin ops → teacher (blocked on desktop login).
+    expect(inferCoarseRole(['results.enter', 'attendance.mark'])).toBe(
+      'teacher',
+    )
+    // VP / registrar style: staff/student writes beat classroom → secretary.
+    expect(
+      inferCoarseRole([
+        'students.update',
+        'staff.create',
+        'results.enter',
+        'attendance.mark',
+      ]),
+    ).toBe('secretary')
   })
 })
 

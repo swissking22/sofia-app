@@ -11,6 +11,10 @@ import {
   hasPermission,
 } from '../domain/results-calculation'
 import {
+  getSessionPermissionNames,
+  isUnrestrictedAdminSession,
+} from '../rbac/session-access'
+import {
   buildReportCardVerificationText,
   CAMEROON_20_BANDS,
   computeClassStats,
@@ -1663,13 +1667,15 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
       const names = session
         ? (() => {
             try {
-              return repos.roles.getPermissionNamesForUser(session.userId)
+              return getSessionPermissionNames(repos, session)
             } catch {
               return [] as string[]
             }
           })()
         : []
-      const isAdmin = session?.role === 'admin'
+      const isAdmin = session
+        ? isUnrestrictedAdminSession(repos, session)
+        : false
       if (
         session &&
         !hasPermission(
@@ -1749,13 +1755,15 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
       const names = session
         ? (() => {
             try {
-              return repos.roles.getPermissionNamesForUser(session.userId)
+              return getSessionPermissionNames(repos, session)
             } catch {
               return [] as string[]
             }
           })()
         : []
-      const isAdmin = session?.role === 'admin'
+      const isAdmin = session
+        ? isUnrestrictedAdminSession(repos, session)
+        : false
       if (
         session &&
         !hasPermission(
@@ -1840,7 +1848,7 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
       const names = session
         ? (() => {
             try {
-              return repos.roles.getPermissionNamesForUser(session.userId)
+              return getSessionPermissionNames(repos, session)
             } catch {
               return [] as string[]
             }
@@ -1851,7 +1859,7 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
         !hasPermission(
           names,
           ['results.read', 'results.enter', 'results.calculate'],
-          session.role === 'admin'
+          isUnrestrictedAdminSession(repos, session)
         )
       ) {
         return { ok: false, error: 'Access denied.' }
@@ -2016,13 +2024,19 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
       if (session) {
         const names = (() => {
           try {
-            return repos.roles.getPermissionNamesForUser(session.userId)
+            return getSessionPermissionNames(repos, session)
           } catch {
             return [] as string[]
           }
         })()
         const need = input.lock ? ['results.lock'] : ['results.publish']
-        if (!hasPermission(names, need, session.role === 'admin')) {
+        if (
+          !hasPermission(
+            names,
+            need,
+            isUnrestrictedAdminSession(repos, session)
+          )
+        ) {
           return { ok: false, error: 'Access denied.' }
         }
       }
@@ -2171,12 +2185,18 @@ export function registerAcademicMgmtIpc(repos: Repositories): void {
       if (!session) return { ok: false, error: 'Access denied.' }
       const names = (() => {
         try {
-          return repos.roles.getPermissionNamesForUser(session.userId)
+          return getSessionPermissionNames(repos, session)
         } catch {
           return [] as string[]
         }
       })()
-      if (!hasPermission(names, ['results.approve', 'results.review'], session.role === 'admin')) {
+      if (
+        !hasPermission(
+          names,
+          ['results.approve', 'results.review'],
+          isUnrestrictedAdminSession(repos, session)
+        )
+      ) {
         return { ok: false, error: 'Access denied.' }
       }
       if (!input?.class_id) return { ok: false, error: 'Class is required.' }
