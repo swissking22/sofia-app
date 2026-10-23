@@ -192,6 +192,11 @@ export interface PullSyncOptions {
   client?: SupabaseSyncClientInterface
   /** Fired after each successful RPC page is applied (for live %). */
   onPageApplied?: (appliedDelta: number, hasMore: boolean) => void
+  /**
+   * When true, stop after the current page (used by SyncBudget so a single
+   * pullRemoteChanges call cannot apply tens of thousands of rows before pause).
+   */
+  shouldStop?: () => boolean
 }
 
 export interface PullSyncResult {

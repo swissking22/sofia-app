@@ -5,7 +5,9 @@ import type { School, User, UserRole } from '../db/types'
 import { saveSchoolLogo } from '../helpers/save-logo'
 import {
   isCloudAuthPendingHash,
+  isTeacherDesktopBlocked,
   signInWithSupabasePassword,
+  TEACHER_DESKTOP_LOGIN_ERROR,
   type CloudAuthSignInFn,
 } from '../services/cloud-login'
 import {
@@ -417,6 +419,21 @@ async function finishLocalLogin(
   repos: Repositories,
   user: User
 ): Promise<AuthResult> {
+  if (isTeacherDesktopBlocked(user.role)) {
+    try {
+      repos.systemAdmin.writeAudit({
+        school_id: user.school_id,
+        actor_user_id: user.id,
+        action: 'auth.login_failed',
+        description: TEACHER_DESKTOP_LOGIN_ERROR,
+        result: 'failure',
+      })
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, error: TEACHER_DESKTOP_LOGIN_ERROR }
+  }
+
   repos.systemAdmin.patchUser(user.school_id, user.id, {
     failed_login_count: 0,
     locked_until: null,
@@ -524,6 +541,22 @@ export async function login(
       /* ignore */
     }
     return { ok: false, error: cloud.error }
+  }
+
+  // Teachers (Auth role) stay on the mobile app — do not bootstrap a desktop session.
+  if (isTeacherDesktopBlocked(cloud.role)) {
+    try {
+      repos.systemAdmin.writeAudit({
+        school_id: school.id,
+        actor_user_id: null,
+        action: 'auth.login_failed',
+        description: TEACHER_DESKTOP_LOGIN_ERROR,
+        result: 'failure',
+      })
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, error: TEACHER_DESKTOP_LOGIN_ERROR }
   }
 
   try {

@@ -15,6 +15,10 @@ import type {
   StaffStatus,
   StaffType,
 } from '../db/types'
+import {
+  getSessionPermissionNames,
+  isUnrestrictedAdminSession,
+} from '../rbac/session-access'
 
 type Result<T> = { ok: true; data: T; warning?: string } | { ok: false; error: string }
 
@@ -26,15 +30,12 @@ function requireSession(): SessionData | null {
 
 /** School owner, principal, secretary, or anyone with staff write permissions. */
 function isManager(repos: Repositories, session: SessionData): boolean {
-  if (
-    session.role === 'admin' ||
-    session.role === 'secretary' ||
-    session.role === 'principal'
-  ) {
+  if (isUnrestrictedAdminSession(repos, session)) return true
+  if (session.role === 'secretary' || session.role === 'principal') {
     return true
   }
   try {
-    const perms = repos.roles.getPermissionNamesForUser(session.userId)
+    const perms = getSessionPermissionNames(repos, session)
     return (
       perms.includes('staff.create') ||
       perms.includes('staff.update') ||

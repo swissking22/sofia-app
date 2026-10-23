@@ -17,8 +17,11 @@ export function canAny(
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
 /** Load permission names for the current session user. */
-export async function fetchMyPermissions(): Promise<Result<{ permissions: string[] }>> {
+export async function fetchMyPermissions(): Promise<
+  Result<{ permissions: string[]; unrestricted?: boolean }>
+> {
   return (await window.ipc.invoke('auth:get-permissions')) as Result<{
     permissions: string[]
+    unrestricted?: boolean
   }>
 }

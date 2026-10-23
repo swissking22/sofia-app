@@ -16,6 +16,10 @@ import {
   calculateSubjectResult,
   validateClassCalculation,
 } from '../services/results/result-calculation.service'
+import {
+  getSessionPermissionNames,
+  isUnrestrictedAdminSession,
+} from '../rbac/session-access'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -29,14 +33,18 @@ function sid(repos: Repositories, s: SessionData): string {
 
 function perms(repos: Repositories, s: SessionData): string[] {
   try {
-    return repos.roles.getPermissionNamesForUser(s.userId)
+    return getSessionPermissionNames(repos, s)
   } catch {
     return []
   }
 }
 
 function allow(repos: Repositories, s: SessionData, names: string[]): boolean {
-  return hasPermission(perms(repos, s), names, s.role === 'admin')
+  return hasPermission(
+    perms(repos, s),
+    names,
+    isUnrestrictedAdminSession(repos, s)
+  )
 }
 
 function wrap<T>(fn: () => T, fallback: string): Result<T> {

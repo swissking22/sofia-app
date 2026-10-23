@@ -6,8 +6,11 @@
 export const DEFAULT_SYNC_BUDGET_MS = 60_000
 /** Successful push + pull items before pausing this run. */
 export const DEFAULT_SYNC_BUDGET_ITEMS = 2_500
-/** Delay before auto-continuing a budgeted run that still has backlog. */
-export const SYNC_BUDGET_RESUME_DELAY_MS = 1_500
+/**
+ * Delay before auto-continuing a budgeted run that still has backlog.
+ * Keep this long enough that the UI stays interactive between main-thread bursts.
+ */
+export const SYNC_BUDGET_RESUME_DELAY_MS = 5_000
 
 export class SyncBudget {
   readonly maxDurationMs: number
