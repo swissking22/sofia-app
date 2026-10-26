@@ -346,8 +346,18 @@ export function registerSystemAdminIpc(repos: Repositories): void {
               : "user.edit",
           entity_type: "user",
           entity_id: input.id,
-          before: { role_id: before.user.role_id, status: before.user.status },
-          after: { role_id: input.role_id, status: input.status },
+          before: {
+            first_name: before.user.first_name,
+            last_name: before.user.last_name,
+            role_id: before.user.role_id,
+            status: before.user.status,
+          },
+          after: {
+            first_name: input.first_name,
+            last_name: input.last_name,
+            role_id: input.role_id,
+            status: input.status,
+          },
         });
         return admin().getUser(schoolId, input.id);
       }, "Could not update user.");
@@ -592,6 +602,38 @@ export function registerSystemAdminIpc(repos: Repositories): void {
         () => repos.roles.setEnabled(input.id, input.enabled),
         "Could not update role.",
       );
+    },
+  );
+
+  ipcMain.handle(
+    "system-admin:roles-delete",
+    (_e, input: { id: string }): Result<{ id: string }> => {
+      const s = session();
+      if (!s || !allow(repos, s, ["system.roles.manage"])) {
+        return { ok: false, error: "Access denied." };
+      }
+      const schoolId = sid(repos, s);
+      const existing = repos.roles.getDetail(input.id);
+      if (!existing || existing.school_id !== schoolId) {
+        return { ok: false, error: "Role not found." };
+      }
+      return wrap(() => {
+        repos.roles.softDeleteRole(input.id);
+        admin().writeAudit({
+          school_id: schoolId,
+          actor_user_id: s.userId,
+          action: "role.delete",
+          entity_type: "role",
+          entity_id: input.id,
+          description: `Deleted role ${existing.name}`,
+          before: {
+            name: existing.name,
+            is_system: existing.is_system,
+            permission_ids: existing.permission_ids,
+          },
+        });
+        return { id: input.id };
+      }, "Could not delete role.");
     },
   );
 
@@ -1108,6 +1150,7 @@ function permissionFlags(repos: Repositories, s: SessionData) {
     users_delete: p("system.users.delete"),
     roles_manage: p("system.roles.manage") || p("system.roles.edit"),
     roles_create: p("system.roles.create"),
+    roles_delete: p("system.roles.manage"),
     permissions_view: p("system.permissions.view"),
     audit_view: p("system.audit.view"),
     backup_create: p("system.backup.create"),

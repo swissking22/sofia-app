@@ -237,6 +237,21 @@ export class SystemAdminRepository {
           input.must_change_password ?? existing.must_change_password,
         updated_at: now,
       })
+    // Sync so name/role/status edits appear on other desks after Sync Now.
+    const updated = this.db
+      .prepare(
+        `SELECT * FROM users WHERE id = ? AND school_id = ? AND deleted_at IS NULL`
+      )
+      .get(id, schoolId) as User | undefined
+    if (updated) {
+      enqueueSync(
+        this.db,
+        'users',
+        id,
+        'UPDATE',
+        updated as unknown as Record<string, unknown>
+      )
+    }
   }
 
   insertUser(record: {
