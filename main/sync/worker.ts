@@ -12,6 +12,7 @@ import {
   countReadyPendingByLane,
   countReadyPendingSyncItems,
   enqueueOrphanedPendingRows,
+  runSyncHousekeeping,
 } from './queue'
 import {
   activePushLane,
@@ -144,14 +145,17 @@ export async function runSyncWorker(
   const drainPull = options.drainPull !== false
   const maxPushBatches = options.maxPushBatches ?? DEFAULT_MAX_PUSH_BATCHES
   const maxPullBatches = options.maxPullBatches ?? DEFAULT_MAX_PULL_BATCHES
-  const pullMaxIterations = options.pullMaxIterations
-  let maxLane = options.maxLane
-  let parallelConcurrency =
-    options.parallelPushConcurrency ?? DEFAULT_PARALLEL_PUSH_CONCURRENCY
   const budget = new SyncBudget({
     maxDurationMs: options.maxDurationMs,
     maxItems: options.maxItems,
   })
+  // When a wall/item budget is active, apply at most one RPC page per pull call
+  // so we can pause between pages (default 50×500 rows would freeze the UI).
+  const pullMaxIterations =
+    options.pullMaxIterations ?? (budget.enabled ? 1 : undefined)
+  let maxLane = options.maxLane
+  let parallelConcurrency =
+    options.parallelPushConcurrency ?? DEFAULT_PARALLEL_PUSH_CONCURRENCY
 
   // Network probe once per Sync Now — slow/offline → critical-only + no parallel.
   let onlineBatchCap: number | undefined
@@ -300,6 +304,7 @@ export async function runSyncWorker(
         maxLane,
         concurrency: parallelConcurrency,
         onSynced,
+        skipHousekeeping: options.skipHousekeeping === true,
       })
       pushResult = mergePush(pushResult, batch)
       batches += 1
@@ -382,15 +387,20 @@ export async function runSyncWorker(
         client,
         batchSize: pullBatchSize,
         maxIterations: pullMaxIterations,
+        shouldStop: () => budget.exhausted(),
         onPageApplied: (appliedDelta, pageHasMore) => {
-          if (appliedDelta > 0) tracker?.addPull(appliedDelta)
+          if (appliedDelta > 0) {
+            tracker?.addPull(appliedDelta)
+            budget.add(appliedDelta)
+          }
           if (pageHasMore) tracker?.notePullHasMore(pullBatchSize)
           tracker?.report('pull')
         },
       })
       pullResult = mergePull(pullResult, page)
       pages += 1
-      if (page.applied > 0) budget.add(page.applied)
+      // Items already counted in onPageApplied when budgeted; avoid double-count.
+      if (page.applied > 0 && !budget.enabled) budget.add(page.applied)
       await yieldToMain()
       // Hard error (network / apply): keep hasMore for the UI but do not spin.
       if (!page.ok) break
@@ -515,6 +525,35 @@ export async function runSyncWorkerUntilCaughtUp(
     tracker.report('starting', 'Preparing local changes…')
     await enqueueOrphanedPendingRows(db, { limit: 5000 })
   }
+
+  // Run discard/repair once per catch-up (not on every push batch).
+  // This was the main Sync Now cursor freeze: 100+ table PRAGMAs + outbox
+  // JSON scans on the Electron main process before any network work.
+  if (!options.skipPush && !options.skipHousekeeping && options.schoolId) {
+    tracker.report('starting', 'Repairing sync queue…')
+    const hk = await runSyncHousekeeping(db, options.schoolId)
+    if (hk.unsupported > 0) {
+      console.log(
+        `[SYNC] Discarded ${hk.unsupported} unsupported-table queue item(s) as synced`
+      )
+    }
+    if (hk.foreign > 0) {
+      console.log(
+        `[SYNC] Abandoned ${hk.foreign} foreign-tenant queue item(s) (not school ${options.schoolId})`
+      )
+    }
+    if (hk.duplicates > 0) {
+      console.log(
+        `[SYNC] Abandoned ${hk.duplicates} duplicate pending item(s) already synced earlier`
+      )
+    }
+    if (hk.repaired > 0) {
+      console.log(
+        `[SYNC] Marked ${hk.repaired} domain row(s) synced (were pending after prior push)`
+      )
+    }
+  }
+
   const laneOpts = options.maxLane ? { maxLane: options.maxLane } : undefined
   const pushTotal = options.skipPush
     ? 0
@@ -576,8 +615,9 @@ export async function runSyncWorkerUntilCaughtUp(
       progressTracker: tracker,
       // Avoid double-counting orphans / re-measuring totals
       onProgress: undefined,
-      // Parent already orphan-scanned once for this catch-up.
+      // Parent already orphan-scanned + housekeeping once for this catch-up.
       skipOrphanEnqueue: true,
+      skipHousekeeping: true,
       maxDurationMs: outerBudget.maxDurationMs > 0 ? remainingMs : undefined,
       maxItems: outerBudget.maxItems > 0 ? remainingItems : undefined,
     })

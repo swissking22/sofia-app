@@ -276,15 +276,52 @@ export function discardForeignTenantSyncItems(
   return discarded
 }
 
+/**
+ * One-shot outbox/domain repair for a Sync Now catch-up.
+ * Prefer calling this once, then push with skipHousekeeping.
+ */
+export async function runSyncHousekeeping(
+  db: Database.Database,
+  authorizedSchoolId: string
+): Promise<{
+  unsupported: number
+  foreign: number
+  duplicates: number
+  repaired: number
+}> {
+  await yieldToMain()
+  const unsupported = discardUnsupportedSyncItems(db)
+  await yieldToMain()
+  const foreign = discardForeignTenantSyncItems(db, authorizedSchoolId)
+  await yieldToMain()
+  const duplicates = discardDuplicatePendingAlreadySynced(db)
+  await yieldToMain()
+  const repaired = await repairDomainSyncStatusFromOutbox(db)
+  await yieldToMain()
+  return { unsupported, foreign, duplicates, repaired }
+}
+
+/** Cache PRAGMA table_info — orphan/repair used to hit this 100+ times per Sync Now. */
+const tableColumnCache = new Map<string, Set<string>>()
+
 function tableColumns(db: Database.Database, table: string): Set<string> {
+  const hit = tableColumnCache.get(table)
+  if (hit) return hit
   try {
     const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
       name: string
     }>
-    return new Set(rows.map((r) => r.name))
+    const set = new Set(rows.map((r) => r.name))
+    tableColumnCache.set(table, set)
+    return set
   } catch {
     return new Set()
   }
+}
+
+/** Test helper — clear after schema rebuilds in :memory: DBs. */
+export function clearTableColumnCacheForTests(): void {
+  tableColumnCache.clear()
 }
 
 /** Flip domain `sync_status` after a successful cloud ack (or repair). */
@@ -357,14 +394,23 @@ export function discardDuplicatePendingAlreadySynced(
 /**
  * Repair domain rows left at sync_status='pending' after a successful push
  * (historical bug: markSynced only updated sync_queue).
+ * Yields every few tables so Sync Now does not freeze the Electron cursor.
  */
-export function repairDomainSyncStatusFromOutbox(
+export async function repairDomainSyncStatusFromOutbox(
   db: Database.Database
-): number {
+): Promise<number> {
   let repaired = 0
+  let tablesSinceYield = 0
   for (const table of SUPPORTED_SYNC_TABLES) {
     const cols = tableColumns(db, table)
-    if (!cols.has('id') || !cols.has('sync_status')) continue
+    if (!cols.has('id') || !cols.has('sync_status')) {
+      tablesSinceYield += 1
+      if (tablesSinceYield >= 8) {
+        tablesSinceYield = 0
+        await yieldToMain()
+      }
+      continue
+    }
     try {
       const result = db
         .prepare(
@@ -381,6 +427,11 @@ export function repairDomainSyncStatusFromOutbox(
       repaired += Number(result.changes) || 0
     } catch {
       /* ignore */
+    }
+    tablesSinceYield += 1
+    if (tablesSinceYield >= 8) {
+      tablesSinceYield = 0
+      await yieldToMain()
     }
   }
   return repaired
@@ -411,9 +462,10 @@ export async function enqueueOrphanedPendingRows(
 
   for (const table of SUPPORTED_SYNC_TABLES) {
     if (enqueued >= limit) break
+    // Yield before each table's sync SELECT so launch does not lock the cursor.
+    if (yieldEveryTable) await yieldToMain()
     const cols = tableColumns(db, table)
     if (!cols.has('id') || !cols.has('sync_status')) {
-      if (yieldEveryTable) await yieldToMain()
       continue
     }
 
@@ -430,10 +482,10 @@ export async function enqueueOrphanedPendingRows(
         )
         .all(limit - enqueued) as Array<Record<string, unknown>>
     } catch {
-      if (yieldEveryTable) await yieldToMain()
       continue
     }
 
+    let rowsSinceYield = 0
     for (const row of rows) {
       if (enqueued >= limit) break
       const recordId = String(row.id || '')
@@ -448,6 +500,12 @@ export async function enqueueOrphanedPendingRows(
       // them per tenant — push attaches school_id in pushPendingSync.
       enqueueSync(db, table, recordId, 'INSERT', row)
       enqueued += 1
+      rowsSinceYield += 1
+      // Large single-table pending scans can freeze the UI without mid-loop yields.
+      if (yieldEveryTable && rowsSinceYield >= 50) {
+        rowsSinceYield = 0
+        await yieldToMain()
+      }
     }
 
     if (yieldEveryTable) await yieldToMain()

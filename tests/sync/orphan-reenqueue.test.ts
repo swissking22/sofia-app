@@ -92,7 +92,7 @@ describe('orphan re-enqueue guard', () => {
     expect(pending.n).toBe(0)
   })
 
-  it('repairs domain flags from synced outbox', () => {
+  it('repairs domain flags from synced outbox', async () => {
     const db = memoryDb()
     db.prepare(
       `INSERT INTO ca_scores (id, school_id, sync_status) VALUES ('c1', 's1', 'pending')`
@@ -102,7 +102,7 @@ describe('orphan re-enqueue guard', () => {
       db.prepare(`SELECT id FROM sync_queue LIMIT 1`).get() as { id: string }
     ).id
     db.prepare(`UPDATE sync_queue SET status = 'synced' WHERE id = ?`).run(qid)
-    expect(repairDomainSyncStatusFromOutbox(db)).toBe(1)
+    expect(await repairDomainSyncStatusFromOutbox(db)).toBe(1)
     const row = db
       .prepare(`SELECT sync_status FROM ca_scores WHERE id = 'c1'`)
       .get() as { sync_status: string }

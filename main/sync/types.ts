@@ -192,6 +192,11 @@ export interface PullSyncOptions {
   client?: SupabaseSyncClientInterface
   /** Fired after each successful RPC page is applied (for live %). */
   onPageApplied?: (appliedDelta: number, hasMore: boolean) => void
+  /**
+   * When true, stop after the current page (used by SyncBudget so a single
+   * pullRemoteChanges call cannot apply tens of thousands of rows before pause).
+   */
+  shouldStop?: () => boolean
 }
 
 export interface PullSyncResult {
@@ -260,6 +265,12 @@ export interface SyncWorkerOptions {
    * Auto-resume / inner rounds should set this — orphan backfill is expensive.
    */
   skipOrphanEnqueue?: boolean
+  /**
+   * Skip discard/repair housekeeping at the start of each push batch.
+   * Catch-up should run housekeeping once, then set this true so every
+   * subsequent batch does not re-scan the outbox on the UI thread.
+   */
+  skipHousekeeping?: boolean
   /**
    * Live Sync Now progress (percent + phase). Used by IPC to push
    * `sync:progress` events to the renderer.
