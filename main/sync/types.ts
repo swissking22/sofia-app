@@ -266,6 +266,12 @@ export interface SyncWorkerOptions {
    */
   skipOrphanEnqueue?: boolean
   /**
+   * Skip discard/repair housekeeping at the start of each push batch.
+   * Catch-up should run housekeeping once, then set this true so every
+   * subsequent batch does not re-scan the outbox on the UI thread.
+   */
+  skipHousekeeping?: boolean
+  /**
    * Live Sync Now progress (percent + phase). Used by IPC to push
    * `sync:progress` events to the renderer.
    */

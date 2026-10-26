@@ -233,7 +233,7 @@ export async function pushPendingSync(
         `[SYNC] Abandoned ${dupes} duplicate pending item(s) already synced earlier`
       )
     }
-    const repaired = repairDomainSyncStatusFromOutbox(db)
+    const repaired = await repairDomainSyncStatusFromOutbox(db)
     if (repaired > 0) {
       console.log(
         `[SYNC] Marked ${repaired} domain row(s) synced (were pending after prior push)`

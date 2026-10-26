@@ -12,6 +12,7 @@ import {
   countReadyPendingByLane,
   countReadyPendingSyncItems,
   enqueueOrphanedPendingRows,
+  runSyncHousekeeping,
 } from './queue'
 import {
   activePushLane,
@@ -303,6 +304,7 @@ export async function runSyncWorker(
         maxLane,
         concurrency: parallelConcurrency,
         onSynced,
+        skipHousekeeping: options.skipHousekeeping === true,
       })
       pushResult = mergePush(pushResult, batch)
       batches += 1
@@ -523,6 +525,35 @@ export async function runSyncWorkerUntilCaughtUp(
     tracker.report('starting', 'Preparing local changes…')
     await enqueueOrphanedPendingRows(db, { limit: 5000 })
   }
+
+  // Run discard/repair once per catch-up (not on every push batch).
+  // This was the main Sync Now cursor freeze: 100+ table PRAGMAs + outbox
+  // JSON scans on the Electron main process before any network work.
+  if (!options.skipPush && !options.skipHousekeeping && options.schoolId) {
+    tracker.report('starting', 'Repairing sync queue…')
+    const hk = await runSyncHousekeeping(db, options.schoolId)
+    if (hk.unsupported > 0) {
+      console.log(
+        `[SYNC] Discarded ${hk.unsupported} unsupported-table queue item(s) as synced`
+      )
+    }
+    if (hk.foreign > 0) {
+      console.log(
+        `[SYNC] Abandoned ${hk.foreign} foreign-tenant queue item(s) (not school ${options.schoolId})`
+      )
+    }
+    if (hk.duplicates > 0) {
+      console.log(
+        `[SYNC] Abandoned ${hk.duplicates} duplicate pending item(s) already synced earlier`
+      )
+    }
+    if (hk.repaired > 0) {
+      console.log(
+        `[SYNC] Marked ${hk.repaired} domain row(s) synced (were pending after prior push)`
+      )
+    }
+  }
+
   const laneOpts = options.maxLane ? { maxLane: options.maxLane } : undefined
   const pushTotal = options.skipPush
     ? 0
@@ -584,8 +615,9 @@ export async function runSyncWorkerUntilCaughtUp(
       progressTracker: tracker,
       // Avoid double-counting orphans / re-measuring totals
       onProgress: undefined,
-      // Parent already orphan-scanned once for this catch-up.
+      // Parent already orphan-scanned + housekeeping once for this catch-up.
       skipOrphanEnqueue: true,
+      skipHousekeeping: true,
       maxDurationMs: outerBudget.maxDurationMs > 0 ? remainingMs : undefined,
       maxItems: outerBudget.maxItems > 0 ? remainingItems : undefined,
     })
