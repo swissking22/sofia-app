@@ -551,17 +551,23 @@ function UserDetailModal({
 }) {
   const user = (data.user ?? {}) as Record<string, string>;
   const perms = (data.permissions ?? []) as string[];
+  const [firstName, setFirstName] = React.useState(user.first_name || "");
+  const [lastName, setLastName] = React.useState(user.last_name || "");
   const [status, setStatus] = React.useState(user.status);
   const [roleId, setRoleId] = React.useState(user.role_id);
   const [password, setPassword] = React.useState("Sofia@Temp1");
   const [confirmOff, setConfirmOff] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+
+  const displayName =
+    `${firstName.trim()} ${lastName.trim()}`.trim() || user.email;
 
   return (
     <FormModal
       open
-      title={`${user.first_name} ${user.last_name}`}
+      title={displayName}
       onClose={onClose}
       size="xl"
     >
@@ -581,6 +587,22 @@ function UserDetailModal({
       </div>
       {canEdit ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <FilterField label="First name">
+            <input
+              className={fieldClass}
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              autoComplete="given-name"
+            />
+          </FilterField>
+          <FilterField label="Last name">
+            <input
+              className={fieldClass}
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              autoComplete="family-name"
+            />
+          </FilterField>
           <FilterField label="Role">
             <select
               className={selectClass}
@@ -614,15 +636,24 @@ function UserDetailModal({
           </FilterField>
           <div className="flex flex-wrap items-end gap-2">
             <SecondaryButton
-              onClick={() =>
+              disabled={saving || !firstName.trim() || !lastName.trim()}
+              onClick={() => {
+                if (saving) return;
+                setSaving(true);
                 void updateAdminUser({
                   id: user.id,
+                  first_name: firstName.trim(),
+                  last_name: lastName.trim(),
                   role_id: roleId,
                   status,
-                }).then((r) => (r.ok ? onUpdated("User updated.") : undefined))
-              }
+                }).then((r) => {
+                  setSaving(false);
+                  if (r.ok) onUpdated("User updated.");
+                  else onError(r.error);
+                });
+              }}
             >
-              Save access
+              {saving ? "Saving…" : "Save changes"}
             </SecondaryButton>
             <SecondaryButton
               onClick={() =>
