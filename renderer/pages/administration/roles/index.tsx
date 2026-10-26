@@ -1,12 +1,14 @@
 import React from "react";
 import {
   Copy01Icon,
+  Delete02Icon,
   PauseIcon,
   PencilEdit01Icon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { AppShell } from "../../../components/layout/AppShell";
 import {
+  ConfirmModal,
   EmptyRow,
   FormModal,
   PageAlert,
@@ -19,7 +21,9 @@ import {
 } from "../../../components/students/ui";
 import { TableActionGroup, TableIconButton } from "../../../components/ui/TableActions";
 import {
+  deleteAdminRole,
   duplicateAdminRole,
+  fetchAdminMeta,
   fetchAdminRole,
   fetchAdminRoles,
   fetchPermissionCatalog,
@@ -30,6 +34,8 @@ import {
 export default function AdminRolesPage() {
   const [roles, setRoles] = React.useState<Array<Record<string, unknown>>>([]);
   const [error, setError] = React.useState("");
+  const [success, setSuccess] = React.useState("");
+  const [canDelete, setCanDelete] = React.useState(false);
   const [catalog, setCatalog] = React.useState<
     Array<{ module_label: string; permissions: Array<{ id: string; name: string; label: string }> }>
   >([]);
@@ -39,6 +45,11 @@ export default function AdminRolesPage() {
     description: string;
     permission_ids: string[];
   } | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(
+    null,
+  );
+  const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const allSelected =
@@ -55,6 +66,7 @@ export default function AdminRolesPage() {
   async function bulkSetRoleState(enabled: boolean) {
     if (!selectedIds.length) return;
     setError("");
+    setSuccess("");
     try {
       for (const id of selectedIds) {
         await setAdminRoleEnabled(id, enabled);
@@ -63,6 +75,33 @@ export default function AdminRolesPage() {
       await load();
     } catch {
       setError("Failed to update role statuses.");
+    }
+  }
+  async function bulkDelete() {
+    if (!selectedIds.length || !canDelete) return;
+    setDeleting(true);
+    setError("");
+    setSuccess("");
+    let deleted = 0;
+    const failures: string[] = [];
+    try {
+      for (const id of selectedIds) {
+        const role = roles.find((r) => String(r.id) === id);
+        if (role?.is_system) {
+          failures.push(`System role “${String(role.name)}” cannot be deleted.`);
+          continue;
+        }
+        const res = await deleteAdminRole(id);
+        if (res.ok) deleted += 1;
+        else failures.push(res.error);
+      }
+      if (deleted) setSuccess(`Deleted ${deleted} role(s).`);
+      if (failures.length) setError(failures[0] || "Some roles could not be deleted.");
+      setSelectedIds([]);
+      setConfirmBulkDelete(false);
+      await load();
+    } finally {
+      setDeleting(false);
     }
   }
   function exportSelected() {
@@ -90,24 +129,34 @@ export default function AdminRolesPage() {
   }
 
   const load = React.useCallback(async () => {
-    const [list, cat] = await Promise.all([fetchAdminRoles(), fetchPermissionCatalog()]);
+    const [list, cat, meta] = await Promise.all([
+      fetchAdminRoles(),
+      fetchPermissionCatalog(),
+      fetchAdminMeta(),
+    ]);
     if (list.ok) setRoles(list.data.roles);
     else setError(list.error);
     if (cat.ok) setCatalog(cat.data);
+    if (meta.ok) setCanDelete(Boolean(meta.data.can.roles_delete));
   }, []);
 
   React.useEffect(() => {
     void load();
   }, [load]);
 
+  const rolePendingDelete = confirmDeleteId
+    ? roles.find((r) => String(r.id) === confirmDeleteId)
+    : null;
+
   return (
     <AppShell
       title="Roles"
       breadcrumb={["System Administration", "Users & Roles", "Roles"]}
       heading="Roles"
-      subtitle="Custom roles are allowed. System roles can be duplicated. A role assigned to users cannot be deleted."
+      subtitle="Create custom roles, edit permissions, or permanently delete unused custom roles. System roles cannot be deleted; reassign users before deleting a role."
       >
       {error ? <PageAlert tone="error">{error}</PageAlert> : null}
+      {success ? <PageAlert tone="success">{success}</PageAlert> : null}
       <div className="mb-4">
         <PrimaryButton
           onClick={() => setEditing({ name: "", description: "", permission_ids: [] })}
@@ -187,6 +236,14 @@ export default function AdminRolesPage() {
                       void setAdminRoleEnabled(String(r.id), r.is_enabled === false).then(() => load())
                     }
                   />
+                  {canDelete && !r.is_system ? (
+                    <TableIconButton
+                      icon={Delete02Icon}
+                      label="Delete"
+                      tone="danger"
+                      onClick={() => setConfirmDeleteId(String(r.id))}
+                    />
+                  ) : null}
                 </TableActionGroup>
               </td>
             </tr>
@@ -216,6 +273,16 @@ export default function AdminRolesPage() {
             >
               Deactivate selected
             </button>
+            {canDelete ? (
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmBulkDelete(true)}
+                className="cursor-pointer rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+              >
+                Delete selected
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={exportSelected}
@@ -288,6 +355,44 @@ export default function AdminRolesPage() {
           </div>
         </FormModal>
       ) : null}
+
+      <ConfirmModal
+        open={Boolean(confirmDeleteId)}
+        title="Delete this role?"
+        description={
+          rolePendingDelete
+            ? `“${String(rolePendingDelete.name)}” will be permanently removed from this school (soft-deleted and synced). Reassign any users first. System roles cannot be deleted.`
+            : "This role will be permanently removed."
+        }
+        confirmLabel={deleting ? "Deleting…" : "Delete"}
+        danger
+        onCancel={() => !deleting && setConfirmDeleteId(null)}
+        onConfirm={() => {
+          if (!confirmDeleteId || deleting) return;
+          setDeleting(true);
+          setError("");
+          void deleteAdminRole(confirmDeleteId).then((res) => {
+            setDeleting(false);
+            setConfirmDeleteId(null);
+            if (res.ok) {
+              setSuccess("Role deleted.");
+              void load();
+            } else setError(res.error);
+          });
+        }}
+      />
+
+      <ConfirmModal
+        open={confirmBulkDelete}
+        title="Delete selected roles?"
+        description="Custom roles with no assigned users will be permanently removed and synced. System roles and roles still assigned to users are skipped with an error."
+        confirmLabel={deleting ? "Deleting…" : "Delete selected"}
+        danger
+        onCancel={() => !deleting && setConfirmBulkDelete(false)}
+        onConfirm={() => {
+          void bulkDelete();
+        }}
+      />
     </AppShell>
   );
 }

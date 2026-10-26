@@ -10,7 +10,9 @@ export async function fetchAdminMeta() {
   return (await window.ipc.invoke('system-admin:meta')) as Result<{
     roles: Array<{ id: string; name: string; is_system: boolean; user_count: number; is_enabled?: boolean }>
     staff: Array<{ id: string; name: string }>
-    can: Record<string, boolean>
+    can: Record<string, boolean> & {
+      roles_delete?: boolean
+    }
   }>
 }
 
@@ -75,6 +77,10 @@ export async function duplicateAdminRole(id: string) {
 
 export async function setAdminRoleEnabled(id: string, enabled: boolean) {
   return (await window.ipc.invoke('system-admin:roles-set-enabled', { id, enabled })) as Result<unknown>
+}
+
+export async function deleteAdminRole(id: string) {
+  return (await window.ipc.invoke('system-admin:roles-delete', { id })) as Result<{ id: string }>
 }
 
 export async function fetchPermissionMatrix() {
