@@ -907,14 +907,12 @@ Key libs for built modules:
 
 | Date | Change |
 |------|--------|
-<<<<<<< HEAD
+| 2026-10-27 | **Release 1.0.11:** bumped `package.json` to **1.0.11** and tagged `v1.0.11` for Windows GitHub Release publish (edit user names; permanent custom-role delete). |
+| 2026-10-26 | **Users & Roles:** edit a user’s first/last name from the user detail modal (`system-admin:users-update` → `patchUser` + outbox UPDATE) so the new name shows in the Users list and on other desks after Sync Now. **Roles:** select and permanently soft-delete custom roles (`system-admin:roles-delete` → `softDeleteRole`, clears `role_permissions` then role DELETE); system roles and roles with assigned users remain blocked. |
 | 2026-10-23 | **Release 1.0.10:** bumped `package.json` to **1.0.10** and tagged `v1.0.10` for Windows GitHub Release publish (sync freeze fix; bursar/board cloud login; teachers blocked on desktop; custom-role module visibility). |
 | 2026-10-23 | **Custom-role module visibility:** sidebar and `auth:get-permissions` always use the assigned `role_id` grants (`main/rbac/session-access.ts`). Coarse `admin` no longer unlocks every module when a custom/system role is assigned — only founding owners without a `role_id` stay unrestricted. |
 | 2026-10-23 | **Teachers blocked on desktop:** Auth/local role `teacher` cannot open a desktop session (clear redirect to Sofia Teacher mobile). Administrative roles (`admin`, `secretary`, `bursar`, `board`) still log in; nav remains permission-filtered. `inferCoarseRole` maps VP/registrar mutating staff/student perms to `secretary` so they are not misclassified as teachers. |
 | 2026-10-23 | **Bursar cloud login:** Auth role `bursar` (and `board`) is accepted by `mapCloudAuthRole` during second-desk / Join bootstrap — was rejected as “no Sofia permissions”. Dashboard finance widgets also show for bursar. |
-=======
-| 2026-10-26 | **Users & Roles:** edit a user’s first/last name from the user detail modal (`system-admin:users-update` → `patchUser` + outbox UPDATE) so the new name shows in the Users list and on other desks after Sync Now. **Roles:** select and permanently soft-delete custom roles (`system-admin:roles-delete` → `softDeleteRole`, clears `role_permissions` then role DELETE); system roles and roles with assigned users remain blocked. |
->>>>>>> 4588092 (Allow editing user names and permanently deleting custom roles)
 | 2026-10-18 | **Parallel push + online policy:** after foundation RBAC tables, Sync Now pushes up to 3 independent tables concurrently (`main/sync/parallel.ts`); a latency probe (`main/sync/online-policy.ts`) restricts slow/offline links to the critical lane with smaller batches and no parallel. |
 | 2026-10-18 | **Batch push RPC + version watermark:** cloud `process_synced_entities_batch` (migration `20261018140000`) pushes many outbox rows in one round-trip; desk falls back to per-item if undeployed. Local watermark skips unchanged already-synced versions (`main/sync/watermark.ts`). |
 | 2026-10-18 | **Auto mobile RBAC provisioning:** creating/updating a teacher (or staff with Auth) calls `ensureMobileAccessCatalog` — seeds Teacher role grants, force-enqueues permissions/roles/role_permissions for the school, then `scheduleTeacherReadySync` pushes the **critical** lane (no manual SQL/scripts). Also runs at founding-admin registration. |
