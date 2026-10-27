@@ -15,6 +15,10 @@ import {
 } from '../domain/id-card'
 import { wizardDesign } from '../domain/id-card-templates'
 import { saveSchoolAsset } from '../helpers/school-assets'
+import {
+  getSessionPermissionNames,
+  isUnrestrictedAdminSession,
+} from '../rbac/session-access'
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
 
@@ -28,7 +32,7 @@ function sid(repos: Repositories, s: SessionData): string {
 
 function perms(repos: Repositories, s: SessionData): string[] {
   try {
-    return repos.roles.getPermissionNamesForUser(s.userId)
+    return getSessionPermissionNames(repos, s)
   } catch {
     return []
   }
@@ -36,10 +40,14 @@ function perms(repos: Repositories, s: SessionData): string[] {
 
 function allow(repos: Repositories, s: SessionData, names: string[]): boolean {
   const list = perms(repos, s)
-  if (list.includes('students.id_cards.manage') && names.some((n) => n.startsWith('students.id_cards.'))) {
-    return hasIdCardPermission(list, names, s.role === 'admin')
+  const unrestricted = isUnrestrictedAdminSession(repos, s)
+  if (
+    list.includes('students.id_cards.manage') &&
+    names.some((n) => n.startsWith('students.id_cards.'))
+  ) {
+    return hasIdCardPermission(list, names, unrestricted)
   }
-  return hasIdCardPermission(list, names, s.role === 'admin')
+  return hasIdCardPermission(list, names, unrestricted)
 }
 
 function wrap<T>(fn: () => T, fallback: string): Result<T> {
@@ -90,7 +98,7 @@ export function registerStudentIdCardsIpc(repos: Repositories): void {
     const years = repos.academicYears.findAll().filter((y) => y.school_id === schoolId)
     const classes = repos.classes.findBySchool(schoolId)
     const names = perms(repos, s)
-    const isAdmin = s.role === 'admin'
+    const isAdmin = isUnrestrictedAdminSession(repos, s)
     cards().ensureSampleTemplates(schoolId, s.userId)
     const students = cards()
       .listStudentsForCards(schoolId)

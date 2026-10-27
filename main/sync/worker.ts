@@ -144,14 +144,17 @@ export async function runSyncWorker(
   const drainPull = options.drainPull !== false
   const maxPushBatches = options.maxPushBatches ?? DEFAULT_MAX_PUSH_BATCHES
   const maxPullBatches = options.maxPullBatches ?? DEFAULT_MAX_PULL_BATCHES
-  const pullMaxIterations = options.pullMaxIterations
-  let maxLane = options.maxLane
-  let parallelConcurrency =
-    options.parallelPushConcurrency ?? DEFAULT_PARALLEL_PUSH_CONCURRENCY
   const budget = new SyncBudget({
     maxDurationMs: options.maxDurationMs,
     maxItems: options.maxItems,
   })
+  // When a wall/item budget is active, apply at most one RPC page per pull call
+  // so we can pause between pages (default 50×500 rows would freeze the UI).
+  const pullMaxIterations =
+    options.pullMaxIterations ?? (budget.enabled ? 1 : undefined)
+  let maxLane = options.maxLane
+  let parallelConcurrency =
+    options.parallelPushConcurrency ?? DEFAULT_PARALLEL_PUSH_CONCURRENCY
 
   // Network probe once per Sync Now — slow/offline → critical-only + no parallel.
   let onlineBatchCap: number | undefined
@@ -382,15 +385,20 @@ export async function runSyncWorker(
         client,
         batchSize: pullBatchSize,
         maxIterations: pullMaxIterations,
+        shouldStop: () => budget.exhausted(),
         onPageApplied: (appliedDelta, pageHasMore) => {
-          if (appliedDelta > 0) tracker?.addPull(appliedDelta)
+          if (appliedDelta > 0) {
+            tracker?.addPull(appliedDelta)
+            budget.add(appliedDelta)
+          }
           if (pageHasMore) tracker?.notePullHasMore(pullBatchSize)
           tracker?.report('pull')
         },
       })
       pullResult = mergePull(pullResult, page)
       pages += 1
-      if (page.applied > 0) budget.add(page.applied)
+      // Items already counted in onPageApplied when budgeted; avoid double-count.
+      if (page.applied > 0 && !budget.enabled) budget.add(page.applied)
       await yieldToMain()
       // Hard error (network / apply): keep hasMore for the UI but do not spin.
       if (!page.ok) break

@@ -565,7 +565,8 @@ function isAllowed(
 
 /**
  * Keep only modules/pages the user may open.
- * School owners (`unrestricted`) see the full tree.
+ * Founding school owners (`unrestricted`) see the full tree; custom/system
+ * roles are filtered strictly by granted permission names.
  */
 export function filterNavSections(
   sections: NavSection[],

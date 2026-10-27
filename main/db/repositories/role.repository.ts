@@ -390,6 +390,8 @@ export class RoleRepository extends BaseRepository<Role> {
         `Cannot delete role while ${users} user(s) are assigned. Reassign them first.`
       )
     }
+    // Soft-delete grants first so Sync Now pushes DELETE for role_permissions too.
+    this.replaceRolePermissions(roleId, [])
     this.delete(roleId)
   }
 

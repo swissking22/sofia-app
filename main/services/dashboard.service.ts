@@ -175,7 +175,7 @@ function displayName(session: SessionData): string {
 }
 
 function canSeeFinance(role: string): boolean {
-  return role === 'admin' || role === 'secretary'
+  return role === 'admin' || role === 'secretary' || role === 'bursar'
 }
 
 export function buildDashboardSummary(

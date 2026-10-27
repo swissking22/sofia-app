@@ -32,6 +32,11 @@ export const MAX_PULL_BATCH_SIZE = 500
 export const DEFAULT_PULL_BATCH_SIZE = MAX_PULL_BATCH_SIZE
 /** Ack cloud cursor every N applied pages (local cursor still advances each page). */
 export const DEFAULT_CURSOR_ACK_EVERY_PAGES = 5
+/**
+ * Apply at most this many pulled rows per SQLite transaction, then yield.
+ * Keeps Electron's main process responsive during 500-row pull pages.
+ */
+export const APPLY_YIELD_CHUNK_SIZE = 40
 
 function clampPullBatchSize(n: number | undefined): number {
   const raw = Number.isFinite(n as number) ? Number(n) : DEFAULT_PULL_BATCH_SIZE
@@ -397,15 +402,17 @@ export function applyPulledChangesTransaction(
 
 /**
  * Apply each change in its own transaction so one bad row cannot roll back the
- * whole page (and freeze the pull cursor). Always advances the cursor afterward.
+ * whole page (and freeze the pull cursor).
  */
 export function applyPulledChangesIndividually(
   db: Database,
   changes: SyncChange[],
   schoolId: string,
   deviceId: string,
-  newCursor: number
+  newCursor: number,
+  options?: { advanceCursor?: boolean }
 ): { applied: number; conflicts: number; skipped: number; failed: number } {
+  const advanceCursor = options?.advanceCursor !== false
   let applied = 0
   let conflicts = 0
   let skipped = 0
@@ -433,7 +440,81 @@ export function applyPulledChangesIndividually(
     }
   }
 
-  setLocalSyncCursor(db, schoolId, deviceId, newCursor)
+  if (advanceCursor) {
+    setLocalSyncCursor(db, schoolId, deviceId, newCursor)
+  }
+  return { applied, conflicts, skipped, failed }
+}
+
+/**
+ * Apply a pull page in small transactions with event-loop yields between chunks
+ * so the Electron window stays responsive during large hydrates.
+ */
+export async function applyPulledChangesWithYields(
+  db: Database,
+  changes: SyncChange[],
+  schoolId: string,
+  deviceId: string,
+  newCursor: number,
+  options?: { chunkSize?: number }
+): Promise<{
+  applied: number
+  conflicts: number
+  skipped: number
+  failed: number
+}> {
+  if (changes.length === 0) {
+    return { applied: 0, conflicts: 0, skipped: 0, failed: 0 }
+  }
+
+  const chunkSize = Math.max(
+    1,
+    Math.min(
+      MAX_PULL_BATCH_SIZE,
+      options?.chunkSize ?? APPLY_YIELD_CHUNK_SIZE
+    )
+  )
+  let applied = 0
+  let conflicts = 0
+  let skipped = 0
+  let failed = 0
+
+  for (let i = 0; i < changes.length; i += chunkSize) {
+    const chunk = changes.slice(i, i + chunkSize)
+    const isLast = i + chunkSize >= changes.length
+    try {
+      const res = applyPulledChangesTransaction(
+        db,
+        chunk,
+        schoolId,
+        deviceId,
+        newCursor,
+        { advanceCursor: isLast }
+      )
+      applied += res.applied
+      conflicts += res.conflicts
+      skipped += res.skipped
+    } catch (batchErr) {
+      console.warn(
+        '[SYNC] Chunk apply failed; retrying each change individually:',
+        batchErr instanceof Error ? batchErr.message : batchErr
+      )
+      const res = applyPulledChangesIndividually(
+        db,
+        chunk,
+        schoolId,
+        deviceId,
+        newCursor,
+        { advanceCursor: isLast }
+      )
+      applied += res.applied
+      conflicts += res.conflicts
+      skipped += res.skipped
+      failed += res.failed
+    }
+    if (!isLast) await yieldToMain()
+  }
+
   return { applied, conflicts, skipped, failed }
 }
 
@@ -573,37 +654,17 @@ export async function pullRemoteChanges(
       break
     }
 
-    // 5. Apply batch — prefer one atomic transaction; fall back per-row so a
-    // single bad change cannot freeze the cursor for the whole school.
+    // 5. Apply in small chunks with yields — a full 500-row sync transaction
+    // freezes Electron's main process long enough for the window to lock up.
     try {
-      let txRes: {
-        applied: number
-        conflicts: number
-        skipped: number
-        failed?: number
-      }
-      try {
-        txRes = applyPulledChangesTransaction(
-          db,
-          pullRes.changes,
-          schoolId,
-          deviceId,
-          pullRes.newCursor
-        )
-      } catch (batchErr) {
-        console.warn(
-          '[SYNC] Batch apply failed; retrying each change individually:',
-          batchErr instanceof Error ? batchErr.message : batchErr
-        )
-        txRes = applyPulledChangesIndividually(
-          db,
-          pullRes.changes,
-          schoolId,
-          deviceId,
-          pullRes.newCursor
-        )
-        totalFailed += txRes.failed || 0
-      }
+      const txRes = await applyPulledChangesWithYields(
+        db,
+        pullRes.changes,
+        schoolId,
+        deviceId,
+        pullRes.newCursor
+      )
+      totalFailed += txRes.failed || 0
 
       totalProcessed += pullRes.changes.length
       totalApplied += txRes.applied
@@ -626,8 +687,13 @@ export async function pullRemoteChanges(
         txRes.applied,
         Boolean(pullRes.hasMore)
       )
-      // SQLite apply is sync — yield so the UI/cursor stay responsive.
       await yieldToMain()
+
+      // Honor outer SyncBudget mid-drain (checked after each page).
+      if (options.shouldStop?.()) {
+        hasMore = true
+        break
+      }
     } catch (err: any) {
       console.error(`[SYNC] Error applying pulled changes transaction:`, err)
       totalFailed += 1

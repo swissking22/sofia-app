@@ -115,6 +115,20 @@ export function inferCoarseRole(
   if (permissionNames.every((p) => !isMutating(p))) {
     return "board";
   }
+  // VP / registrar / secretary ops before classroom-only teacher so desktop
+  // login is not blocked for administrative staff who also mark results.
+  if (
+    permissionNames.some(
+      (p) =>
+        (p.startsWith("staff.") ||
+          p.startsWith("students.") ||
+          p.startsWith("admissions.") ||
+          p.startsWith("academics.")) &&
+        isMutating(p),
+    )
+  ) {
+    return "secretary";
+  }
   if (
     permissionNames.some(
       (p) => p.startsWith("results.") || p.startsWith("attendance."),

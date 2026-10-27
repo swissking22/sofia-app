@@ -119,15 +119,27 @@ function omittedColumnDefault(
   return byColumn[column]
 }
 
+/** Cache PRAGMA table_info — called once per row during pull apply otherwise. */
+const columnCache = new Map<string, Set<string>>()
+
 function existingColumns(db: Database, table: string): Set<string> {
+  const hit = columnCache.get(table)
+  if (hit) return hit
   try {
     const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
       name: string
     }>
-    return new Set(rows.map((r) => r.name))
+    const set = new Set(rows.map((r) => r.name))
+    columnCache.set(table, set)
+    return set
   } catch {
     return new Set()
   }
+}
+
+/** Test helper — clear after schema rebuilds in :memory: DBs. */
+export function clearExistingColumnsCacheForTests(): void {
+  columnCache.clear()
 }
 
 function coerceValue(column: string, value: unknown): unknown {
